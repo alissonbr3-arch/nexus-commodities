@@ -7,6 +7,7 @@
 <title>Nexus Commodities — Painel de Coordenação</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -410,6 +411,9 @@
             <select class="filter" id="conFilterTipo">
               <option value="">Todos os tipos</option><option>Produtor</option><option>Comprador</option><option>Transportadora</option>
             </select>
+            <button class="btn-ghost" id="exportCadastrosBtn">Exportar .xlsx</button>
+            <button class="btn-ghost" id="importCadastrosBtn">Importar produtores .xlsx</button>
+            <input type="file" id="importCadastrosFileInput" accept=".xlsx,.xls" style="display:none" onchange="onImportCadastrosFile(this.files[0])">
             <button class="btn-primary" id="addContatoBtn">+ Novo cadastro</button>
           </div>
         </div>
@@ -473,7 +477,7 @@
         <div class="totals-strip" id="wsTotals"></div>
         <div class="team-grid" id="wsCards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));"></div>
         <table id="wsListTable" style="display:none">
-          <thead><tr><th>Nome</th><th>Tipo</th><th>Cidade/UF</th><th>Volume anual (sc)</th><th>Já negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Cidade/UF</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
           <tbody id="wsListBody"></tbody>
         </table>
       </div>
@@ -1038,6 +1042,86 @@ function renderContatos() {
   renderDashboard();
 }
 function nomeCorretor(userId) { const e = data.equipe.find(x => x.user_id === userId); return e ? e.nome : "—"; }
+
+function exportCadastrosXlsx() {
+  const search = document.getElementById("conSearch").value.toLowerCase(); const filterTipo = document.getElementById("conFilterTipo").value;
+  let list = data.cadastros.filter(c => (!search || c.nome.toLowerCase().includes(search) || (c.cidade || "").toLowerCase().includes(search)) && (!filterTipo || c.tipo === filterTipo));
+  const st = sortState.cadastros; if (st && st.key) list = applySort(list, st.key, st.dir);
+  if (list.length === 0) { alert("Nenhum cadastro para exportar com os filtros atuais."); return; }
+
+  const linhas = list.map(c => {
+    const fazendasTxt = c.tipo === "Produtor" ? data.fazendas.filter(f => f.produtor_id === c.id).map(f => f.nome + (f.municipio_uf ? " (" + f.municipio_uf + ")" : "")).join("; ") : "";
+    return {
+      "Nome": c.nome,
+      "Tipo": c.tipo,
+      "Telefone": c.telefone || "",
+      "Cidade/UF": c.cidade || "",
+      "CPF": c.cpf || "",
+      "CNPJ": c.cnpj || "",
+      "Inscrição Estadual": c.inscricao_estadual || "",
+      "Fazendas": fazendasTxt,
+      "Dados bancários": c.dados_bancarios || "",
+      "Volume anual soja (sc)": Number(c.volume_anual_soja || 0),
+      "Volume anual milho (sc)": Number(c.volume_anual_milho || 0),
+      "Responsável": nomeCorretor(c.owner_id),
+      "Último contato": c.last_contact_date ? fmtDate(c.last_contact_date) : "",
+      "Lembrete": c.lembrete || "",
+      "Observações": c.obs || "",
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  ws["!cols"] = Object.keys(linhas[0]).map(k => ({ wch: Math.max(12, k.length + 2) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Cadastros");
+  const nomesArquivo = { "Produtor": "produtores_nexus.xlsx", "Comprador": "compradores_nexus.xlsx", "Transportadora": "transportadoras_nexus.xlsx" };
+  const nomeArquivo = nomesArquivo[filterTipo] || "cadastros_nexus.xlsx";
+  XLSX.writeFile(wb, nomeArquivo);
+}
+document.getElementById("exportCadastrosBtn").addEventListener("click", exportCadastrosXlsx);
+document.getElementById("importCadastrosBtn").addEventListener("click", () => document.getElementById("importCadastrosFileInput").click());
+async function onImportCadastrosFile(file) {
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+  document.getElementById("importCadastrosFileInput").value = "";
+  if (!rows.length) { alert("Planilha vazia ou em formato não reconhecido."); return; }
+
+  let criados = 0, atualizados = 0, ignorados = 0;
+  for (const row of rows) {
+    const nome = String(row["Nome"] || row["NOME"] || row["nome"] || row["PRODUTOR"] || "").trim();
+    if (!nome) { ignorados++; continue; }
+    const existente = data.cadastros.find(c => c.tipo === "Produtor" && c.nome.toLowerCase() === nome.toLowerCase());
+    const responsavelNome = String(row["Responsável"] || row["CORRETOR"] || "").trim();
+    const responsavel = responsavelNome ? data.equipe.find(e => e.nome.toLowerCase().includes(responsavelNome.toLowerCase()) || responsavelNome.toLowerCase().includes(e.nome.toLowerCase())) : null;
+    const payload = {
+      nome,
+      telefone: String(row["Telefone"] || ""),
+      cidade: String(row["Cidade/UF"] || row["Cidade"] || ""),
+      cpf: String(row["CPF"] || ""),
+      inscricao_estadual: String(row["Inscrição Estadual"] || ""),
+      dados_bancarios: String(row["Dados bancários"] || ""),
+      lembrete: String(row["Lembrete"] || ""),
+      obs: String(row["Observações"] || ""),
+    };
+    const volumeSoja = Number(row["Volume anual soja (sc)"] || row["VOLUME SOJA"] || row["A NEGOCIAR SOJA"] || 0);
+    const volumeMilho = Number(row["Volume anual milho (sc)"] || row["VOLUME MILHO"] || row["A NEGOCIAR MILHO"] || 0);
+    if (volumeSoja) payload.volume_anual_soja = volumeSoja;
+    if (volumeMilho) payload.volume_anual_milho = volumeMilho;
+    if (responsavel) payload.owner_id = responsavel.user_id;
+
+    if (existente) {
+      await sb.from("nexus_cadastros").update(payload).eq("id", existente.id);
+      atualizados++;
+    } else {
+      await sb.from("nexus_cadastros").insert([{ ...payload, tipo: "Produtor", owner_id: payload.owner_id || currentUserId }]);
+      criados++;
+    }
+  }
+  await loadCadastros(); renderContatos(); renderWorkspace();
+  alert(`Importação concluída: ${criados} produtor(es) novo(s), ${atualizados} atualizado(s)${ignorados ? `, ${ignorados} linha(s) sem nome ignorada(s)` : ""}.\n\nObs: fazendas e último contato não são importados por aqui — cadastre as fazendas manualmente no cadastro de cada produtor.`);
+}
 document.getElementById("conSearch").addEventListener("input", renderContatos);
 document.getElementById("conFilterTipo").addEventListener("change", renderContatos);
 document.querySelectorAll('#page-cadastros thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cadastros", th.dataset.sort, renderContatos)));
@@ -1077,7 +1161,7 @@ async function deleteFazenda(fazendaId, produtorId) {
   document.getElementById("fazendasSection").innerHTML = renderFazendasSectionHtml(produtorId);
 }
 function openContatoModal(id) {
-  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "" };
+  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar cadastro" : "Novo cadastro"}</h3>
@@ -1092,7 +1176,8 @@ function openContatoModal(id) {
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
     </div>
-    <div class="field-row"><div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div><div class="field"><label>Volume anual esperado (sc)</label><input type="number" id="f_volumeAnual" value="${item.volume_anual||""}"></div></div>
+    <div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div>
+    <div class="field-row"><div class="field"><label>Volume anual soja (sc)</label><input type="number" id="f_volumeSoja" value="${item.volume_anual_soja||""}"></div><div class="field"><label>Volume anual milho (sc)</label><input type="number" id="f_volumeMilho" value="${item.volume_anual_milho||""}"></div></div>
     <div class="field"><label>Lembrete de contato</label><input type="text" id="f_lembrete" value="${item.lembrete||""}" placeholder="Ex: ligar sobre preço da soja"></div>
     <div class="field"><label>Observações</label><textarea id="f_cobs" rows="2">${item.obs || ""}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveContato('${id || ""}')">Salvar</button></div>`;
@@ -1100,7 +1185,7 @@ function openContatoModal(id) {
 }
 async function saveContato(id) {
   const tipo = v("f_ctipo");
-  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual: n("f_volumeAnual"), lembrete: v("f_lembrete"),
+  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Produtor" ? v("f_ie_produtor") : (tipo === "Comprador" ? v("f_ie_comprador") : ""),
     dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "" };
@@ -1232,26 +1317,30 @@ function renderWorkspace() {
   const clientes = data.cadastros.filter(c => c.owner_id === owner);
   const today = todayISO();
 
+  const volumeTotalCadastro = c => Number(c.volume_anual_soja||0) + Number(c.volume_anual_milho||0);
   const sortKey = document.getElementById("wsSortSelect").value;
-  if (sortKey === "volume") clientes.sort((a, b) => Number(b.volume_anual||0) - Number(a.volume_anual||0));
+  if (sortKey === "volume") clientes.sort((a, b) => volumeTotalCadastro(b) - volumeTotalCadastro(a));
   else if (sortKey === "contato") clientes.sort((a, b) => (b.last_contact_date || "").localeCompare(a.last_contact_date || ""));
   else clientes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const volumeAnualTotal = clientes.reduce((s,c) => s + Number(c.volume_anual||0), 0);
-  const volumeNegociadoTotal = clientes.reduce((s,c) => s + volumeNegociadoCliente(c.id, owner), 0);
+  const volumeSojaTotal = clientes.reduce((s,c) => s + Number(c.volume_anual_soja||0), 0);
+  const volumeMilhoTotal = clientes.reduce((s,c) => s + Number(c.volume_anual_milho||0), 0);
+  const negociadoSojaTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Soja"), 0);
+  const negociadoMilhoTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Milho"), 0);
   const contatadosHoje = clientes.filter(c => c.last_contact_date === today).length;
 
   document.getElementById("wsTotals").innerHTML = `
     <div class="t"><div class="k">Clientes na carteira</div><div class="v">${clientes.length}</div></div>
-    <div class="t"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(volumeAnualTotal)} sc</div></div>
-    <div class="t"><div class="k">Já negociado</div><div class="v" style="color:var(--gold)">${fmtNum(volumeNegociadoTotal)} sc</div></div>
+    <div class="t"><div class="k">Volume esperado (soja / milho)</div><div class="v">${fmtNum(volumeSojaTotal)} / ${fmtNum(volumeMilhoTotal)} sc</div></div>
+    <div class="t"><div class="k">Já negociado (soja / milho)</div><div class="v" style="color:var(--gold)">${fmtNum(negociadoSojaTotal)} / ${fmtNum(negociadoMilhoTotal)} sc</div></div>
     <div class="t"><div class="k">Contatados hoje</div><div class="v" style="color:var(--green)">${contatadosHoje} / ${clientes.length}</div></div>`;
 
   const cards = document.getElementById("wsCards");
   cards.innerHTML = clientes.length === 0 ? `<div class="placeholder-box">Nenhum cliente atribuído a este corretor ainda. Atribua um responsável em Cadastros.</div>` :
     clientes.map(c => {
-      const negociado = volumeNegociadoCliente(c.id, owner);
-      const pct = c.volume_anual > 0 ? Math.min(100, Math.round(negociado / c.volume_anual * 100)) : 0;
+      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
+      const esperado = volumeTotalCadastro(c);
+      const pct = esperado > 0 ? Math.min(100, Math.round((negSoja+negMilho) / esperado * 100)) : 0;
       const contatadoHoje = c.last_contact_date === today;
       return `
       <div class="ws-card">
@@ -1260,8 +1349,8 @@ function renderWorkspace() {
           <span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span>
         </div>
         <div class="ws-metrics">
-          <div class="m"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(c.volume_anual)} sc</div></div>
-          <div class="m"><div class="k">Já negociado</div><div class="v">${fmtNum(negociado)} sc</div></div>
+          <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_soja)} / ${fmtNum(negSoja)} sc</div></div>
+          <div class="m"><div class="k">Milho — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_milho)} / ${fmtNum(negMilho)} sc</div></div>
         </div>
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div class="ws-reminder">${c.lembrete ? ("&#128276; " + c.lembrete) : "Sem lembrete cadastrado"}</div>
@@ -1272,16 +1361,18 @@ function renderWorkspace() {
       </div>`;
     }).join("");
 
-  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
+  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
     clientes.map(c => {
-      const negociado = volumeNegociadoCliente(c.id, owner);
+      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
       const contatadoHoje = c.last_contact_date === today;
       return `<tr>
         <td>${c.nome}</td>
         <td><span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span></td>
         <td>${c.cidade || "—"}</td>
-        <td>${fmtNum(c.volume_anual)}</td>
-        <td>${fmtNum(negociado)}</td>
+        <td>${fmtNum(c.volume_anual_soja)}</td>
+        <td>${fmtNum(negSoja)}</td>
+        <td>${fmtNum(c.volume_anual_milho)}</td>
+        <td>${fmtNum(negMilho)}</td>
         <td>${labelUltimoContato(c.last_contact_date)}</td>
         <td>${c.lembrete || "—"}</td>
         <td><button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "Marcar contato"}</button></td>
@@ -1289,8 +1380,8 @@ function renderWorkspace() {
     }).join("");
 }
 
-function volumeNegociadoCliente(clienteId, ownerId) {
-  return data.negocios.filter(n => n.cliente_id === clienteId && n.created_by === ownerId).reduce((s,n) => s + Number(n.quantidade||0), 0);
+function volumeNegociadoClienteGrao(cadastroId, grao) {
+  return data.negocios.filter(n => (n.cliente_id === cadastroId || n.produtor_id === cadastroId) && (n.grao||"").toLowerCase() === grao.toLowerCase()).reduce((s,n) => s + Number(n.quantidade||0), 0);
 }
 
 async function toggleContato(cadastroId) {
