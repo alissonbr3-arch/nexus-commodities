@@ -523,6 +523,13 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const NEXUS_EMPRESA = { nome: "Nexus Commodities", endereco: "79490-039 São Gabriel do Oeste/MS", email: "nexuscommodities@terra.com.br", telefone: "(67) 99130-9516", cnpj: "68.049.636/0001-61" };
+const GRAOS = ["Soja", "Milho", "Sorgo", "Milheto"];
+function gerarSafras() {
+  const safras = [];
+  for (let ano = 2025; ano <= 2029; ano++) { safras.push(`${ano}/${ano+1}`); safras.push(`${ano+1}/${ano+1}`); }
+  return safras;
+}
+const SAFRAS = gerarSafras();
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function fmtDate(iso) { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; }
@@ -812,8 +819,8 @@ function openNegocioModal(id) {
   const corretorOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.corretor_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar negociação" : "Nova negociação"}</h3>
-    <div class="field-row"><div class="field"><label>Grão</label><input type="text" id="f_grao" value="${item.grao}" placeholder="Soja, milho..."></div><div class="field"><label>Nº contrato</label><input type="text" id="f_numeroContrato" value="${item.numero_contrato||""}"></div></div>
-    <div class="field-row"><div class="field"><label>Safra</label><input type="text" id="f_safra" value="${item.safra||""}" placeholder="Ex: 2025/2026"></div><div class="field"><label>Corretor responsável</label><select id="f_corretorSelect">${corretorOptions}</select></div></div>
+    <div class="field-row"><div class="field"><label>Grão</label><select id="f_grao">${GRAOS.map(g => `<option ${item.grao===g?"selected":""}>${g}</option>`).join("")}</select></div><div class="field"><label>Nº contrato</label><input type="text" id="f_numeroContrato" value="${item.numero_contrato||""}"></div></div>
+    <div class="field-row"><div class="field"><label>Safra</label><select id="f_safra">${SAFRAS.map(s => `<option ${item.safra===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Corretor responsável</label><select id="f_corretorSelect">${corretorOptions}</select></div></div>
     <div class="field"><label>Comprador</label>
       <select id="f_clienteSelect" onchange="onClienteSelectChange()">
         <option value="">— Selecione um comprador —</option>
@@ -876,6 +883,7 @@ document.getElementById("addNegocioBtn").addEventListener("click", () => openNeg
 
 // ---------------- CONFIRMAÇÃO DE NEGÓCIO ----------------
 function extenso2(n) { return String(n).padStart(2, "0"); }
+function escapeHtml(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function gerarConfirmacao(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
@@ -891,6 +899,63 @@ function gerarConfirmacao(negocioId) {
   const total = preco * sacas;
   const logoSrc = document.querySelector(".brand img")?.src || "";
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const defaultBoilerplateHtml = `
+  <h3>QUALIDADE</h3>
+  <p>Os defeitos serão determinados de acordo com os conceitos expressos nas Instruções Normativas MAPA nº 11, 15/05/2007 e nº 37, 27/07/2007 e ANEC 41:</p>
+  <ol type="a">
+    <li>Até 14% de Umidade</li>
+    <li>Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)</li>
+    <li>Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)</li>
+    <li>Até 8% de Grãos Esverdeados</li>
+  </ol>
+
+  <p>Fica desde já determinado que não será aceito pelo COMPRADOR a mercadoria que contenha qualquer um dos seguintes contaminantes, em qualquer nível de contaminação:</p>
+  <ol type="a">
+    <li>Mistura com grãos tratados quimicamente (sementes), de qualquer espécie vegetal</li>
+    <li>Mamona (Ricinus communis)</li>
+    <li>Sorgo halepense (Sorghum halepense)</li>
+    <li>Algodão</li>
+    <li>Resíduos de agrotóxico de qualquer tipo</li>
+    <li>Insetos vivos de armazenagem</li>
+    <li>Mofo ou qualquer outra característica (odor, aspecto visual) de inaptabilidade</li>
+    <li>Carrapichão, quiabinho (Xanthium strumarium L.)</li>
+    <li>Sementes tóxicas (Cassia occidentalis L., Fedegoso)</li>
+    <li>Outras sementes com efeito tóxico</li>
+  </ol>
+
+  <h3>CONDIÇÕES GERAIS</h3>
+  <ol>
+    <li>Esta compra e venda é ajustada em caráter irrevogável e irretratável, sendo que o COMPRADOR não responderá por prejuízos resultantes de caso fortuito ou força maior, na forma do Artigo 393 do Código Civil.</li>
+    <li>O VENDEDOR declara ter pleno conhecimento de que o produto vendido já tem o seu destino devidamente comprometido pelo COMPRADOR ${comprador.nome}, a tempo certo e baseado no prazo que as partes fixaram para a entrega neste contrato, se responsabilizando pelos danos decorrentes no atraso ou descumprimento de suas obrigações.</li>
+    <li>Caso o produto ora negociado não contenha a qualidade padrão acima descrita, poderá o COMPRADOR recusar a mesma, sendo as despesas oriundas da devolução do produto de responsabilidade do VENDEDOR, ou recebido com um desconto conforme tabela acordada entre as partes antes da entrega do produto.</li>
+    <li>O produto será considerado entregue e transferido para o COMPRADOR somente quando estiver efetivamente no local de entrega previsto, de modo livre, desembaraçado e nas condições de quantidade e qualidade estabelecidas e acobertado fiscalmente de Nota Fiscal de venda.</li>
+    <li>Royalties: sempre que o produto objeto deste contrato tratar-se de geneticamente modificado (transgênico), o COMPRADOR deverá proceder à retenção da indenização da tecnologia (royalties) do valor a ser pago ao VENDEDOR junto à Monsanto do Brasil. Em casos em que houverem créditos de Royalties, deverá o COMPRADOR proceder à devida baixa; não havendo créditos será descontado 7,5% sobre a comercialização.</li>
+    <li>A inadimplência deste contrato pelo VENDEDOR ficará caracterizada pela falta de cumprimento da obrigação de entregar total e tempestivamente o produto adquirido pelo COMPRADOR, nas exatas condições de qualidade exigidas, independentemente de qualquer aviso, notificação ou interpelação.</li>
+    <li>A mora ou inadimplemento, total ou parcial, na entrega da mercadoria, independentemente de interpelação, sujeitará o VENDEDOR ao pagamento de uma multa irredutível de 50% (cinquenta por cento) sobre o valor da mercadoria faltante (saldo descumprido), sem prejuízo dos lucros cessantes e demais encargos, inclusive honorários advocatícios, fixados desde logo em 20% (vinte por cento) sobre o valor do contrato.</li>
+    <li>Ocorrendo a mora ou inadimplemento, total ou parcial, na entrega da mercadoria, e tendo o COMPRADOR que recorrer ao mercado para adquirir o volume contratado por preço acima do acordado, arcará o VENDEDOR com o pagamento da diferença do preço entre a venda e o novo custo para o COMPRADOR (indenização a título de Wash out).</li>
+    <li>Se por motivo de legislação fiscal ou para-fiscal ou de decisões judiciais, houver incidências e/ou majoração de tributos e/ou quaisquer outros custos incidentes sobre este contrato ou sobre seu objeto, até então inexistentes na presente data, estes acréscimos serão de exclusiva responsabilidade do VENDEDOR.</li>
+    <li>A retenção e descontos referente à contribuição previdenciária serão observadas mediante o termo de opção apresentada pelo produtor ao COMPRADOR.</li>
+    <li>O presente instrumento constitui título executivo extrajudicial, com base no artigo 784, III, do Código de Processo Civil/2015.</li>
+    <li>Fica ajustado que o COMPRADOR deverá cumprir com todas as obrigações que lhe são aplicáveis em razão da Lei Geral de Proteção de Dados (Lei nº 13.709 de 14 de agosto de 2018), conforme artigo 7º, V.</li>
+    <li>Em relação a todos os dados pessoais processados durante a validade deste contrato e/ou cumprimento das obrigações legais, a empresa irá: I) manter registro ou notificação válida e atualizada nos termos da LGPD; II) cumprir toda a legislação de proteção de dados aplicável; III) manter medidas técnicas e organizacionais adequadas para proteger a confidencialidade de dados pessoais.</li>
+    <li>O COMPRADOR se compromete a não utilizar os dados pessoais para quaisquer outras finalidades senão para o efetivo cumprimento da obrigação aqui assumida.</li>
+    <li>Caso o COMPRADOR tenha conhecimento de divulgação ou acesso não autorizado a dados pessoais, deverá: I) relatar de IMEDIATO referida divulgação ao VENDEDOR; II) mitigar, se possível, quaisquer efeitos nocivos; III) cooperar com o VENDEDOR no fornecimento de quaisquer avisos necessários.</li>
+    <li>O VENDEDOR declara que a mercadoria objeto deste contrato provém de propriedade e mão de obra que observaram a legislação brasileira de meio ambiente, uso do solo e das condições de trabalho previstas em lei, particularmente a não utilização de mão de obra infantil, escrava ou em condições degradantes, bem como ao não cultivo em áreas de reserva ambiental, preservação permanente, reservas indígenas, parques nacionais ou quaisquer unidades de conservação.</li>
+    <li>DA CONFISSÃO DE DÍVIDA E NOTA PROMISSÓRIA: Caso o VENDEDOR ${vendedor.nome} não entregue a totalidade do produto na data ajustada contratualmente, será confeccionado instrumento de confissão de dívida do saldo remanescente e emitida nota promissória referente a cada parcela, à ordem do CREDOR/COMPRADOR ${comprador.nome}, devidamente assinada pelo VENDEDOR/DEVEDOR.</li>
+    <li>Fica eleito o foro da comarca de São Gabriel do Oeste/MS como o competente para solução de quaisquer dúvidas ou litígios que derivem deste instrumento ou qualquer outro, a critério do COMPRADOR.</li>
+  </ol>
+
+  <p><strong>COMISSÃO:</strong> ${fmtMoney(n.comissao_saca || 0)} por saca paga pelo VENDEDOR para ${NEXUS_EMPRESA.nome}, CNPJ: ${NEXUS_EMPRESA.cnpj}</p>`;
+
+  const temModeloProprio = (comprador.modelo_contrato || "").trim().length > 0;
+  const boilerplateHtml = temModeloProprio
+    ? `<div style="white-space:pre-wrap">${escapeHtml(comprador.modelo_contrato)
+        .replace(/\{\{VENDEDOR\}\}/g, vendedor.nome)
+        .replace(/\{\{COMPRADOR\}\}/g, comprador.nome)
+        .replace(/\{\{COMISSAO_SACA\}\}/g, fmtMoney(n.comissao_saca || 0))}</div>`
+    : defaultBoilerplateHtml;
+
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Confirmação ${n.numero_contrato || ""}</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
@@ -939,52 +1004,7 @@ function gerarConfirmacao(negocioId) {
   </table>
   <p><strong>PREÇO PRE-FIXADO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas, resultando num total de ${fmtMoney(total)} (Bruto). Descontos a serem realizados: Comissão + 0,2% Senar + Fundersul valor vigente + Fundems valor vigente + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.</p>
 
-  <h3>QUALIDADE</h3>
-  <p>Os defeitos serão determinados de acordo com os conceitos expressos nas Instruções Normativas MAPA nº 11, 15/05/2007 e nº 37, 27/07/2007 e ANEC 41:</p>
-  <ol type="a">
-    <li>Até 14% de Umidade</li>
-    <li>Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)</li>
-    <li>Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)</li>
-    <li>Até 8% de Grãos Esverdeados</li>
-  </ol>
-
-  <p>Fica desde já determinado que não será aceito pelo COMPRADOR a mercadoria que contenha qualquer um dos seguintes contaminantes, em qualquer nível de contaminação:</p>
-  <ol type="a">
-    <li>Mistura com grãos tratados quimicamente (sementes), de qualquer espécie vegetal</li>
-    <li>Mamona (Ricinus communis)</li>
-    <li>Sorgo halepense (Sorghum halepense)</li>
-    <li>Algodão</li>
-    <li>Resíduos de agrotóxico de qualquer tipo</li>
-    <li>Insetos vivos de armazenagem</li>
-    <li>Mofo ou qualquer outra característica (odor, aspecto visual) de inaptabilidade</li>
-    <li>Carrapichão, quiabinho (Xanthium strumarium L.)</li>
-    <li>Sementes tóxicas (Cassia occidentalis L., Fedegoso)</li>
-    <li>Outras sementes com efeito tóxico</li>
-  </ol>
-
-  <h3>CONDIÇÕES GERAIS</h3>
-  <ol>
-    <li>Esta compra e venda é ajustada em caráter irrevogável e irretratável, sendo que o COMPRADOR não responderá por prejuízos resultantes de caso fortuito ou força maior, na forma do Artigo 393 do Código Civil.</li>
-    <li>O VENDEDOR declara ter pleno conhecimento de que o produto vendido já tem o seu destino devidamente comprometido pelo COMPRADOR ${comprador.nome}, a tempo certo e baseado no prazo que as partes fixaram para a entrega neste contrato, se responsabilizando pelos danos decorrentes no atraso ou descumprimento de suas obrigações.</li>
-    <li>Caso o produto ora negociado não contenha a qualidade padrão acima descrita, poderá o COMPRADOR recusar a mesma, sendo as despesas oriundas da devolução do produto de responsabilidade do VENDEDOR, ou recebido com um desconto conforme tabela acordada entre as partes antes da entrega do produto.</li>
-    <li>O produto será considerado entregue e transferido para o COMPRADOR somente quando estiver efetivamente no local de entrega previsto, de modo livre, desembaraçado e nas condições de quantidade e qualidade estabelecidas e acobertado fiscalmente de Nota Fiscal de venda.</li>
-    <li>Royalties: sempre que o produto objeto deste contrato tratar-se de geneticamente modificado (transgênico), o COMPRADOR deverá proceder à retenção da indenização da tecnologia (royalties) do valor a ser pago ao VENDEDOR junto à Monsanto do Brasil. Em casos em que houverem créditos de Royalties, deverá o COMPRADOR proceder à devida baixa; não havendo créditos será descontado 7,5% sobre a comercialização.</li>
-    <li>A inadimplência deste contrato pelo VENDEDOR ficará caracterizada pela falta de cumprimento da obrigação de entregar total e tempestivamente o produto adquirido pelo COMPRADOR, nas exatas condições de qualidade exigidas, independentemente de qualquer aviso, notificação ou interpelação.</li>
-    <li>A mora ou inadimplemento, total ou parcial, na entrega da mercadoria, independentemente de interpelação, sujeitará o VENDEDOR ao pagamento de uma multa irredutível de 50% (cinquenta por cento) sobre o valor da mercadoria faltante (saldo descumprido), sem prejuízo dos lucros cessantes e demais encargos, inclusive honorários advocatícios, fixados desde logo em 20% (vinte por cento) sobre o valor do contrato.</li>
-    <li>Ocorrendo a mora ou inadimplemento, total ou parcial, na entrega da mercadoria, e tendo o COMPRADOR que recorrer ao mercado para adquirir o volume contratado por preço acima do acordado, arcará o VENDEDOR com o pagamento da diferença do preço entre a venda e o novo custo para o COMPRADOR (indenização a título de Wash out).</li>
-    <li>Se por motivo de legislação fiscal ou para-fiscal ou de decisões judiciais, houver incidências e/ou majoração de tributos e/ou quaisquer outros custos incidentes sobre este contrato ou sobre seu objeto, até então inexistentes na presente data, estes acréscimos serão de exclusiva responsabilidade do VENDEDOR.</li>
-    <li>A retenção e descontos referente à contribuição previdenciária serão observadas mediante o termo de opção apresentada pelo produtor ao COMPRADOR.</li>
-    <li>O presente instrumento constitui título executivo extrajudicial, com base no artigo 784, III, do Código de Processo Civil/2015.</li>
-    <li>Fica ajustado que o COMPRADOR deverá cumprir com todas as obrigações que lhe são aplicáveis em razão da Lei Geral de Proteção de Dados (Lei nº 13.709 de 14 de agosto de 2018), conforme artigo 7º, V.</li>
-    <li>Em relação a todos os dados pessoais processados durante a validade deste contrato e/ou cumprimento das obrigações legais, a empresa irá: I) manter registro ou notificação válida e atualizada nos termos da LGPD; II) cumprir toda a legislação de proteção de dados aplicável; III) manter medidas técnicas e organizacionais adequadas para proteger a confidencialidade de dados pessoais.</li>
-    <li>O COMPRADOR se compromete a não utilizar os dados pessoais para quaisquer outras finalidades senão para o efetivo cumprimento da obrigação aqui assumida.</li>
-    <li>Caso o COMPRADOR tenha conhecimento de divulgação ou acesso não autorizado a dados pessoais, deverá: I) relatar de IMEDIATO referida divulgação ao VENDEDOR; II) mitigar, se possível, quaisquer efeitos nocivos; III) cooperar com o VENDEDOR no fornecimento de quaisquer avisos necessários.</li>
-    <li>O VENDEDOR declara que a mercadoria objeto deste contrato provém de propriedade e mão de obra que observaram a legislação brasileira de meio ambiente, uso do solo e das condições de trabalho previstas em lei, particularmente a não utilização de mão de obra infantil, escrava ou em condições degradantes, bem como ao não cultivo em áreas de reserva ambiental, preservação permanente, reservas indígenas, parques nacionais ou quaisquer unidades de conservação.</li>
-    <li>DA CONFISSÃO DE DÍVIDA E NOTA PROMISSÓRIA: Caso o VENDEDOR ${vendedor.nome} não entregue a totalidade do produto na data ajustada contratualmente, será confeccionado instrumento de confissão de dívida do saldo remanescente e emitida nota promissória referente a cada parcela, à ordem do CREDOR/COMPRADOR ${comprador.nome}, devidamente assinada pelo VENDEDOR/DEVEDOR.</li>
-    <li>Fica eleito o foro da comarca de São Gabriel do Oeste/MS como o competente para solução de quaisquer dúvidas ou litígios que derivem deste instrumento ou qualquer outro, a critério do COMPRADOR.</li>
-  </ol>
-
-  <p><strong>COMISSÃO:</strong> ${fmtMoney(n.comissao_saca || 0)} por saca paga pelo VENDEDOR para ${NEXUS_EMPRESA.nome}, CNPJ: ${NEXUS_EMPRESA.cnpj}</p>
+  ${boilerplateHtml}
 
   <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
 
@@ -1193,6 +1213,10 @@ function openContatoModal(id) {
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
+      <div class="field">
+        <label>Modelo de contrato (cláusulas da Confirmação de Negócio)</label>
+        <textarea id="f_modeloContrato" rows="8" placeholder="Deixe em branco para usar o modelo padrão da Nexus. Cole aqui o texto das cláusulas próprias deste comprador para substituir Qualidade/Contaminantes/Condições Gerais/Comissão na Confirmação. Use {{VENDEDOR}}, {{COMPRADOR}} e {{COMISSAO_SACA}} onde quiser que o sistema preencha automaticamente.">${item.modelo_contrato || ""}</textarea>
+      </div>
     </div>
     <div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div>
     <div class="field-row"><div class="field"><label>Volume anual soja (sc)</label><input type="number" id="f_volumeSoja" value="${item.volume_anual_soja||""}"></div><div class="field"><label>Volume anual milho (sc)</label><input type="number" id="f_volumeMilho" value="${item.volume_anual_milho||""}"></div></div>
@@ -1206,7 +1230,8 @@ async function saveContato(id) {
   const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Produtor" ? v("f_ie_produtor") : (tipo === "Comprador" ? v("f_ie_comprador") : ""),
-    dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "" };
+    dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "",
+    modelo_contrato: tipo === "Comprador" ? v("f_modeloContrato") : "" };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
   await loadCadastros(); closeModal(); renderContatos(); renderWorkspace();
 }
@@ -1476,7 +1501,7 @@ function openIntencaoModal(id) {
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar intenção" : "Nova intenção de venda"}</h3>
     <div class="field"><label>Produtor</label><select id="f_intProdutor"><option value="">— Selecione —</option>${produtorOptions}</select></div>
-    <div class="field-row"><div class="field"><label>Grão</label><select id="f_intGrao"><option ${item.grao==="Soja"?"selected":""}>Soja</option><option ${item.grao==="Milho"?"selected":""}>Milho</option></select></div><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_intQuantidade" value="${item.quantidade_sacas}"></div></div>
+    <div class="field-row"><div class="field"><label>Grão</label><select id="f_intGrao">${GRAOS.map(g => `<option ${item.grao===g?"selected":""}>${g}</option>`).join("")}</select></div><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_intQuantidade" value="${item.quantidade_sacas}"></div></div>
     <div class="field-row"><div class="field"><label>Preço alvo (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoAlvo" value="${item.preco_alvo}"></div><div class="field"><label>Preço referência (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoRef" value="${item.preco_referencia}"></div></div>
     <div class="field"><label>Comprador (opcional)</label><select id="f_intComprador"><option value="">— Nenhum —</option>${compradorOptions}</select></div>
     <div class="field"><label>Status</label><select id="f_intStatus">${FUNIL_STATUS.map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
