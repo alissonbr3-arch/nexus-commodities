@@ -208,7 +208,10 @@
   .funil-col { background: var(--card-alt); border-radius: var(--radius); padding: 10px; min-width: 240px; flex: 1; }
   .funil-col-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 4px 10px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; }
   .funil-col-head .cnt { background: var(--card); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
-  .funil-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .funil-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; cursor: grab; }
+  .funil-card.dragging { opacity: .4; }
+  .funil-col { transition: background-color .15s; }
+  .funil-col.drag-over { background: var(--gold-soft); outline: 2px dashed var(--gold); outline-offset: -2px; }
   .funil-card .fc-name { font-size: 13.5px; font-weight: 500; }
   .funil-card .fc-sub { font-size: 11.5px; color: var(--ink-soft); }
   .funil-card .fc-precos { display: flex; justify-content: space-between; font-size: 12px; background: var(--card-alt); border-radius: 7px; padding: 6px 8px; }
@@ -1434,7 +1437,7 @@ function renderFunil() {
   board.innerHTML = FUNIL_STATUS.map(status => {
     const itens = data.intencoes.filter(it => it.status === status);
     const cards = itens.map(it => `
-      <div class="funil-card">
+      <div class="funil-card" draggable="true" data-id="${it.id}" ondragstart="onFunilCardDragStart(event,'${it.id}')" ondragend="onFunilCardDragEnd(event)">
         <div class="fc-name">${nomeCadastro(it.produtor_id)}</div>
         <div class="fc-sub">${it.grao} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + nomeCadastro(it.comprador_id) : ""}</div>
         <div class="fc-precos"><span>Alvo: ${fmtMoney(it.preco_alvo)}</span><span>Ref.: ${fmtMoney(it.preco_referencia)}</span></div>
@@ -1445,11 +1448,26 @@ function renderFunil() {
           <button class="btn-danger-text" onclick="deleteItem('nexus_intencoes','${it.id}', loadIntencoes, renderFunil)">Excluir</button>
         </div>
       </div>`).join("");
-    return `<div class="funil-col">
+    return `<div class="funil-col" data-status="${status}" ondragover="onFunilColDragOver(event)" ondragleave="onFunilColDragLeave(event)" ondrop="onFunilColDrop(event,'${status}')">
       <div class="funil-col-head"><span>${status}</span><span class="cnt">${itens.length}</span></div>
       ${cards || `<div class="placeholder-box" style="font-size:11.5px;padding:14px">Nenhuma intenção aqui.</div>`}
     </div>`;
   }).join("");
+}
+let funilDragId = null;
+function onFunilCardDragStart(ev, id) { funilDragId = id; ev.target.classList.add("dragging"); ev.dataTransfer.effectAllowed = "move"; }
+function onFunilCardDragEnd(ev) { ev.target.classList.remove("dragging"); }
+function onFunilColDragOver(ev) { ev.preventDefault(); ev.currentTarget.classList.add("drag-over"); }
+function onFunilColDragLeave(ev) { ev.currentTarget.classList.remove("drag-over"); }
+async function onFunilColDrop(ev, status) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove("drag-over");
+  if (!funilDragId) return;
+  const it = data.intencoes.find(x => x.id === funilDragId);
+  funilDragId = null;
+  if (!it || it.status === status) return;
+  await sb.from("nexus_intencoes").update({ status }).eq("id", it.id);
+  await loadIntencoes(); renderFunil();
 }
 function openIntencaoModal(id) {
   const item = id ? data.intencoes.find(it => it.id === id) : { produtor_id: "", grao: "Soja", quantidade_sacas: "", preco_alvo: "", preco_referencia: "", comprador_id: "", status: "Ofertado", obs: "" };
