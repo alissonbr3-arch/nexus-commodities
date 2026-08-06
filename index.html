@@ -199,6 +199,16 @@
   .contact-toggle.done { background: var(--green-soft); color: var(--green); }
   .contact-toggle.pending { background: var(--red-soft); color: var(--red); }
 
+  .funil-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; align-items: flex-start; }
+  .funil-col { background: var(--card-alt); border-radius: var(--radius); padding: 10px; min-width: 240px; flex: 1; }
+  .funil-col-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 4px 10px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; }
+  .funil-col-head .cnt { background: var(--card); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+  .funil-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .funil-card .fc-name { font-size: 13.5px; font-weight: 500; }
+  .funil-card .fc-sub { font-size: 11.5px; color: var(--ink-soft); }
+  .funil-card .fc-precos { display: flex; justify-content: space-between; font-size: 12px; background: var(--card-alt); border-radius: 7px; padding: 6px 8px; }
+  .funil-card .fc-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
   #appShell { display: none; width: 100%; }
   #appShell.active { display: flex; }
 </style>
@@ -230,6 +240,7 @@
       <button class="nav-item active" data-page="dashboard"><span class="ic">&#9635;</span> Dashboard</button>
       <button class="nav-item" data-page="cotacoes"><span class="ic">&#128200;</span> Cotações</button>
       <button class="nav-item" data-page="negociacoes"><span class="ic">&#8644;</span> Negociações</button>
+      <button class="nav-item" data-page="funil"><span class="ic">&#9875;</span> Funil</button>
       <button class="nav-item" data-page="embarques"><span class="ic">&#128666;</span> Embarques</button>
       <button class="nav-item" data-page="cadastros"><span class="ic">&#9776;</span> Cadastros</button>
       <button class="nav-item" data-page="financeiro"><span class="ic">$</span> Financeiro</button>
@@ -345,11 +356,22 @@
         <table>
           <thead><tr>
             <th data-sort="tipo">Tipo</th><th data-sort="grao">Grão</th><th data-sort="contraparte">Contraparte</th>
-            <th data-sort="quantidade">Qtd (ton)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
+            <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
             <th data-sort="data">Data</th><th data-sort="status">Status</th><th></th>
           </tr></thead>
           <tbody id="negociosBody"></tbody>
         </table>
+      </div>
+
+      <!-- FUNIL DE INTENÇÃO -->
+      <div class="page" id="page-funil">
+        <div class="panel-head">
+          <h2>Funil — intenção de venda</h2>
+          <div class="actions-left">
+            <button class="btn-primary" id="addIntencaoBtn">+ Nova intenção</button>
+          </div>
+        </div>
+        <div class="funil-board" id="funilBoard"></div>
       </div>
 
       <!-- EMBARQUES -->
@@ -404,7 +426,17 @@
       <!-- AGENDA -->
       <div class="page" id="page-agenda">
         <div class="panel-head">
-          <h2>Agenda — tarefas e pendências</h2>
+          <h2>Semana — pagamentos e embarques</h2>
+          <div class="actions-left">
+            <button class="btn-ghost" id="agendaPrevWeekBtn">&larr; Semana anterior</button>
+            <span id="agendaWeekLabel" style="font-size:12.5px;color:var(--ink-soft)"></span>
+            <button class="btn-ghost" id="agendaNextWeekBtn">Próxima semana &rarr;</button>
+          </div>
+        </div>
+        <div id="agendaSemanaList" style="margin-bottom:22px"></div>
+
+        <div class="panel-head">
+          <h2>Tarefas e pendências</h2>
           <div class="actions-left">
             <select class="filter" id="tarFilterStatus">
               <option value="">Todos os status</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option>
@@ -457,6 +489,8 @@ const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const NEXUS_EMPRESA = { nome: "Nexus Commodities", endereco: "79490-039 São Gabriel do Oeste/MS", email: "nexuscommodities@terra.com.br", telefone: "(67) 99130-9516", cnpj: "68.049.636/0001-61" };
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 function fmtDate(iso) { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; }
 function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
@@ -464,12 +498,13 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [] };
+let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [] };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null;
 let currentUserId = null;
 let wsOwnerId = null;
+let convertingIntencaoId = null;
 
 // ---------------- AUTH ----------------
 document.getElementById("loginBtn").addEventListener("click", doLogin);
@@ -511,7 +546,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadEmbarques(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe()]);
+  await Promise.all([loadNegocios(), loadEmbarques(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes()]);
   renderAll();
   wireRealtime();
 }
@@ -528,19 +563,21 @@ async function loadTarefas() { const { data: rows, error } = await sb.from("nexu
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
+async function loadIntencoes() { const { data: rows, error } = await sb.from("nexus_intencoes").select("*").order("created_at", { ascending: false }); if (!error) data.intencoes = rows || []; }
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_embarques" }, async () => { await loadEmbarques(); renderLogistica(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_intencoes" }, async () => { await loadIntencoes(); renderFunil(); })
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
-function renderAll() { renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderLogistica(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); }
+function renderAll() { renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderLogistica(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); }
 
 // ---------------- NAV ----------------
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
@@ -693,7 +730,7 @@ function renderNegocios() {
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td><span class="badge ${n.tipo === "Compra" ? "compra" : "venda"}">${n.tipo}</span></td><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
-      <td><button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_negocios','${n.id}', loadNegocios, renderNegocios)">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_negocios','${n.id}', loadNegocios, renderNegocios)">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -703,26 +740,42 @@ function onClienteSelectChange() {
   const sel = v("f_clienteSelect");
   document.getElementById("f_contraparteWrap").style.display = sel === "__outro__" ? "block" : "none";
 }
+function sugerirNumeroContrato() {
+  const ano = new Date().getFullYear();
+  const seq = data.negocios.filter(nn => (nn.numero_contrato || "").startsWith(`CT-${ano}-`)).length + 1;
+  return `CT-${ano}-${String(seq).padStart(3, "0")}`;
+}
 function openNegocioModal(id) {
-  const item = id ? data.negocios.find(n => n.id === id) : { tipo: "Compra", grao: "", contraparte: "", cliente_id: "", quantidade: "", preco: "", comissao: "", data: "", status: "Negociação", obs: "" };
+  const item = id ? data.negocios.find(n => n.id === id) : { tipo: "Compra", grao: "", contraparte: "", cliente_id: "", produtor_id: "", quantidade: "", preco: "", comissao: "", comissao_saca: "", data: "", status: "Negociação", obs: "", numero_contrato: sugerirNumeroContrato(), safra: "", modalidade: "FOB", local_origem: "", data_inicio_embarque: "", data_fim_embarque: "", data_pagamento: "" };
   const isOutro = !item.cliente_id && !!item.contraparte;
-  const clienteOptions = data.cadastros.map(c => `<option value="${c.id}" ${item.cliente_id===c.id?"selected":""}>${c.nome} (${c.tipo})</option>`).join("");
+  const compradorOptions = data.cadastros.filter(c => c.tipo === "Comprador").map(c => `<option value="${c.id}" ${item.cliente_id===c.id?"selected":""}>${c.nome}</option>`).join("");
+  const produtorOptions = data.cadastros.filter(c => c.tipo === "Produtor").map(c => `<option value="${c.id}" ${item.produtor_id===c.id?"selected":""}>${c.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar negociação" : "Nova negociação"}</h3>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_tipo"><option ${item.tipo==="Compra"?"selected":""}>Compra</option><option ${item.tipo==="Venda"?"selected":""}>Venda</option></select></div><div class="field"><label>Grão</label><input type="text" id="f_grao" value="${item.grao}" placeholder="Soja, milho..."></div></div>
-    <div class="field"><label>Cliente (contraparte)</label>
+    <div class="field-row"><div class="field"><label>Nº contrato</label><input type="text" id="f_numeroContrato" value="${item.numero_contrato||""}"></div><div class="field"><label>Safra</label><input type="text" id="f_safra" value="${item.safra||""}" placeholder="Ex: 2025/2026"></div></div>
+    <div class="field"><label>Comprador</label>
       <select id="f_clienteSelect" onchange="onClienteSelectChange()">
-        <option value="">— Selecione um cadastro —</option>
-        ${clienteOptions}
+        <option value="">— Selecione um comprador —</option>
+        ${compradorOptions}
         <option value="__outro__" ${isOutro?"selected":""}>Outro (digitar manualmente)</option>
       </select>
     </div>
     <div class="field" id="f_contraparteWrap" style="${isOutro?"":"display:none"}">
-      <label>Nome (contraparte não cadastrada)</label>
+      <label>Nome (comprador não cadastrado)</label>
       <input type="text" id="f_contraparte" value="${item.contraparte||""}">
     </div>
-    <div class="field-row"><div class="field"><label>Quantidade (ton)</label><input type="number" id="f_quantidade" value="${item.quantidade}"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
-    <div class="field-row"><div class="field"><label>Comissão (R$)</label><input type="number" step="0.01" id="f_comissao" value="${item.comissao}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
+    <div class="field"><label>Produtor</label>
+      <select id="f_produtorSelect">
+        <option value="">— Nenhum —</option>
+        ${produtorOptions}
+      </select>
+    </div>
+    <div class="field-row"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
+    <div class="field-row"><div class="field"><label>Comissão (R$)</label><input type="number" step="0.01" id="f_comissao" value="${item.comissao}"></div><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}"></div></div>
+    <div class="field-row"><div class="field"><label>Modalidade</label><input type="text" id="f_modalidade" value="${item.modalidade||"FOB"}"></div><div class="field"><label>Local de origem</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
+    <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
+    <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
     <div class="field"><label>Status</label><select id="f_status">${["Negociação","Fechado","Entregue","Pago"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_obs" rows="2">${item.obs || ""}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveNegocio('${id || ""}')">Salvar</button></div>`;
@@ -733,11 +786,147 @@ async function saveNegocio(id) {
   let cliente_id = null, contraparte = "—";
   if (selVal === "__outro__") { contraparte = v("f_contraparte") || "—"; }
   else if (selVal) { cliente_id = selVal; const c = data.cadastros.find(x => x.id === selVal); contraparte = c ? c.nome : "—"; }
-  const payload = { tipo: v("f_tipo"), grao: v("f_grao")||"—", contraparte, cliente_id, quantidade: n("f_quantidade"), unidade: "ton", preco: n("f_preco"), comissao: n("f_comissao"), data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
-  if (id) await sb.from("nexus_negocios").update(payload).eq("id", id); else await sb.from("nexus_negocios").insert([payload]);
+  const produtorVal = v("f_produtorSelect");
+  if (!cliente_id && !contraparte.trim().length) { const p = data.cadastros.find(x => x.id === produtorVal); if (p) contraparte = p.nome; }
+  const payload = { tipo: v("f_tipo"), grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null,
+    quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: n("f_comissao"), comissao_saca: n("f_comissaoSaca"),
+    numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
+    data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
+    data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
+  let savedId = id;
+  if (id) { await sb.from("nexus_negocios").update(payload).eq("id", id); }
+  else { const { data: rows } = await sb.from("nexus_negocios").insert([payload]).select(); savedId = rows && rows[0] ? rows[0].id : null; }
+  if (convertingIntencaoId && savedId) {
+    await sb.from("nexus_intencoes").update({ status: "Convertido", negocio_id: savedId }).eq("id", convertingIntencaoId);
+    convertingIntencaoId = null;
+    await loadIntencoes(); renderFunil();
+  }
   await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace();
 }
 document.getElementById("addNegocioBtn").addEventListener("click", () => openNegocioModal(null));
+
+// ---------------- CONFIRMAÇÃO DE NEGÓCIO ----------------
+function extenso2(n) { return String(n).padStart(2, "0"); }
+function gerarConfirmacao(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a confirmação."); return; }
+  const sacas = Number(n.quantidade || 0);
+  const kg = sacas * 60;
+  const preco = Number(n.preco || 0);
+  const total = preco * sacas;
+  const logoSrc = document.querySelector(".brand img")?.src || "";
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Confirmação ${n.numero_contrato || ""}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0; }
+    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
+    table.dados td.label { width: 220px; font-weight: bold; background: #f2f2f2; }
+    h3 { font-size: 12.5px; margin: 16px 0 4px; }
+    ol { padding-left: 18px; }
+    ol li { margin-bottom: 6px; text-align: justify; }
+    .assinaturas { margin-top: 50px; }
+    .assinatura { margin-top: 46px; text-align: center; width: 340px; }
+    .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    @media print { body { margin: 0; } }
+  </style></head><body>
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    ${logoSrc ? `<img src="${logoSrc}">` : ""}
+  </div>
+  <h1>CONFIRMAÇÃO DE COMPRA E VENDA DE GRÃOS Nº ${n.numero_contrato || "—"}</h1>
+  <table class="dados">
+    <tr><td class="label">VENDEDOR</td><td>${vendedor.nome}</td></tr>
+    <tr><td class="label">CPF</td><td>${vendedor.cpf || "—"}</td></tr>
+    <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${vendedor.inscricao_estadual || "—"}</td></tr>
+    <tr><td class="label">PROPRIEDADE</td><td>${vendedor.propriedade || "—"}</td></tr>
+    <tr><td class="label">MUNICÍPIO/UF</td><td>${vendedor.cidade || "—"}</td></tr>
+    <tr><td class="label">DADOS BANCÁRIOS</td><td>${vendedor.dados_bancarios || "—"}</td></tr>
+  </table>
+  <table class="dados">
+    <tr><td class="label">COMPRADOR</td><td>${comprador.nome}</td></tr>
+    <tr><td class="label">CNPJ</td><td>${comprador.cnpj || "—"}</td></tr>
+    <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${comprador.inscricao_estadual || "—"}</td></tr>
+    <tr><td class="label">MUNICÍPIO/UF</td><td>${comprador.cidade || "—"}</td></tr>
+  </table>
+  <table class="dados">
+    <tr><td class="label">PRODUTO</td><td>${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
+    <tr><td class="label">MODALIDADE</td><td>${n.modalidade || "FOB"}</td></tr>
+    <tr><td class="label">LOCAL DE ORIGEM</td><td>${n.local_origem || "—"}</td></tr>
+    <tr><td class="label">DATA INÍCIO DE EMBARQUE</td><td>${fmtDate(n.data_inicio_embarque)}</td></tr>
+    <tr><td class="label">DATA FIM DE EMBARQUE</td><td>${fmtDate(n.data_fim_embarque)}</td></tr>
+    <tr><td class="label">PRAZO PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
+    <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
+  </table>
+  <p><strong>PREÇO PRE-FIXADO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas, resultando num total de ${fmtMoney(total)} (Bruto). Descontos a serem realizados: Comissão + 0,2% Senar + Fundersul valor vigente + Fundems valor vigente + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.</p>
+
+  <h3>QUALIDADE</h3>
+  <p>Os defeitos serão determinados de acordo com os conceitos expressos nas Instruções Normativas MAPA nº 11, 15/05/2007 e nº 37, 27/07/2007 e ANEC 41:</p>
+  <ol type="a">
+    <li>Até 14% de Umidade</li>
+    <li>Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)</li>
+    <li>Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)</li>
+    <li>Até 8% de Grãos Esverdeados</li>
+  </ol>
+
+  <p>Fica desde já determinado que não será aceito pelo COMPRADOR a mercadoria que contenha qualquer um dos seguintes contaminantes, em qualquer nível de contaminação:</p>
+  <ol type="a">
+    <li>Mistura com grãos tratados quimicamente (sementes), de qualquer espécie vegetal</li>
+    <li>Mamona (Ricinus communis)</li>
+    <li>Sorgo halepense (Sorghum halepense)</li>
+    <li>Algodão</li>
+    <li>Resíduos de agrotóxico de qualquer tipo</li>
+    <li>Insetos vivos de armazenagem</li>
+    <li>Mofo ou qualquer outra característica (odor, aspecto visual) de inaptabilidade</li>
+    <li>Carrapichão, quiabinho (Xanthium strumarium L.)</li>
+    <li>Sementes tóxicas (Cassia occidentalis L., Fedegoso)</li>
+    <li>Outras sementes com efeito tóxico</li>
+  </ol>
+
+  <h3>CONDIÇÕES GERAIS</h3>
+  <ol>
+    <li>Esta compra e venda é ajustada em caráter irrevogável e irretratável, sendo que o COMPRADOR não responderá por prejuízos resultantes de caso fortuito ou força maior, na forma do Artigo 393 do Código Civil.</li>
+    <li>O VENDEDOR declara ter pleno conhecimento de que o produto vendido já tem o seu destino devidamente comprometido pelo COMPRADOR ${comprador.nome}, a tempo certo e baseado no prazo que as partes fixaram para a entrega neste contrato, se responsabilizando pelos danos decorrentes no atraso ou descumprimento de suas obrigações.</li>
+    <li>Caso o produto ora negociado não contenha a qualidade padrão acima descrita, poderá o COMPRADOR recusar a mesma, sendo as despesas oriundas da devolução do produto de responsabilidade do VENDEDOR, ou recebido com um desconto conforme tabela acordada entre as partes antes da entrega do produto.</li>
+    <li>O produto será considerado entregue e transferido para o COMPRADOR somente quando estiver efetivamente no local de entrega previsto, de modo livre, desembaraçado e nas condições de quantidade e qualidade estabelecidas e acobertado fiscalmente de Nota Fiscal de venda.</li>
+    <li>Royalties: sempre que o produto objeto deste contrato tratar-se de geneticamente modificado (transgênico), o COMPRADOR deverá proceder à retenção da indenização da tecnologia (royalties) do valor a ser pago ao VENDEDOR junto à Monsanto do Brasil. Em casos em que houverem créditos de Royalties, deverá o COMPRADOR proceder à devida baixa; não havendo créditos será descontado 7,5% sobre a comercialização.</li>
+    <li>A inadimplência deste contrato pelo VENDEDOR ficará caracterizada pela falta de cumprimento da obrigação de entregar total e tempestivamente o produto adquirido pelo COMPRADOR, nas exatas condições de qualidade exigidas, independentemente de qualquer aviso, notificação ou interpelação.</li>
+    <li>A mora ou inadimplemento, total ou parcial, na entrega da mercadoria, independentemente de interpelação, sujeitará o VENDEDOR ao pagamento de uma multa irredutível de 50% (cinquenta por cento) sobre o valor da mercadoria faltante (saldo descumprido), sem prejuízo dos lucros cessantes e demais encargos, inclusive honorários advocatícios, fixados desde logo em 20% (vinte por cento) sobre o valor do contrato.</li>
+    <li>Ocorrendo a mora ou inadimplemento, total ou parcial, na entrega da mercadoria, e tendo o COMPRADOR que recorrer ao mercado para adquirir o volume contratado por preço acima do acordado, arcará o VENDEDOR com o pagamento da diferença do preço entre a venda e o novo custo para o COMPRADOR (indenização a título de Wash out).</li>
+    <li>Se por motivo de legislação fiscal ou para-fiscal ou de decisões judiciais, houver incidências e/ou majoração de tributos e/ou quaisquer outros custos incidentes sobre este contrato ou sobre seu objeto, até então inexistentes na presente data, estes acréscimos serão de exclusiva responsabilidade do VENDEDOR.</li>
+    <li>A retenção e descontos referente à contribuição previdenciária serão observadas mediante o termo de opção apresentada pelo produtor ao COMPRADOR.</li>
+    <li>O presente instrumento constitui título executivo extrajudicial, com base no artigo 784, III, do Código de Processo Civil/2015.</li>
+    <li>Fica ajustado que o COMPRADOR deverá cumprir com todas as obrigações que lhe são aplicáveis em razão da Lei Geral de Proteção de Dados (Lei nº 13.709 de 14 de agosto de 2018), conforme artigo 7º, V.</li>
+    <li>Em relação a todos os dados pessoais processados durante a validade deste contrato e/ou cumprimento das obrigações legais, a empresa irá: I) manter registro ou notificação válida e atualizada nos termos da LGPD; II) cumprir toda a legislação de proteção de dados aplicável; III) manter medidas técnicas e organizacionais adequadas para proteger a confidencialidade de dados pessoais.</li>
+    <li>O COMPRADOR se compromete a não utilizar os dados pessoais para quaisquer outras finalidades senão para o efetivo cumprimento da obrigação aqui assumida.</li>
+    <li>Caso o COMPRADOR tenha conhecimento de divulgação ou acesso não autorizado a dados pessoais, deverá: I) relatar de IMEDIATO referida divulgação ao VENDEDOR; II) mitigar, se possível, quaisquer efeitos nocivos; III) cooperar com o VENDEDOR no fornecimento de quaisquer avisos necessários.</li>
+    <li>O VENDEDOR declara que a mercadoria objeto deste contrato provém de propriedade e mão de obra que observaram a legislação brasileira de meio ambiente, uso do solo e das condições de trabalho previstas em lei, particularmente a não utilização de mão de obra infantil, escrava ou em condições degradantes, bem como ao não cultivo em áreas de reserva ambiental, preservação permanente, reservas indígenas, parques nacionais ou quaisquer unidades de conservação.</li>
+    <li>DA CONFISSÃO DE DÍVIDA E NOTA PROMISSÓRIA: Caso o VENDEDOR ${vendedor.nome} não entregue a totalidade do produto na data ajustada contratualmente, será confeccionado instrumento de confissão de dívida do saldo remanescente e emitida nota promissória referente a cada parcela, à ordem do CREDOR/COMPRADOR ${comprador.nome}, devidamente assinada pelo VENDEDOR/DEVEDOR.</li>
+    <li>Fica eleito o foro da comarca de São Gabriel do Oeste/MS como o competente para solução de quaisquer dúvidas ou litígios que derivem deste instrumento ou qualquer outro, a critério do COMPRADOR.</li>
+  </ol>
+
+  <p><strong>COMISSÃO:</strong> ${fmtMoney(n.comissao_saca || 0)} por saca paga pelo VENDEDOR para ${NEXUS_EMPRESA.nome}, CNPJ: ${NEXUS_EMPRESA.cnpj}</p>
+
+  <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
+
+  <div class="assinaturas">
+    <div class="assinatura"><div class="linha">${vendedor.nome.toUpperCase()}<br>${vendedor.cpf || ""}</div></div>
+    <div class="assinatura"><div class="linha">${comprador.nome.toUpperCase()}<br>${comprador.cnpj || ""}</div></div>
+    <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 
 // ---------------- EMBARQUES ----------------
 function renderLogistica() {
@@ -787,22 +976,39 @@ function nomeCorretor(userId) { const e = data.equipe.find(x => x.user_id === us
 document.getElementById("conSearch").addEventListener("input", renderContatos);
 document.getElementById("conFilterTipo").addEventListener("change", renderContatos);
 document.querySelectorAll('#page-cadastros thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cadastros", th.dataset.sort, renderContatos)));
+function onCadastroTipoChange() {
+  const tipo = v("f_ctipo");
+  document.getElementById("f_produtorFieldsWrap").style.display = tipo === "Produtor" ? "block" : "none";
+  document.getElementById("f_compradorFieldsWrap").style.display = tipo === "Comprador" ? "block" : "none";
+}
 function openContatoModal(id) {
-  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual: "", lembrete: "" };
+  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", propriedade: "", dados_bancarios: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar cadastro" : "Novo cadastro"}</h3>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
-    <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
+    <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     <div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div>
-    <div class="field-row"><div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div><div class="field"><label>Volume anual esperado (ton)</label><input type="number" id="f_volumeAnual" value="${item.volume_anual||""}"></div></div>
+    <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
+      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_produtor" value="${item.inscricao_estadual||""}"></div></div>
+      <div class="field"><label>Propriedade</label><input type="text" id="f_propriedade" value="${item.propriedade||""}" placeholder="Ex: Fazenda Boa Vista"></div>
+      <div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div>
+    </div>
+    <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
+      <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
+    </div>
+    <div class="field-row"><div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div><div class="field"><label>Volume anual esperado (sc)</label><input type="number" id="f_volumeAnual" value="${item.volume_anual||""}"></div></div>
     <div class="field"><label>Lembrete de contato</label><input type="text" id="f_lembrete" value="${item.lembrete||""}" placeholder="Ex: ligar sobre preço da soja"></div>
     <div class="field"><label>Observações</label><textarea id="f_cobs" rows="2">${item.obs || ""}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveContato('${id || ""}')">Salvar</button></div>`;
   showModal();
 }
 async function saveContato(id) {
-  const payload = { nome: v("f_nome")||"—", tipo: v("f_ctipo"), telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual: n("f_volumeAnual"), lembrete: v("f_lembrete") };
+  const tipo = v("f_ctipo");
+  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual: n("f_volumeAnual"), lembrete: v("f_lembrete"),
+    cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
+    inscricao_estadual: tipo === "Produtor" ? v("f_ie_produtor") : (tipo === "Comprador" ? v("f_ie_comprador") : ""),
+    propriedade: tipo === "Produtor" ? v("f_propriedade") : "", dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "" };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
   await loadCadastros(); closeModal(); renderContatos(); renderWorkspace();
 }
@@ -822,6 +1028,41 @@ function renderFinanceiro() {
 }
 
 // ---------------- AGENDA ----------------
+let agendaWeekOffset = 0;
+function inicioSemana(offset) {
+  const d = new Date();
+  const diaSemana = d.getDay();
+  const diffParaSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+  d.setDate(d.getDate() + diffParaSegunda + offset * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function toISODate(d) { return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function renderAgendaSemana() {
+  const el = document.getElementById("agendaSemanaList");
+  if (!el) return;
+  const inicio = inicioSemana(agendaWeekOffset);
+  const fim = new Date(inicio); fim.setDate(fim.getDate() + 6);
+  document.getElementById("agendaWeekLabel").textContent = `${fmtDate(toISODate(inicio))} a ${fmtDate(toISODate(fim))}`;
+  const inicioISO = toISODate(inicio), fimISO = toISODate(fim);
+  const naSemana = (iso) => iso && iso >= inicioISO && iso <= fimISO;
+
+  const itens = [];
+  data.negocios.forEach(neg => {
+    if (naSemana(neg.data_pagamento)) itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg });
+    if (naSemana(neg.data_inicio_embarque)) itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
+    if (naSemana(neg.data_fim_embarque)) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg });
+  });
+  itens.sort((a, b) => a.data.localeCompare(b.data));
+
+  el.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum pagamento ou embarque previsto nesta semana.</div>` :
+    `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th></tr></thead><tbody>${
+      itens.map(it => `<tr><td>${fmtDate(it.data)}</td><td><span class="badge ${it.tipo === "Pagamento" ? "pago" : "agendado"}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td></tr>`).join("")
+    }</tbody></table>`;
+}
+document.getElementById("agendaPrevWeekBtn").addEventListener("click", () => { agendaWeekOffset--; renderAgendaSemana(); });
+document.getElementById("agendaNextWeekBtn").addEventListener("click", () => { agendaWeekOffset++; renderAgendaSemana(); });
+
 function renderTarefas() {
   const filterStatus = document.getElementById("tarFilterStatus").value;
   let list = data.tarefas.filter(t => !filterStatus || t.status === filterStatus);
@@ -874,8 +1115,8 @@ function renderWorkspace() {
 
   document.getElementById("wsTotals").innerHTML = `
     <div class="t"><div class="k">Clientes na carteira</div><div class="v">${clientes.length}</div></div>
-    <div class="t"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(volumeAnualTotal)} ton</div></div>
-    <div class="t"><div class="k">Já negociado</div><div class="v" style="color:var(--gold)">${fmtNum(volumeNegociadoTotal)} ton</div></div>
+    <div class="t"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(volumeAnualTotal)} sc</div></div>
+    <div class="t"><div class="k">Já negociado</div><div class="v" style="color:var(--gold)">${fmtNum(volumeNegociadoTotal)} sc</div></div>
     <div class="t"><div class="k">Contatados hoje</div><div class="v" style="color:var(--green)">${contatadosHoje} / ${clientes.length}</div></div>`;
 
   const cards = document.getElementById("wsCards");
@@ -891,8 +1132,8 @@ function renderWorkspace() {
           <span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span>
         </div>
         <div class="ws-metrics">
-          <div class="m"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(c.volume_anual)} ton</div></div>
-          <div class="m"><div class="k">Já negociado</div><div class="v">${fmtNum(negociado)} ton</div></div>
+          <div class="m"><div class="k">Volume anual esperado</div><div class="v">${fmtNum(c.volume_anual)} sc</div></div>
+          <div class="m"><div class="k">Já negociado</div><div class="v">${fmtNum(negociado)} sc</div></div>
         </div>
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div class="ws-reminder">${c.lembrete ? ("&#128276; " + c.lembrete) : "Sem lembrete cadastrado"}</div>
@@ -917,9 +1158,71 @@ async function toggleContato(cadastroId) {
   await loadCadastros(); renderWorkspace(); renderContatos();
 }
 
+// ---------------- FUNIL ----------------
+const FUNIL_STATUS = ["Ofertado", "Intenção registrada", "Preço bateu", "Convertido", "Perdido"];
+function nomeCadastro(id) { const c = data.cadastros.find(x => x.id === id); return c ? c.nome : "—"; }
+function renderFunil() {
+  const board = document.getElementById("funilBoard");
+  if (!board) return;
+  board.innerHTML = FUNIL_STATUS.map(status => {
+    const itens = data.intencoes.filter(it => it.status === status);
+    const cards = itens.map(it => `
+      <div class="funil-card">
+        <div class="fc-name">${nomeCadastro(it.produtor_id)}</div>
+        <div class="fc-sub">${it.grao} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + nomeCadastro(it.comprador_id) : ""}</div>
+        <div class="fc-precos"><span>Alvo: ${fmtMoney(it.preco_alvo)}</span><span>Ref.: ${fmtMoney(it.preco_referencia)}</span></div>
+        ${it.obs ? `<div class="fc-sub">${it.obs}</div>` : ""}
+        <div class="fc-actions">
+          ${status === "Preço bateu" ? `<button class="btn-primary" style="padding:5px 10px;font-size:11.5px" onclick="convertIntencao('${it.id}')">Converter em negócio</button>` : ""}
+          <button class="btn-edit-text" onclick="openIntencaoModal('${it.id}')">Editar</button>
+          <button class="btn-danger-text" onclick="deleteItem('nexus_intencoes','${it.id}', loadIntencoes, renderFunil)">Excluir</button>
+        </div>
+      </div>`).join("");
+    return `<div class="funil-col">
+      <div class="funil-col-head"><span>${status}</span><span class="cnt">${itens.length}</span></div>
+      ${cards || `<div class="placeholder-box" style="font-size:11.5px;padding:14px">Nenhuma intenção aqui.</div>`}
+    </div>`;
+  }).join("");
+}
+function openIntencaoModal(id) {
+  const item = id ? data.intencoes.find(it => it.id === id) : { produtor_id: "", grao: "Soja", quantidade_sacas: "", preco_alvo: "", preco_referencia: "", comprador_id: "", status: "Ofertado", obs: "" };
+  const produtorOptions = data.cadastros.filter(c => c.tipo === "Produtor").map(c => `<option value="${c.id}" ${item.produtor_id===c.id?"selected":""}>${c.nome}</option>`).join("");
+  const compradorOptions = data.cadastros.filter(c => c.tipo === "Comprador").map(c => `<option value="${c.id}" ${item.comprador_id===c.id?"selected":""}>${c.nome}</option>`).join("");
+  document.getElementById("modalContent").innerHTML = `
+    <h3>${id ? "Editar intenção" : "Nova intenção de venda"}</h3>
+    <div class="field"><label>Produtor</label><select id="f_intProdutor"><option value="">— Selecione —</option>${produtorOptions}</select></div>
+    <div class="field-row"><div class="field"><label>Grão</label><select id="f_intGrao"><option ${item.grao==="Soja"?"selected":""}>Soja</option><option ${item.grao==="Milho"?"selected":""}>Milho</option></select></div><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_intQuantidade" value="${item.quantidade_sacas}"></div></div>
+    <div class="field-row"><div class="field"><label>Preço alvo (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoAlvo" value="${item.preco_alvo}"></div><div class="field"><label>Preço referência (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoRef" value="${item.preco_referencia}"></div></div>
+    <div class="field"><label>Comprador (opcional)</label><select id="f_intComprador"><option value="">— Nenhum —</option>${compradorOptions}</select></div>
+    <div class="field"><label>Status</label><select id="f_intStatus">${FUNIL_STATUS.map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+    <div class="field"><label>Observações</label><textarea id="f_intObs" rows="2">${item.obs || ""}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveIntencao('${id || ""}')">Salvar</button></div>`;
+  showModal();
+}
+async function saveIntencao(id) {
+  const payload = { produtor_id: v("f_intProdutor") || null, grao: v("f_intGrao"), quantidade_sacas: n("f_intQuantidade"), preco_alvo: n("f_intPrecoAlvo"), preco_referencia: n("f_intPrecoRef"),
+    comprador_id: v("f_intComprador") || null, status: v("f_intStatus"), obs: v("f_intObs") };
+  if (!payload.produtor_id) { alert("Selecione um produtor."); return; }
+  if (id) { await sb.from("nexus_intencoes").update(payload).eq("id", id); }
+  else { await sb.from("nexus_intencoes").insert([{ ...payload, owner_id: currentUserId, created_by: currentUserId }]); }
+  await loadIntencoes(); closeModal(); renderFunil();
+}
+document.getElementById("addIntencaoBtn").addEventListener("click", () => openIntencaoModal(null));
+function convertIntencao(intencaoId) {
+  const it = data.intencoes.find(x => x.id === intencaoId);
+  if (!it) return;
+  convertingIntencaoId = intencaoId;
+  openNegocioModal(null);
+  document.getElementById("f_produtorSelect").value = it.produtor_id || "";
+  document.getElementById("f_grao").value = it.grao || "";
+  document.getElementById("f_quantidade").value = it.quantidade_sacas || "";
+  document.getElementById("f_preco").value = it.preco_alvo || "";
+  if (it.comprador_id) { document.getElementById("f_clienteSelect").value = it.comprador_id; onClienteSelectChange(); }
+}
+
 // ---------------- Shared ----------------
 function showModal() { document.getElementById("overlay").classList.add("active"); }
-function closeModal() { document.getElementById("overlay").classList.remove("active"); }
+function closeModal() { document.getElementById("overlay").classList.remove("active"); convertingIntencaoId = null; }
 document.getElementById("overlay").addEventListener("click", (e) => { if (e.target.id === "overlay") closeModal(); });
 
 async function deleteItem(table, id, loadFn, renderFn) {
