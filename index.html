@@ -418,7 +418,7 @@
           </div>
         </div>
         <table>
-          <thead><tr><th data-sort="nome">Nome</th><th data-sort="tipo">Tipo</th><th data-sort="telefone">Telefone</th><th data-sort="cidade">Cidade/UF</th><th>Responsável</th><th></th></tr></thead>
+          <thead><tr><th></th><th data-sort="nome">Nome</th><th data-sort="tipo">Tipo</th><th data-sort="telefone">Telefone</th><th data-sort="cidade">Cidade/UF</th><th>Responsável</th><th></th></tr></thead>
           <tbody id="contatosBody"></tbody>
         </table>
       </div>
@@ -1036,12 +1036,18 @@ function renderContatos() {
   let list = data.cadastros.filter(c => (!search || c.nome.toLowerCase().includes(search) || (c.cidade || "").toLowerCase().includes(search)) && (!filterTipo || c.tipo === filterTipo));
   const st = sortState.cadastros; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("contatosBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhum cadastro encontrado.</td></tr>` :
-    list.map(c => `<tr><td>${c.nome}</td><td>${c.tipo}</td><td>${c.telefone || "—"}</td><td>${c.cidade || "—"}</td><td>${nomeCorretor(c.owner_id)}</td>
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhum cadastro encontrado.</td></tr>` :
+    list.map(c => `<tr><td>${avatarThumbHtml(c)}</td><td>${c.nome}</td><td>${c.tipo}</td><td>${c.telefone || "—"}</td><td>${c.cidade || "—"}</td><td>${nomeCorretor(c.owner_id)}</td>
       <td><button class="btn-edit-text" onclick="openContatoModal('${c.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_cadastros','${c.id}', loadCadastros, renderContatos)">Excluir</button></td></tr>`).join("");
   renderDashboard();
 }
 function nomeCorretor(userId) { const e = data.equipe.find(x => x.user_id === userId); return e ? e.nome : "—"; }
+function avatarThumbHtml(c, size) {
+  size = size || 28;
+  if (c.foto_url) return `<img src="${c.foto_url}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  const iniciais = (c.nome || "?").split(" ").map(p=>p[0]).slice(0,2).join("").toUpperCase();
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--gold-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:500;flex-shrink:0">${iniciais}</div>`;
+}
 
 function exportCadastrosXlsx() {
   const search = document.getElementById("conSearch").value.toLowerCase(); const filterTipo = document.getElementById("conFilterTipo").value;
@@ -1163,8 +1169,17 @@ async function deleteFazenda(fazendaId, produtorId) {
 function openContatoModal(id) {
   const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
+  const fotoIniciais = (item.nome || "?").split(" ").map(p=>p[0]).slice(0,2).join("").toUpperCase();
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar cadastro" : "Novo cadastro"}</h3>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <div id="cadastroFotoPreview" style="width:64px;height:64px;border-radius:50%;overflow:hidden;background:var(--gold-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        ${item.foto_url ? `<img src="${item.foto_url}" style="width:100%;height:100%;object-fit:cover">` : `<span style="color:var(--gold);font-weight:500;font-size:19px">${fotoIniciais}</span>`}
+      </div>
+      ${id ? `<div><button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="document.getElementById('cadastroFotoInput').click()">Trocar foto</button>
+        <input type="file" id="cadastroFotoInput" accept="image/*" style="display:none" onchange="uploadCadastroFoto('${id}', this.files[0])"></div>`
+        : `<div style="font-size:11.5px;color:var(--ink-soft)">Salve o cadastro para adicionar uma foto.</div>`}
+    </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     <div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div>
@@ -1193,6 +1208,20 @@ async function saveContato(id) {
   await loadCadastros(); closeModal(); renderContatos(); renderWorkspace();
 }
 document.getElementById("addContatoBtn").addEventListener("click", () => openContatoModal(null));
+async function uploadCadastroFoto(cadastroId, file) {
+  if (!file) return;
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${cadastroId}/foto.${ext}`;
+  const { error } = await sb.storage.from("cadastros-fotos").upload(path, file, { upsert: true });
+  if (error) { alert("Erro ao enviar a foto: " + error.message); return; }
+  const { data: pub } = sb.storage.from("cadastros-fotos").getPublicUrl(path);
+  const foto_url = pub.publicUrl + "?v=" + Date.now();
+  await sb.from("nexus_cadastros").update({ foto_url }).eq("id", cadastroId);
+  await loadCadastros();
+  const preview = document.getElementById("cadastroFotoPreview");
+  if (preview) preview.innerHTML = `<img src="${foto_url}" style="width:100%;height:100%;object-fit:cover">`;
+  renderContatos(); renderWorkspace();
+}
 
 // ---------------- FINANCEIRO ----------------
 function renderFinanceiro() {
@@ -1345,7 +1374,10 @@ function renderWorkspace() {
       return `
       <div class="ws-card">
         <div class="ws-head">
-          <div><div class="ws-name">${c.nome}</div><div class="ws-sub">${c.tipo} · ${c.cidade || "—"}</div></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${avatarThumbHtml(c, 34)}
+            <div><div class="ws-name">${c.nome}</div><div class="ws-sub">${c.tipo} · ${c.cidade || "—"}</div></div>
+          </div>
           <span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span>
         </div>
         <div class="ws-metrics">
