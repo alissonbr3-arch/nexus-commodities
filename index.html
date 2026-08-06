@@ -198,6 +198,9 @@
   .ws-progress { height: 6px; border-radius: 3px; background: var(--card-alt); overflow: hidden; }
   .ws-progress .bar { height: 100%; background: var(--gold); }
   .ws-reminder { font-size: 12px; color: var(--ink-soft); background: var(--card-alt); border-radius: 7px; padding: 8px 10px; min-height: 14px; }
+  .ws-reminder-input { flex: 1; font-size: 12px; color: var(--ink); background: var(--card-alt); border: 1px solid transparent; border-radius: 7px; padding: 8px 10px; font-family: inherit; min-width: 0; }
+  .ws-reminder-input:hover, .ws-reminder-input:focus { border-color: var(--border); outline: none; }
+  .ws-reminder-input::placeholder { color: var(--ink-dim); }
   .ws-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .ws-phone { font-size: 12px; color: var(--ink-soft); }
   .contact-toggle { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
@@ -1413,7 +1416,10 @@ function renderWorkspace() {
           <div class="m"><div class="k">Milho — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_milho)} / ${fmtNum(negMilho)} sc</div></div>
         </div>
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
-        <div class="ws-reminder">${c.lembrete ? ("&#128276; " + c.lembrete) : "Sem lembrete cadastrado"}</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" class="ws-reminder-input" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete — clique para anotar" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()">
+          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;font-size:11px;white-space:nowrap" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)">&rarr; Funil</button>` : ""}
+        </div>
         <div class="ws-foot">
           <div class="ws-phone">&#9742; ${c.telefone || "—"}</div>
           <button class="contact-toggle ${contatadoHoje?"done":"pending"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; " + labelUltimoContato(c.last_contact_date) : labelUltimoContato(c.last_contact_date)}</button>
@@ -1434,8 +1440,11 @@ function renderWorkspace() {
         <td>${fmtNum(c.volume_anual_milho)}</td>
         <td>${fmtNum(negMilho)}</td>
         <td>${labelUltimoContato(c.last_contact_date)}</td>
-        <td>${c.lembrete || "—"}</td>
-        <td><button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "Marcar contato"}</button></td>
+        <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
+        <td style="white-space:nowrap">
+          <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "Marcar contato"}</button>
+          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;font-size:11.5px;margin-left:4px" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)">&rarr; Funil</button>` : ""}
+        </td>
       </tr>`;
     }).join("");
 }
@@ -1451,6 +1460,22 @@ async function toggleContato(cadastroId) {
   const novo = c.last_contact_date === today ? null : today;
   await sb.from("nexus_cadastros").update({ last_contact_date: novo }).eq("id", cadastroId);
   await loadCadastros(); renderWorkspace(); renderContatos();
+}
+async function salvarLembreteRapido(cadastroId, novoValor) {
+  const c = data.cadastros.find(x => x.id === cadastroId);
+  if (!c || (c.lembrete || "") === novoValor) return;
+  c.lembrete = novoValor;
+  await sb.from("nexus_cadastros").update({ lembrete: novoValor }).eq("id", cadastroId);
+}
+async function enviarAoFunil(produtorId, btnEl) {
+  await sb.from("nexus_intencoes").insert([{ produtor_id: produtorId, grao: "Soja", quantidade_sacas: 0, preco_alvo: 0, preco_referencia: 0, status: "Ofertado", owner_id: currentUserId, created_by: currentUserId }]);
+  await loadIntencoes(); renderFunil();
+  if (btnEl) {
+    const original = btnEl.innerHTML;
+    btnEl.innerHTML = "&#10003; No funil";
+    btnEl.disabled = true;
+    setTimeout(() => { btnEl.innerHTML = original; btnEl.disabled = false; }, 2000);
+  }
 }
 
 // ---------------- FUNIL ----------------
