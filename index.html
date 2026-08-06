@@ -133,6 +133,8 @@
   .btn-primary:disabled { opacity: .6; cursor: default; }
   .btn-ghost { background: var(--card); color: var(--ink-soft); border: 1px solid var(--border); }
   .btn-ghost:hover { background: var(--card-alt); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.08); }
   .btn-danger-text { background: none; color: var(--red); padding: 4px 8px; font-weight: 500; }
   .btn-edit-text { background: none; color: var(--blue); padding: 4px 8px; font-weight: 500; }
 
@@ -355,7 +357,7 @@
         </div>
         <table>
           <thead><tr>
-            <th data-sort="tipo">Tipo</th><th data-sort="grao">Grão</th><th data-sort="contraparte">Contraparte</th>
+            <th data-sort="grao">Grão</th><th data-sort="contraparte">Contraparte</th>
             <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
             <th data-sort="data">Data</th><th data-sort="status">Status</th><th></th>
           </tr></thead>
@@ -418,7 +420,7 @@
         <div class="panel-head"><h2>Financeiro</h2></div>
         <div class="totals-strip" id="finTotals"></div>
         <table>
-          <thead><tr><th>Tipo</th><th>Grão</th><th>Contraparte</th><th>Data</th><th>Status</th><th>Comissão (R$)</th></tr></thead>
+          <thead><tr><th>Grão</th><th>Contraparte</th><th>Data</th><th>Status</th><th>Comissão (R$)</th></tr></thead>
           <tbody id="finBody"></tbody>
         </table>
       </div>
@@ -456,6 +458,11 @@
           <h2>Workspace — carteira de clientes</h2>
           <div class="actions-left">
             <select class="filter" id="wsOwnerSelect"></select>
+            <select class="filter" id="wsSortSelect">
+              <option value="nome">Nome (A-Z)</option>
+              <option value="volume">Volume anual (maior primeiro)</option>
+              <option value="contato">Último contato (mais recente primeiro)</option>
+            </select>
           </div>
         </div>
         <div class="totals-strip" id="wsTotals"></div>
@@ -498,7 +505,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [] };
+let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [], fazendas: [] };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null;
@@ -546,7 +553,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadEmbarques(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes()]);
+  await Promise.all([loadNegocios(), loadEmbarques(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas()]);
   renderAll();
   wireRealtime();
 }
@@ -564,6 +571,7 @@ async function loadCotacoes() { const { data: rows, error } = await sb.from("nex
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadIntencoes() { const { data: rows, error } = await sb.from("nexus_intencoes").select("*").order("created_at", { ascending: false }); if (!error) data.intencoes = rows || []; }
+async function loadFazendas() { const { data: rows, error } = await sb.from("nexus_fazendas").select("*").order("nome"); if (!error) data.fazendas = rows || []; }
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
@@ -574,6 +582,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_intencoes" }, async () => { await loadIntencoes(); renderFunil(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_fazendas" }, async () => { await loadFazendas(); })
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
@@ -729,7 +738,7 @@ function renderNegocios() {
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td><span class="badge ${n.tipo === "Compra" ? "compra" : "venda"}">${n.tipo}</span></td><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+    list.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_negocios','${n.id}', loadNegocios, renderNegocios)">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
@@ -745,15 +754,32 @@ function sugerirNumeroContrato() {
   const seq = data.negocios.filter(nn => (nn.numero_contrato || "").startsWith(`CT-${ano}-`)).length + 1;
   return `CT-${ano}-${String(seq).padStart(3, "0")}`;
 }
+function fazendaOptionsHtml(produtorId, selectedId) {
+  const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
+  return `<option value="">— Nenhuma —</option>` + fazendas.map(f => `<option value="${f.id}" ${selectedId===f.id?"selected":""}>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}</option>`).join("");
+}
+function onProdutorSelectChange() {
+  document.getElementById("f_fazendaSelect").innerHTML = fazendaOptionsHtml(v("f_produtorSelect"), null);
+}
+function onFazendaSelectChange() {
+  const fazenda = data.fazendas.find(f => f.id === v("f_fazendaSelect"));
+  if (fazenda && !v("f_localOrigem")) {
+    document.getElementById("f_localOrigem").value = fazenda.nome + (fazenda.municipio_uf ? ", " + fazenda.municipio_uf : "");
+  }
+}
+function atualizarComissaoTotal() {
+  const total = n("f_quantidade") * n("f_comissaoSaca");
+  document.getElementById("f_comissaoTotalDisplay").textContent = fmtMoney(total);
+}
 function openNegocioModal(id) {
-  const item = id ? data.negocios.find(n => n.id === id) : { tipo: "Compra", grao: "", contraparte: "", cliente_id: "", produtor_id: "", quantidade: "", preco: "", comissao: "", comissao_saca: "", data: "", status: "Negociação", obs: "", numero_contrato: sugerirNumeroContrato(), safra: "", modalidade: "FOB", local_origem: "", data_inicio_embarque: "", data_fim_embarque: "", data_pagamento: "" };
+  const item = id ? data.negocios.find(n => n.id === id) : { grao: "", contraparte: "", cliente_id: "", produtor_id: "", fazenda_id: "", quantidade: "", preco: "", comissao: "", comissao_saca: "", data: "", status: "Negociação", obs: "", numero_contrato: sugerirNumeroContrato(), safra: "", modalidade: "FOB", local_origem: "", data_inicio_embarque: "", data_fim_embarque: "", data_pagamento: "" };
   const isOutro = !item.cliente_id && !!item.contraparte;
   const compradorOptions = data.cadastros.filter(c => c.tipo === "Comprador").map(c => `<option value="${c.id}" ${item.cliente_id===c.id?"selected":""}>${c.nome}</option>`).join("");
   const produtorOptions = data.cadastros.filter(c => c.tipo === "Produtor").map(c => `<option value="${c.id}" ${item.produtor_id===c.id?"selected":""}>${c.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar negociação" : "Nova negociação"}</h3>
-    <div class="field-row"><div class="field"><label>Tipo</label><select id="f_tipo"><option ${item.tipo==="Compra"?"selected":""}>Compra</option><option ${item.tipo==="Venda"?"selected":""}>Venda</option></select></div><div class="field"><label>Grão</label><input type="text" id="f_grao" value="${item.grao}" placeholder="Soja, milho..."></div></div>
-    <div class="field-row"><div class="field"><label>Nº contrato</label><input type="text" id="f_numeroContrato" value="${item.numero_contrato||""}"></div><div class="field"><label>Safra</label><input type="text" id="f_safra" value="${item.safra||""}" placeholder="Ex: 2025/2026"></div></div>
+    <div class="field-row"><div class="field"><label>Grão</label><input type="text" id="f_grao" value="${item.grao}" placeholder="Soja, milho..."></div><div class="field"><label>Nº contrato</label><input type="text" id="f_numeroContrato" value="${item.numero_contrato||""}"></div></div>
+    <div class="field"><label>Safra</label><input type="text" id="f_safra" value="${item.safra||""}" placeholder="Ex: 2025/2026"></div>
     <div class="field"><label>Comprador</label>
       <select id="f_clienteSelect" onchange="onClienteSelectChange()">
         <option value="">— Selecione um comprador —</option>
@@ -765,14 +791,19 @@ function openNegocioModal(id) {
       <label>Nome (comprador não cadastrado)</label>
       <input type="text" id="f_contraparte" value="${item.contraparte||""}">
     </div>
-    <div class="field"><label>Produtor</label>
-      <select id="f_produtorSelect">
-        <option value="">— Nenhum —</option>
-        ${produtorOptions}
-      </select>
+    <div class="field-row">
+      <div class="field"><label>Produtor</label>
+        <select id="f_produtorSelect" onchange="onProdutorSelectChange()">
+          <option value="">— Nenhum —</option>
+          ${produtorOptions}
+        </select>
+      </div>
+      <div class="field"><label>Fazenda</label>
+        <select id="f_fazendaSelect" onchange="onFazendaSelectChange()">${fazendaOptionsHtml(item.produtor_id, item.fazenda_id)}</select>
+      </div>
     </div>
-    <div class="field-row"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
-    <div class="field-row"><div class="field"><label>Comissão (R$)</label><input type="number" step="0.01" id="f_comissao" value="${item.comissao}"></div><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}"></div></div>
+    <div class="field-row"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
+    <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
     <div class="field-row"><div class="field"><label>Modalidade</label><input type="text" id="f_modalidade" value="${item.modalidade||"FOB"}"></div><div class="field"><label>Local de origem</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
@@ -788,8 +819,9 @@ async function saveNegocio(id) {
   else if (selVal) { cliente_id = selVal; const c = data.cadastros.find(x => x.id === selVal); contraparte = c ? c.nome : "—"; }
   const produtorVal = v("f_produtorSelect");
   if (!cliente_id && !contraparte.trim().length) { const p = data.cadastros.find(x => x.id === produtorVal); if (p) contraparte = p.nome; }
-  const payload = { tipo: v("f_tipo"), grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null,
-    quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: n("f_comissao"), comissao_saca: n("f_comissaoSaca"),
+  const comissaoSaca = n("f_comissaoSaca");
+  const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null,
+    quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: n("f_quantidade") * comissaoSaca, comissao_saca: comissaoSaca,
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
@@ -813,6 +845,9 @@ function gerarConfirmacao(negocioId) {
   const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
   const comprador = data.cadastros.find(c => c.id === n.cliente_id);
   if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a confirmação."); return; }
+  const fazenda = n.fazenda_id ? data.fazendas.find(f => f.id === n.fazenda_id) : null;
+  const propriedadeNome = fazenda ? fazenda.nome : (vendedor.propriedade || "—");
+  const propriedadeMunicipioUf = fazenda ? (fazenda.municipio_uf || vendedor.cidade || "—") : (vendedor.cidade || "—");
   const sacas = Number(n.quantidade || 0);
   const kg = sacas * 60;
   const preco = Number(n.preco || 0);
@@ -846,8 +881,8 @@ function gerarConfirmacao(negocioId) {
     <tr><td class="label">VENDEDOR</td><td>${vendedor.nome}</td></tr>
     <tr><td class="label">CPF</td><td>${vendedor.cpf || "—"}</td></tr>
     <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${vendedor.inscricao_estadual || "—"}</td></tr>
-    <tr><td class="label">PROPRIEDADE</td><td>${vendedor.propriedade || "—"}</td></tr>
-    <tr><td class="label">MUNICÍPIO/UF</td><td>${vendedor.cidade || "—"}</td></tr>
+    <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
+    <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
     <tr><td class="label">DADOS BANCÁRIOS</td><td>${vendedor.dados_bancarios || "—"}</td></tr>
   </table>
   <table class="dados">
@@ -981,8 +1016,38 @@ function onCadastroTipoChange() {
   document.getElementById("f_produtorFieldsWrap").style.display = tipo === "Produtor" ? "block" : "none";
   document.getElementById("f_compradorFieldsWrap").style.display = tipo === "Comprador" ? "block" : "none";
 }
+function renderFazendasSectionHtml(produtorId) {
+  if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para adicionar fazendas.</div>`;
+  const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
+  const lista = fazendas.length === 0 ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px">Nenhuma fazenda cadastrada.</div>` :
+    fazendas.map(f => `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--card-alt);border-radius:7px;padding:7px 10px;margin-bottom:6px;font-size:12.5px">
+      <span>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}${f.area_estimada ? " · " + fmtNum(f.area_estimada) + " ha" : ""}</span>
+      <button class="btn-danger-text" style="padding:2px 6px" onclick="deleteFazenda('${f.id}','${produtorId}')">Excluir</button>
+    </div>`).join("");
+  return `${lista}
+    <div class="field-row" style="margin-top:6px">
+      <div class="field"><input type="text" id="f_fazNome" placeholder="Nome da fazenda"></div>
+      <div class="field"><input type="text" id="f_fazMunicipio" placeholder="Município/UF"></div>
+      <div class="field"><input type="number" id="f_fazArea" placeholder="Área (ha)"></div>
+    </div>
+    <button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="addFazenda('${produtorId}')">+ Adicionar fazenda</button>`;
+}
+async function addFazenda(produtorId) {
+  const nome = v("f_fazNome");
+  if (!nome) { alert("Informe o nome da fazenda."); return; }
+  await sb.from("nexus_fazendas").insert([{ produtor_id: produtorId, nome, municipio_uf: v("f_fazMunicipio"), area_estimada: n("f_fazArea") }]);
+  await loadFazendas();
+  document.getElementById("fazendasSection").innerHTML = renderFazendasSectionHtml(produtorId);
+}
+async function deleteFazenda(fazendaId, produtorId) {
+  const ok = await askConfirm("Excluir esta fazenda?");
+  if (!ok) return;
+  await sb.from("nexus_fazendas").delete().eq("id", fazendaId);
+  await loadFazendas();
+  document.getElementById("fazendasSection").innerHTML = renderFazendasSectionHtml(produtorId);
+}
 function openContatoModal(id) {
-  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", propriedade: "", dados_bancarios: "" };
+  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar cadastro" : "Novo cadastro"}</h3>
@@ -991,8 +1056,8 @@ function openContatoModal(id) {
     <div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_produtor" value="${item.inscricao_estadual||""}"></div></div>
-      <div class="field"><label>Propriedade</label><input type="text" id="f_propriedade" value="${item.propriedade||""}" placeholder="Ex: Fazenda Boa Vista"></div>
       <div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div>
+      <div class="field"><label>Fazendas</label><div id="fazendasSection">${renderFazendasSectionHtml(id)}</div></div>
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
@@ -1008,7 +1073,7 @@ async function saveContato(id) {
   const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual: n("f_volumeAnual"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Produtor" ? v("f_ie_produtor") : (tipo === "Comprador" ? v("f_ie_comprador") : ""),
-    propriedade: tipo === "Produtor" ? v("f_propriedade") : "", dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "" };
+    dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "" };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
   await loadCadastros(); closeModal(); renderContatos(); renderWorkspace();
 }
@@ -1024,7 +1089,7 @@ function renderFinanceiro() {
     <div class="t"><div class="k">Já recebido (pago)</div><div class="v" style="color:var(--green)">${fmtMoney(pago)}</div></div>
     <div class="t"><div class="k">A receber</div><div class="v" style="color:var(--gold)">${fmtMoney(aReceber)}</div></div>`;
   document.getElementById("finBody").innerHTML = data.negocios.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhuma negociação cadastrada.</td></tr>` :
-    data.negocios.map(n => `<tr><td><span class="badge ${n.tipo === "Compra" ? "compra" : "venda"}">${n.tipo}</span></td><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td><td>${fmtMoney(n.comissao)}</td></tr>`).join("");
+    data.negocios.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td><td>${fmtMoney(n.comissao)}</td></tr>`).join("");
 }
 
 // ---------------- AGENDA ----------------
@@ -1101,6 +1166,7 @@ function renderWsOwnerSelect() {
   sel.innerHTML = data.equipe.map(e => `<option value="${e.user_id}" ${e.user_id===wsOwnerId?"selected":""}>${e.user_id===currentUserId ? "Meu workspace — " + e.nome : e.nome}</option>`).join("");
 }
 document.getElementById("wsOwnerSelect").addEventListener("change", (e) => { wsOwnerId = e.target.value; renderWorkspace(); });
+document.getElementById("wsSortSelect").addEventListener("change", renderWorkspace);
 
 function renderWorkspace() {
   if (!data.equipe.length) return;
@@ -1108,6 +1174,11 @@ function renderWorkspace() {
   const owner = wsOwnerId || currentUserId;
   const clientes = data.cadastros.filter(c => c.owner_id === owner);
   const today = todayISO();
+
+  const sortKey = document.getElementById("wsSortSelect").value;
+  if (sortKey === "volume") clientes.sort((a, b) => Number(b.volume_anual||0) - Number(a.volume_anual||0));
+  else if (sortKey === "contato") clientes.sort((a, b) => (b.last_contact_date || "").localeCompare(a.last_contact_date || ""));
+  else clientes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
   const volumeAnualTotal = clientes.reduce((s,c) => s + Number(c.volume_anual||0), 0);
   const volumeNegociadoTotal = clientes.reduce((s,c) => s + volumeNegociadoCliente(c.id, owner), 0);
@@ -1225,8 +1296,20 @@ function showModal() { document.getElementById("overlay").classList.add("active"
 function closeModal() { document.getElementById("overlay").classList.remove("active"); convertingIntencaoId = null; }
 document.getElementById("overlay").addEventListener("click", (e) => { if (e.target.id === "overlay") closeModal(); });
 
+function askConfirm(message) {
+  return new Promise((resolve) => {
+    document.getElementById("modalContent").innerHTML = `
+      <h3>Confirmar exclusão</h3>
+      <p style="color:var(--ink-soft);margin:10px 0 20px">${message}</p>
+      <div class="modal-actions"><button class="btn-ghost" id="confirmCancelBtn">Cancelar</button><button class="btn-danger" id="confirmOkBtn">Excluir</button></div>`;
+    showModal();
+    document.getElementById("confirmCancelBtn").onclick = () => { closeModal(); resolve(false); };
+    document.getElementById("confirmOkBtn").onclick = () => { closeModal(); resolve(true); };
+  });
+}
 async function deleteItem(table, id, loadFn, renderFn) {
-  if (!confirm("Excluir este item?")) return;
+  const ok = await askConfirm("Tem certeza que deseja excluir este item? Essa ação não pode ser desfeita.");
+  if (!ok) return;
   await sb.from(table).delete().eq("id", id);
   await loadFn(); renderFn();
   if (table === "nexus_negocios") renderDashboard();
