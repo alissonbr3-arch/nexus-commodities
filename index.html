@@ -59,7 +59,7 @@
   .sidebar .brand { display: flex; flex-direction: column; align-items: center; padding: 10px 6px 22px; }
   .sidebar .brand img { width: 148px; height: auto; }
   .nav-group { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: var(--ink-soft); font-size: 13px; font-weight: 500; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: var(--ink-soft); font-size: 13px; font-weight: 400; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
   .nav-item .ic { width: 16px; text-align: center; font-size: 13px; display: inline-flex; }
   .nav-item .ic svg { width: 16px; height: 16px; flex-shrink: 0; }
   .nav-item:hover { background: var(--card); color: var(--ink); }
@@ -324,8 +324,54 @@
             <div class="chart-wrap"><canvas id="comissaoChart"></canvas></div>
           </div>
         </div>
-        <div class="subpage" id="sub-compradores" style="display:none"><div class="placeholder-box">Visão de compradores em desenvolvimento.</div></div>
-        <div class="subpage" id="sub-produtores" style="display:none"><div class="placeholder-box">Visão de produtores em desenvolvimento.</div></div>
+        <div class="subpage" id="sub-compradores" style="display:none">
+          <div class="page-sub" id="compradoresSub">—</div>
+          <div class="cards" id="compradoresCards"></div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Distribuição por grão</h3>
+              <div class="hint">Participação de cada grão no volume negociado com compradores</div>
+              <div class="chart-wrap"><canvas id="compradorGraoChart"></canvas></div>
+              <div class="legend-row" id="compradorGraoLegend"></div>
+            </div>
+            <div class="panel-card">
+              <h3>Volume mensal — Top 5 compradores</h3>
+              <div class="hint">Sacas negociadas por mês</div>
+              <div class="chart-wrap"><canvas id="compradorVolumeMensalChart"></canvas></div>
+            </div>
+          </div>
+          <div class="panel-card">
+            <h3>Ranking de compradores</h3>
+            <table>
+              <thead><tr><th>#</th><th>Comprador</th><th>Cidade/UF</th><th>Volume (sc)</th><th>Valor interm.</th><th>Comissão</th><th>Negócios</th><th>Part. %</th></tr></thead>
+              <tbody id="rankingCompradoresBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="subpage" id="sub-produtores" style="display:none">
+          <div class="page-sub" id="produtoresSub">—</div>
+          <div class="cards" id="produtoresCards"></div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Volume por estado</h3>
+              <div class="hint">Sacas negociadas por UF do produtor</div>
+              <div class="chart-wrap"><canvas id="produtorEstadoChart"></canvas></div>
+              <div class="legend-row" id="produtorEstadoLegend"></div>
+            </div>
+            <div class="panel-card">
+              <h3>Volume por safra</h3>
+              <div class="hint">Sacas negociadas por safra</div>
+              <div class="chart-wrap"><canvas id="produtorSafraChart"></canvas></div>
+            </div>
+          </div>
+          <div class="panel-card">
+            <h3>Ranking de produtores</h3>
+            <table>
+              <thead><tr><th>#</th><th>Produtor</th><th>Cidade/UF</th><th>Corretor</th><th>Volume (sc)</th><th>Comissão</th><th>Negócios</th><th>Fazendas</th><th>Área (ha)</th><th>Part. %</th></tr></thead>
+              <tbody id="rankingProdutoresBody"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="subpage" id="sub-analitico" style="display:none"><div class="placeholder-box">Painel analítico em desenvolvimento.</div></div>
       </div>
 
@@ -432,12 +478,31 @@
 
       <!-- FINANCEIRO -->
       <div class="page" id="page-financeiro">
-        <div class="panel-head"><h2>Financeiro</h2></div>
+        <div class="panel-head"><h2>Financeiro — comissões, fluxo de caixa e inadimplência</h2></div>
+        <div class="cards" id="finCards"></div>
         <div class="totals-strip" id="finTotals"></div>
-        <table>
-          <thead><tr><th>Grão</th><th>Contraparte</th><th>Corretor</th><th>Data</th><th>Status</th><th>Comissão total (R$)</th><th>Corretora (R$)</th><th>Corretor (R$)</th></tr></thead>
-          <tbody id="finBody"></tbody>
-        </table>
+        <div class="panel-card" style="margin-bottom:14px">
+          <h3>Fluxo de caixa mensal</h3>
+          <div class="hint">Comissões geradas por mês (últimos 6 meses)</div>
+          <div class="chart-wrap"><canvas id="fluxoCaixaChart"></canvas></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel-card">
+            <h3>Comissão por corretor</h3>
+            <div id="comissaoPorCorretor"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Próximos vencimentos (7 dias)</h3>
+            <div id="proximosVencimentos"></div>
+          </div>
+        </div>
+        <div class="panel-card">
+          <h3>Detalhe dos negócios</h3>
+          <table>
+            <thead><tr><th>Grão</th><th>Contraparte</th><th>Corretor</th><th>Data</th><th>Status</th><th>Comissão total (R$)</th><th>Corretora (R$)</th><th>Corretor (R$)</th></tr></thead>
+            <tbody id="finBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- AGENDA -->
@@ -546,6 +611,7 @@ let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: 
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null;
+let compradorGraoChart = null, compradorVolumeMensalChart = null, produtorEstadoChart = null, produtorSafraChart = null, fluxoCaixaChart = null;
 let currentUserId = null;
 let wsOwnerId = null;
 let convertingIntencaoId = null;
@@ -628,7 +694,12 @@ function wireRealtime() {
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
-function renderAll() { renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderLogistica(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); }
+function renderAll() {
+  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderLogistica(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes();
+  const activeSub = document.querySelector(".subtab-btn.active")?.dataset.subtab;
+  if (activeSub === "compradores") renderDashboardCompradores();
+  if (activeSub === "produtores") renderDashboardProdutores();
+}
 
 // ---------------- NAV ----------------
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
@@ -645,6 +716,8 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     document.querySelectorAll(".subpage").forEach(p => p.style.display = "none");
     btn.classList.add("active");
     document.getElementById("sub-" + btn.dataset.subtab).style.display = "block";
+    if (btn.dataset.subtab === "compradores") renderDashboardCompradores();
+    if (btn.dataset.subtab === "produtores") renderDashboardProdutores();
   });
 });
 document.querySelectorAll(".period-btn").forEach(btn => {
@@ -699,6 +772,125 @@ function renderComissaoChart() {
   const totals = months.map(m => data.negocios.filter(n => n.data && n.data.startsWith(m.key)).reduce((s,n) => s + Number(n.comissao||0), 0));
   const ctx = document.getElementById("comissaoChart"); if (comissaoChart) comissaoChart.destroy();
   comissaoChart = new Chart(ctx, { type: "bar", data: { labels: months.map(m => m.label), datasets: [{ data: totals, backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 36 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } } });
+}
+
+const CHART_PALETTE = ["#d9ab34", "#4a8bb0", "#6fa348", "#c0574a", "#8b6fc0", "#c07f4a"];
+function ufDoCadastro(c) {
+  const partes = (c.cidade || "").split("/");
+  return partes.length > 1 ? partes[partes.length-1].trim() : "Não informado";
+}
+function dashCardHtml(c) {
+  return `<div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
+    <div class="value" style="${c.small?"font-size:15px":""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`;
+}
+function participacaoBarHtml(pct) {
+  return `<div class="ws-progress" style="width:70px;display:inline-block;vertical-align:middle;margin-right:6px"><div class="bar" style="width:${Math.min(100,Math.round(pct))}%"></div></div>${pct.toFixed(2)}%`;
+}
+
+// ---------------- DASHBOARD COMPRADORES ----------------
+function computeCompradorStats() {
+  const compradores = data.cadastros.filter(c => c.tipo === "Comprador");
+  const stats = compradores.map(c => {
+    const negs = data.negocios.filter(n => n.cliente_id === c.id);
+    const volume = negs.reduce((s,n) => s + Number(n.quantidade||0), 0);
+    const valorInterm = negs.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
+    const comissao = negs.reduce((s,n) => s + Number(n.comissao||0), 0);
+    return { cadastro: c, volume, valorInterm, comissao, negocios: negs.length };
+  }).sort((a,b) => b.volume - a.volume);
+  const volumeTotal = stats.reduce((s,x) => s + x.volume, 0);
+  stats.forEach(s => s.participacao = volumeTotal > 0 ? s.volume / volumeTotal * 100 : 0);
+  return { compradores, stats, volumeTotal };
+}
+function renderDashboardCompradores() {
+  if (!document.getElementById("sub-compradores")) return;
+  const { compradores, stats, volumeTotal } = computeCompradorStats();
+  document.getElementById("compradoresSub").textContent = `Análise de ${compradores.length} comprador(es) cadastrado(s)`;
+  const ativos = stats.filter(s => s.volume > 0).length;
+  const top = stats[0];
+  document.getElementById("compradoresCards").innerHTML = [
+    { label: "Volume total", value: fmtNum(volumeTotal) + " sc", foot: "sacas negociadas", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Compradores ativos", value: ativos, foot: "com negócios registrados", ic: "&#128101;", bg: "var(--blue-soft)", color: "var(--blue)" },
+    { label: "Top comprador", value: top ? top.cadastro.nome : "—", foot: top ? fmtNum(top.volume) + " sc" : "", ic: "&#128722;", bg: "var(--green-soft)", color: "var(--green)", small: true },
+    { label: "Maior participação", value: top ? top.participacao.toFixed(2) + "%" : "—", foot: top ? top.cadastro.nome : "", ic: "&#128200;", bg: "var(--orange-soft)", color: "var(--orange)" },
+  ].map(dashCardHtml).join("");
+
+  const graoTotais = {};
+  data.negocios.filter(n => n.cliente_id).forEach(n => { graoTotais[n.grao] = (graoTotais[n.grao]||0) + Number(n.quantidade||0); });
+  const graoLabels = Object.keys(graoTotais);
+  const ctxG = document.getElementById("compradorGraoChart");
+  if (compradorGraoChart) compradorGraoChart.destroy();
+  compradorGraoChart = new Chart(ctxG, { type: "doughnut", data: { labels: graoLabels, datasets: [{ data: Object.values(graoTotais), backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  document.getElementById("compradorGraoLegend").innerHTML = graoLabels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("") || `<div class="legend-chip">Sem dados</div>`;
+
+  const top5 = stats.slice(0,5);
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }) }); }
+  const datasets = top5.map((s,i) => ({
+    label: s.cadastro.nome,
+    data: months.map(m => data.negocios.filter(n => n.cliente_id === s.cadastro.id && n.data && n.data.startsWith(m.key)).reduce((sum,n) => sum + Number(n.quantidade||0), 0)),
+    backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length],
+  }));
+  const ctxV = document.getElementById("compradorVolumeMensalChart");
+  if (compradorVolumeMensalChart) compradorVolumeMensalChart.destroy();
+  compradorVolumeMensalChart = new Chart(ctxV, { type: "bar", data: { labels: months.map(m=>m.label), datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: top5.length > 0, position: "bottom", labels: { color: "#8b93a1", boxWidth: 10, font: { size: 10.5 } } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: "#8b93a1" } }, y: { stacked: true, beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } } } } });
+
+  document.getElementById("rankingCompradoresBody").innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum comprador cadastrado.</td></tr>` :
+    stats.map((s,i) => `<tr>
+      <td>${i+1}</td><td>${s.cadastro.nome}</td><td>${s.cadastro.cidade || "—"}</td>
+      <td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.valorInterm)}</td><td>${fmtMoney(s.comissao)}</td><td>${s.negocios}</td>
+      <td>${participacaoBarHtml(s.participacao)}</td>
+    </tr>`).join("");
+}
+
+// ---------------- DASHBOARD PRODUTORES ----------------
+function computeProdutorStats() {
+  const produtores = data.cadastros.filter(c => c.tipo === "Produtor");
+  const stats = produtores.map(c => {
+    const negs = data.negocios.filter(n => n.produtor_id === c.id);
+    const volume = negs.reduce((s,n) => s + Number(n.quantidade||0), 0);
+    const comissao = negs.reduce((s,n) => s + Number(n.comissao||0), 0);
+    const fazendas = data.fazendas.filter(f => f.produtor_id === c.id);
+    const area = fazendas.reduce((s,f) => s + Number(f.area_estimada||0), 0);
+    return { cadastro: c, volume, comissao, negocios: negs.length, fazendas: fazendas.length, area };
+  }).sort((a,b) => b.volume - a.volume);
+  const volumeTotal = stats.reduce((s,x) => s + x.volume, 0);
+  stats.forEach(s => s.participacao = volumeTotal > 0 ? s.volume / volumeTotal * 100 : 0);
+  return { produtores, stats, volumeTotal };
+}
+function renderDashboardProdutores() {
+  if (!document.getElementById("sub-produtores")) return;
+  const { produtores, stats, volumeTotal } = computeProdutorStats();
+  document.getElementById("produtoresSub").textContent = `Visão de ${produtores.length} produtor(es) e ${data.fazendas.length} fazenda(s)`;
+  const top = stats[0];
+  document.getElementById("produtoresCards").innerHTML = [
+    { label: "Volume total", value: fmtNum(volumeTotal) + " sc", foot: "sacas negociadas", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Produtores", value: produtores.length, foot: "cadastrados", ic: "&#128101;", bg: "var(--blue-soft)", color: "var(--blue)" },
+    { label: "Fazendas", value: data.fazendas.length, foot: fmtNum(data.fazendas.reduce((s,f)=>s+Number(f.area_estimada||0),0)) + " ha", ic: "&#127806;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Top produtor", value: top ? top.cadastro.nome : "—", foot: top ? fmtNum(top.volume) + " sc, " + top.participacao.toFixed(2) + "%" : "", ic: "&#128200;", bg: "var(--orange-soft)", color: "var(--orange)", small: true },
+  ].map(dashCardHtml).join("");
+
+  const ufTotais = {};
+  stats.forEach(s => { const uf = ufDoCadastro(s.cadastro); ufTotais[uf] = (ufTotais[uf]||0) + s.volume; });
+  const ufLabels = Object.keys(ufTotais).filter(uf => ufTotais[uf] > 0);
+  const ctxE = document.getElementById("produtorEstadoChart");
+  if (produtorEstadoChart) produtorEstadoChart.destroy();
+  produtorEstadoChart = new Chart(ctxE, { type: "doughnut", data: { labels: ufLabels, datasets: [{ data: ufLabels.map(l=>ufTotais[l]), backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  document.getElementById("produtorEstadoLegend").innerHTML = ufLabels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("") || `<div class="legend-chip">Sem dados</div>`;
+
+  const safraTotais = {};
+  data.negocios.filter(n => n.produtor_id && n.safra).forEach(n => { safraTotais[n.safra] = (safraTotais[n.safra]||0) + Number(n.quantidade||0); });
+  const safraLabels = Object.keys(safraTotais).sort();
+  const ctxS = document.getElementById("produtorSafraChart");
+  if (produtorSafraChart) produtorSafraChart.destroy();
+  produtorSafraChart = new Chart(ctxS, { type: "bar", data: { labels: safraLabels, datasets: [{ data: safraLabels.map(l=>safraTotais[l]), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 60 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } } });
+
+  document.getElementById("rankingProdutoresBody").innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum produtor cadastrado.</td></tr>` :
+    stats.map((s,i) => `<tr>
+      <td>${i+1}</td><td>${s.cadastro.nome}</td><td>${s.cadastro.cidade || "—"}</td><td>${nomeCorretor(s.cadastro.owner_id)}</td>
+      <td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.comissao)}</td><td>${s.negocios}</td><td>${s.fazendas}</td><td>${fmtNum(s.area)}</td>
+      <td>${participacaoBarHtml(s.participacao)}</td>
+    </tr>`).join("");
 }
 
 // ---------------- Sort ----------------
@@ -1269,12 +1461,65 @@ function renderFinanceiro() {
   const totalCorretor = data.negocios.reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
   const pago = data.negocios.filter(n => n.status === "Pago").reduce((s,n) => s + Number(n.comissao||0), 0);
   const aReceber = total - pago;
+  const hoje = todayISO();
+  const inadimplencia = data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento && n.data_pagamento < hoje).reduce((s,n) => s + Number(n.comissao||0), 0);
+  const media = data.negocios.length > 0 ? total / data.negocios.length : 0;
+
+  const finCardsEl = document.getElementById("finCards");
+  if (finCardsEl) finCardsEl.innerHTML = [
+    { label: "Comissões recebidas", value: fmtMoney(pago), foot: `${data.negocios.filter(n=>n.status==="Pago").length} lançamento(s) pago(s)`, ic: "&#10003;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Comissões pendentes", value: fmtMoney(aReceber), foot: `${data.negocios.filter(n=>n.status!=="Pago").length} a receber`, ic: "&#128337;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Inadimplência", value: fmtMoney(inadimplencia), foot: `${data.negocios.filter(n=>n.status!=="Pago"&&n.data_pagamento&&n.data_pagamento<hoje).length} lançamento(s) vencido(s)`, ic: "&#9888;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Comissão média", value: fmtMoney(media), foot: "por negociação", ic: "&#128200;", bg: "var(--blue-soft)", color: "var(--blue)" },
+  ].map(dashCardHtml).join("");
+
   document.getElementById("finTotals").innerHTML = `
     <div class="t"><div class="k">Comissão total</div><div class="v">${fmtMoney(total)}</div></div>
     <div class="t"><div class="k">Comissão corretora</div><div class="v">${fmtMoney(totalCorretora)}</div></div>
     <div class="t"><div class="k">Comissão corretores</div><div class="v">${fmtMoney(totalCorretor)}</div></div>
     <div class="t"><div class="k">Já recebido (pago)</div><div class="v" style="color:var(--green)">${fmtMoney(pago)}</div></div>
     <div class="t"><div class="k">A receber</div><div class="v" style="color:var(--gold)">${fmtMoney(aReceber)}</div></div>`;
+
+  const fluxoEl = document.getElementById("fluxoCaixaChart");
+  if (fluxoEl) {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("pt-BR", { month: "short" }) }); }
+    const totals = months.map(m => data.negocios.filter(n => n.data && n.data.startsWith(m.key)).reduce((s,n) => s + Number(n.comissao||0), 0));
+    if (fluxoCaixaChart) fluxoCaixaChart.destroy();
+    fluxoCaixaChart = new Chart(fluxoEl, { type: "bar", data: { labels: months.map(m=>m.label), datasets: [{ label: "Comissões", data: totals, backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 40 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } } });
+  }
+
+  const corretorEl = document.getElementById("comissaoPorCorretor");
+  if (corretorEl) {
+    const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: data.negocios.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.comissao_corretor||0), 0) })).sort((a,b) => b.valor - a.valor);
+    const max = Math.max(1, ...porCorretor.map(p => p.valor));
+    corretorEl.innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
+      porCorretor.map(p => `<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtMoney(p.valor)}</span></div>
+        <div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div>
+      </div>`).join("");
+  }
+
+  const vencEl = document.getElementById("proximosVencimentos");
+  if (vencEl) {
+    const em7dias = new Date(); em7dias.setDate(em7dias.getDate() + 7);
+    const em7ISO = toISODate(em7dias);
+    const proximos = data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento && n.data_pagamento >= hoje && n.data_pagamento <= em7ISO)
+      .sort((a,b) => a.data_pagamento.localeCompare(b.data_pagamento));
+    vencEl.innerHTML = proximos.length === 0 ? `<div class="placeholder-box">Nenhum vencimento nos próximos 7 dias.</div>` :
+      proximos.map(n => {
+        const dias = diasDesde(n.data_pagamento) * -1;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:12.5px;font-weight:500">Comissão ${n.grao || ""} ${n.safra || ""} — ${fmtNum(n.quantidade)} sc</div>
+            <div style="font-size:11px;color:var(--ink-soft)">${nomeCadastro(n.produtor_id)}, vence em ${dias === 0 ? "hoje" : dias + " dia(s)"}</div>
+          </div>
+          <div style="font-weight:500;color:var(--gold)">${fmtMoney(n.comissao)}</div>
+        </div>`;
+      }).join("");
+  }
+
   document.getElementById("finBody").innerHTML = data.negocios.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhuma negociação cadastrada.</td></tr>` :
     data.negocios.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${nomeCorretor(n.corretor_id)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td><td>${fmtMoney(n.comissao)}</td><td>${fmtMoney(n.comissao_corretora)}</td><td>${fmtMoney(n.comissao_corretor)}</td></tr>`).join("");
 }
