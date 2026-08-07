@@ -380,24 +380,26 @@
         <div class="panel-head">
           <h2>Cotações — Bolsas</h2>
           <div class="actions-left">
+            <button class="btn-ghost" id="atualizarCbotBtn">Atualizar CBOT agora</button>
+            <span id="cbotStatus" style="font-size:11.5px;color:var(--ink-soft)"></span>
             <button class="btn-ghost" id="editDolarBtn">Editar dólar</button>
             <button class="btn-primary" id="addCotacaoBtn">+ Nova cotação</button>
           </div>
         </div>
         <div class="totals-strip" id="dolarStrip"></div>
         <div style="overflow-x:auto;">
-        <table style="min-width:1080px;">
+        <table style="min-width:1160px;">
           <thead><tr>
             <th data-sort="produto">Produto</th><th data-sort="mes">Mês</th><th data-sort="codigo">Código</th>
             <th data-sort="ultima">Última</th><th data-sort="varr">Var</th><th data-sort="pct">%</th>
-            <th data-sort="previa">Prévia</th><th data-sort="premio">Prêmio (USD)</th>
+            <th data-sort="previa">Prévia</th><th data-sort="preco_saca_brl">R$/saca</th><th data-sort="premio">Prêmio (USD)</th>
             <th data-sort="fob_usd">FOB (USD/sc)</th><th data-sort="fob_real">FOB (R$/sc)</th>
             <th data-sort="fas_usd">FAS (USD/sc)</th><th data-sort="fas_real">FAS (R$/sc)</th><th></th>
           </tr></thead>
           <tbody id="cotacoesBody"></tbody>
         </table>
         </div>
-        <div class="map-note" style="margin-top:8px;">Cotações e câmbio manual inseridos pela equipe. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
+        <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
       </div>
 
       <!-- NEGOCIAÇÕES -->
@@ -926,12 +928,13 @@ document.getElementById("editDolarBtn").addEventListener("click", openDolarModal
 function renderCotacoes() {
   let list = data.cotacoes || []; const st = sortState.cotacoes; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("cotacoesBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="13">Nenhuma cotação cadastrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="14">Nenhuma cotação cadastrada.</td></tr>` :
     list.map(c => `<tr>
       <td>${c.produto}</td><td>${c.mes||"—"}</td><td>${c.codigo||"—"}</td>
       <td>${Number(c.ultima).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${fmtSigned(c.varr)}</td><td>${fmtSigned(c.pct)}%</td>
       <td>${Number(c.previa).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+      <td>${c.preco_saca_brl ? fmtMoney(c.preco_saca_brl) : "—"}</td>
       <td>${Number(c.premio).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${Number(c.fob_usd).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${Number(c.fob_real).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
@@ -941,6 +944,26 @@ function renderCotacoes() {
     </tr>`).join("");
 }
 document.querySelectorAll('#page-cotacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cotacoes", th.dataset.sort, renderCotacoes)));
+async function atualizarCbotAgora() {
+  const btn = document.getElementById("atualizarCbotBtn");
+  const status = document.getElementById("cbotStatus");
+  btn.disabled = true; btn.textContent = "Atualizando...";
+  try {
+    const resp = await fetch("/.netlify/functions/atualizar-cotacoes");
+    const json = await resp.json();
+    if (json.ok) {
+      const okCount = json.resultados.filter(r => r.ok).length;
+      status.textContent = `Atualizado às ${new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} (${okCount}/${json.resultados.length})`;
+      await loadCotacoes(); renderCotacoes();
+    } else {
+      status.textContent = "Erro: " + (json.erro || "falha desconhecida");
+    }
+  } catch (e) {
+    status.textContent = "Erro ao atualizar (função indisponível localmente)";
+  }
+  btn.disabled = false; btn.textContent = "Atualizar CBOT agora";
+}
+document.getElementById("atualizarCbotBtn").addEventListener("click", atualizarCbotAgora);
 function openCotacaoModal(id) {
   const item = id ? data.cotacoes.find(c => c.id === id) : { produto: "", mes: "", codigo: "", ultima: "", varr: "", pct: "", previa: "", premio: "", fob_usd: "", fob_real: "", fas_usd: "", fas_real: "" };
   document.getElementById("modalContent").innerHTML = `

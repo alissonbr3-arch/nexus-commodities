@@ -16,6 +16,23 @@ Já está publicado em: https://nexuscommodities.netlify.app/
 - Autenticação: e-mail/senha (Supabase Auth), 3 contas já criadas para os corretores.
 - Cotação do dólar (PTAX) é atualizada automaticamente todo dia útil às 18h por uma tarefa agendada que já está rodando — não precisa mexer em nada aqui.
 
+## Cotações automáticas (CBOT via Yahoo Finance)
+
+- `netlify/functions/_cotacoes-lib.mjs` — lógica compartilhada: busca Soja Set/Nov/Mar
+  (`ZSU26.CBT`/`ZSX26.CBT`/`ZSH27.CBT`) e Milho CBOT (`ZC=F`) na API não-oficial do
+  Yahoo Finance, converte pra R$/saca usando o câmbio salvo em `nexus_dolar`, e grava
+  em `nexus_cotacoes` (casando pela coluna `codigo`).
+- `netlify/functions/atualizar-cotacoes.mjs` — versão invocável na hora (botão
+  "Atualizar CBOT agora" na tela de Cotações, chama `/.netlify/functions/atualizar-cotacoes`).
+- `netlify/functions/atualizar-cotacoes-cron.mjs` — mesma lógica, mas roda sozinha de
+  hora em hora em dias úteis (`schedule` no próprio arquivo).
+- Precisa da variável de ambiente `SUPABASE_SERVICE_ROLE_KEY` configurada no Netlify
+  (Site settings → Environment variables) — é a chave `service_role` do projeto
+  Supabase (Settings → API), usada só no servidor pra poder escrever na tabela
+  ignorando RLS. **Nunca** coloque essa chave no `index.html` nem no código do site.
+- Milho B3 e as demais linhas continuam manuais — não existe API acessível para isso
+  (só licenciamento institucional direto com a B3).
+
 ## Como publicar uma atualização
 
 Este site já está conectado à sua conta Netlify (site `nexuscommodities`). Duas formas de publicar depois de editar o `index.html`:
