@@ -187,23 +187,23 @@
   .team-card .t-role { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
   .team-card .t-order { font-size: 10.5px; color: var(--ink-dim); margin-top: 8px; letter-spacing: .04em; text-transform: uppercase; }
 
-  .ws-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .ws-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px; display: flex; flex-direction: column; gap: 8px; }
   .ws-card .ws-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-  .ws-card .ws-name { font-size: 14px; font-weight: 500; }
-  .ws-card .ws-sub { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
-  .ws-metrics { display: flex; gap: 10px; }
-  .ws-metrics .m { flex: 1; background: var(--card-alt); border-radius: 8px; padding: 8px 10px; }
-  .ws-metrics .m .k { font-size: 10.5px; color: var(--ink-soft); }
-  .ws-metrics .m .v { font-size: 14px; font-weight: 500; margin-top: 2px; }
+  .ws-card .ws-name { font-size: 12.5px; font-weight: 500; }
+  .ws-card .ws-sub { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
+  .ws-metrics { display: flex; gap: 8px; }
+  .ws-metrics .m { flex: 1; background: var(--card-alt); border-radius: 8px; padding: 6px 8px; }
+  .ws-metrics .m .k { font-size: 9.5px; color: var(--ink-soft); }
+  .ws-metrics .m .v { font-size: 12.5px; font-weight: 500; margin-top: 2px; }
   .ws-progress { height: 6px; border-radius: 3px; background: var(--card-alt); overflow: hidden; }
   .ws-progress .bar { height: 100%; background: var(--gold); }
-  .ws-reminder { font-size: 12px; color: var(--ink-soft); background: var(--card-alt); border-radius: 7px; padding: 8px 10px; min-height: 14px; }
-  .ws-reminder-input { flex: 1; font-size: 12px; color: var(--ink); background: var(--card-alt); border: 1px solid transparent; border-radius: 7px; padding: 8px 10px; font-family: inherit; min-width: 0; }
+  .ws-reminder { font-size: 11px; color: var(--ink-soft); background: var(--card-alt); border-radius: 7px; padding: 7px 9px; min-height: 14px; }
+  .ws-reminder-input { flex: 1; font-size: 11px; color: var(--ink); background: var(--card-alt); border: 1px solid transparent; border-radius: 7px; padding: 7px 9px; font-family: inherit; min-width: 0; }
   .ws-reminder-input:hover, .ws-reminder-input:focus { border-color: var(--border); outline: none; }
   .ws-reminder-input::placeholder { color: var(--ink-dim); }
   .ws-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .ws-phone { font-size: 12px; color: var(--ink-soft); }
-  .contact-toggle { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
+  .contact-toggle { display: flex; align-items: center; gap: 6px; padding: 5px 9px; font-size: 11px; }
   .contact-toggle.done { background: var(--green-soft); color: var(--green); }
   .contact-toggle.pending { background: var(--red-soft); color: var(--red); }
 
@@ -381,6 +381,7 @@
         <div class="panel-head">
           <h2>Funil — intenção de venda</h2>
           <div class="actions-left">
+            <select class="filter" id="funilFilterResponsavel"><option value="">Todos os responsáveis</option></select>
             <button class="btn-primary" id="addIntencaoBtn">+ Nova intenção</button>
           </div>
         </div>
@@ -483,7 +484,7 @@
         <div class="totals-strip" id="wsTotals"></div>
         <div class="team-grid" id="wsCards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));"></div>
         <table id="wsListTable" style="display:none">
-          <thead><tr><th>Nome</th><th>Tipo</th><th>Cidade/UF</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
           <tbody id="wsListBody"></tbody>
         </table>
       </div>
@@ -849,6 +850,7 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
     <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
     <div class="field" id="f_comissaoSplitDisplay" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretora/100)} corretora (${data.config.comissao_pct_corretora}%) · ${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretor/100)} corretor (${data.config.comissao_pct_corretor}%)</div>
+    <div class="field"><label>Quem paga a comissão</label><select id="f_comissaoPagador"><option ${(!item.comissao_pagador||item.comissao_pagador==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador==="Comprador"?"selected":""}>Comprador</option></select></div>
     <div class="field-row"><div class="field"><label>Modalidade</label><input type="text" id="f_modalidade" value="${item.modalidade||"FOB"}"></div><div class="field"><label>Local de origem</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
@@ -869,6 +871,7 @@ async function saveNegocio(id) {
   const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null,
     quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
+    comissao_pagador: v("f_comissaoPagador") || "Vendedor",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
@@ -950,14 +953,15 @@ function gerarConfirmacao(negocioId) {
     <li>Fica eleito o foro da comarca de São Gabriel do Oeste/MS como o competente para solução de quaisquer dúvidas ou litígios que derivem deste instrumento ou qualquer outro, a critério do COMPRADOR.</li>
   </ol>
 
-  <p><strong>COMISSÃO:</strong> ${fmtMoney(n.comissao_saca || 0)} por saca paga pelo VENDEDOR para ${NEXUS_EMPRESA.nome}, CNPJ: ${NEXUS_EMPRESA.cnpj}</p>`;
+  <p><strong>COMISSÃO:</strong> ${fmtMoney(n.comissao_saca || 0)} por saca paga pelo ${(n.comissao_pagador || "Vendedor").toUpperCase()} para ${NEXUS_EMPRESA.nome}, CNPJ: ${NEXUS_EMPRESA.cnpj}</p>`;
 
   const temModeloProprio = (comprador.modelo_contrato || "").trim().length > 0;
   const boilerplateHtml = temModeloProprio
     ? `<div style="white-space:pre-wrap">${escapeHtml(comprador.modelo_contrato)
         .replace(/\{\{VENDEDOR\}\}/g, vendedor.nome)
         .replace(/\{\{COMPRADOR\}\}/g, comprador.nome)
-        .replace(/\{\{COMISSAO_SACA\}\}/g, fmtMoney(n.comissao_saca || 0))}</div>`
+        .replace(/\{\{COMISSAO_SACA\}\}/g, fmtMoney(n.comissao_saca || 0))
+        .replace(/\{\{COMISSAO_PAGADOR\}\}/g, (n.comissao_pagador || "Vendedor").toUpperCase())}</div>`
     : defaultBoilerplateHtml;
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Confirmação ${n.numero_contrato || ""}</title>
@@ -1222,7 +1226,7 @@ function openContatoModal(id) {
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
       <div class="field">
         <label>Modelo de contrato (cláusulas da Confirmação de Negócio)</label>
-        <textarea id="f_modeloContrato" rows="8" placeholder="Deixe em branco para usar o modelo padrão da Nexus. Cole aqui o texto das cláusulas próprias deste comprador para substituir Qualidade/Contaminantes/Condições Gerais/Comissão na Confirmação. Use {{VENDEDOR}}, {{COMPRADOR}} e {{COMISSAO_SACA}} onde quiser que o sistema preencha automaticamente.">${item.modelo_contrato || ""}</textarea>
+        <textarea id="f_modeloContrato" rows="8" placeholder="Deixe em branco para usar o modelo padrão da Nexus. Cole aqui o texto das cláusulas próprias deste comprador para substituir Qualidade/Contaminantes/Condições Gerais/Comissão na Confirmação. Use {{VENDEDOR}}, {{COMPRADOR}}, {{COMISSAO_SACA}} e {{COMISSAO_PAGADOR}} onde quiser que o sistema preencha automaticamente.">${item.modelo_contrato || ""}</textarea>
       </div>
     </div>
     <div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div>
@@ -1411,9 +1415,8 @@ function renderWorkspace() {
         <div class="ws-head">
           <div style="display:flex;align-items:center;gap:10px">
             ${avatarThumbHtml(c, 34)}
-            <div><div class="ws-name">${c.nome}</div><div class="ws-sub">${c.tipo} · ${c.cidade || "—"}</div></div>
+            <div class="ws-name">${c.nome}</div>
           </div>
-          <span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span>
         </div>
         <div class="ws-metrics">
           <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_soja)} / ${fmtNum(negSoja)} sc</div></div>
@@ -1431,14 +1434,12 @@ function renderWorkspace() {
       </div>`;
     }).join("");
 
-  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
+  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
     clientes.map(c => {
       const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
       const contatadoHoje = c.last_contact_date === today;
       return `<tr>
         <td>${c.nome}</td>
-        <td><span class="badge ${c.tipo==="Produtor"?"venda":(c.tipo==="Comprador"?"compra":"afazer")}">${c.tipo}</span></td>
-        <td>${c.cidade || "—"}</td>
         <td>${fmtNum(c.volume_anual_soja)}</td>
         <td>${fmtNum(negSoja)}</td>
         <td>${fmtNum(c.volume_anual_milho)}</td>
@@ -1485,14 +1486,34 @@ async function enviarAoFunil(produtorId, btnEl) {
 // ---------------- FUNIL ----------------
 const FUNIL_STATUS = ["Ofertado", "Intenção registrada", "Preço bateu", "Convertido", "Perdido"];
 function nomeCadastro(id) { const c = data.cadastros.find(x => x.id === id); return c ? c.nome : "—"; }
+function avatarEquipeThumbHtml(userId, size) {
+  size = size || 26;
+  const e = data.equipe.find(x => x.user_id === userId);
+  if (!e) return "";
+  if (e.avatar_url) return `<img src="${e.avatar_url}" title="${e.nome}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  const iniciais = e.nome.split(" ").map(p=>p[0]).slice(0,2).join("").toUpperCase();
+  return `<div title="${e.nome}" style="width:${size}px;height:${size}px;border-radius:50%;background:var(--gold-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:500;flex-shrink:0">${iniciais}</div>`;
+}
+let funilFilterResponsavelId = "";
+function renderFunilFilterSelect() {
+  const sel = document.getElementById("funilFilterResponsavel");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">Todos os responsáveis</option>` + data.equipe.map(e => `<option value="${e.user_id}" ${e.user_id===funilFilterResponsavelId?"selected":""}>${e.nome}</option>`).join("");
+}
+document.getElementById("funilFilterResponsavel").addEventListener("change", (e) => { funilFilterResponsavelId = e.target.value; renderFunil(); });
 function renderFunil() {
   const board = document.getElementById("funilBoard");
   if (!board) return;
+  renderFunilFilterSelect();
+  const todas = funilFilterResponsavelId ? data.intencoes.filter(it => it.owner_id === funilFilterResponsavelId) : data.intencoes;
   board.innerHTML = FUNIL_STATUS.map(status => {
-    const itens = data.intencoes.filter(it => it.status === status);
+    const itens = todas.filter(it => it.status === status);
     const cards = itens.map(it => `
       <div class="funil-card" draggable="true" data-id="${it.id}" ondragstart="onFunilCardDragStart(event,'${it.id}')" ondragend="onFunilCardDragEnd(event)">
-        <div class="fc-name">${nomeCadastro(it.produtor_id)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="fc-name">${nomeCadastro(it.produtor_id)}</div>
+          ${avatarEquipeThumbHtml(it.owner_id, 26)}
+        </div>
         <div class="fc-sub">${it.grao} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + nomeCadastro(it.comprador_id) : ""}</div>
         <div class="fc-precos"><span>Alvo: ${fmtMoney(it.preco_alvo)}</span><span>Ref.: ${fmtMoney(it.preco_referencia)}</span></div>
         ${it.obs ? `<div class="fc-sub">${it.obs}</div>` : ""}
