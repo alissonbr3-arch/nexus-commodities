@@ -896,6 +896,7 @@ function gerarConfirmacao(negocioId) {
   const fazenda = n.fazenda_id ? data.fazendas.find(f => f.id === n.fazenda_id) : null;
   const propriedadeNome = fazenda ? fazenda.nome : (vendedor.propriedade || "—");
   const propriedadeMunicipioUf = fazenda ? (fazenda.municipio_uf || vendedor.cidade || "—") : (vendedor.cidade || "—");
+  const propriedadeIE = fazenda ? (fazenda.inscricao_estadual || "—") : (vendedor.inscricao_estadual || "—");
   const sacas = Number(n.quantidade || 0);
   const kg = sacas * 60;
   const preco = Number(n.preco || 0);
@@ -985,7 +986,7 @@ function gerarConfirmacao(negocioId) {
   <table class="dados">
     <tr><td class="label">VENDEDOR</td><td>${vendedor.nome}</td></tr>
     <tr><td class="label">CPF</td><td>${vendedor.cpf || "—"}</td></tr>
-    <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${vendedor.inscricao_estadual || "—"}</td></tr>
+    <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${propriedadeIE}</td></tr>
     <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
     <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
     <tr><td class="label">DADOS BANCÁRIOS</td><td>${vendedor.dados_bancarios || "—"}</td></tr>
@@ -1167,21 +1168,24 @@ function renderFazendasSectionHtml(produtorId) {
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
   const lista = fazendas.length === 0 ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px">Nenhuma fazenda cadastrada.</div>` :
     fazendas.map(f => `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--card-alt);border-radius:7px;padding:7px 10px;margin-bottom:6px;font-size:12.5px">
-      <span>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}${f.area_estimada ? " · " + fmtNum(f.area_estimada) + " ha" : ""}</span>
+      <span>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}${f.area_estimada ? " · " + fmtNum(f.area_estimada) + " ha" : ""}${f.inscricao_estadual ? " · IE " + f.inscricao_estadual : ""}</span>
       <button class="btn-danger-text" style="padding:2px 6px" onclick="deleteFazenda('${f.id}','${produtorId}')">Excluir</button>
     </div>`).join("");
   return `${lista}
     <div class="field-row" style="margin-top:6px">
       <div class="field"><input type="text" id="f_fazNome" placeholder="Nome da fazenda"></div>
       <div class="field"><input type="text" id="f_fazMunicipio" placeholder="Município/UF"></div>
+    </div>
+    <div class="field-row">
       <div class="field"><input type="number" id="f_fazArea" placeholder="Área (ha)"></div>
+      <div class="field"><input type="text" id="f_fazIE" placeholder="Inscrição Estadual"></div>
     </div>
     <button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="addFazenda('${produtorId}')">+ Adicionar fazenda</button>`;
 }
 async function addFazenda(produtorId) {
   const nome = v("f_fazNome");
   if (!nome) { alert("Informe o nome da fazenda."); return; }
-  await sb.from("nexus_fazendas").insert([{ produtor_id: produtorId, nome, municipio_uf: v("f_fazMunicipio"), area_estimada: n("f_fazArea") }]);
+  await sb.from("nexus_fazendas").insert([{ produtor_id: produtorId, nome, municipio_uf: v("f_fazMunicipio"), area_estimada: n("f_fazArea"), inscricao_estadual: v("f_fazIE") }]);
   await loadFazendas();
   document.getElementById("fazendasSection").innerHTML = renderFazendasSectionHtml(produtorId);
 }
@@ -1210,8 +1214,8 @@ function openContatoModal(id) {
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     <div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
-      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_produtor" value="${item.inscricao_estadual||""}"></div></div>
-      <div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div>
+      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
+      <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
       <div class="field"><label>Fazendas</label><div id="fazendasSection">${renderFazendasSectionHtml(id)}</div></div>
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
@@ -1232,7 +1236,7 @@ async function saveContato(id) {
   const tipo = v("f_ctipo");
   const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
-    inscricao_estadual: tipo === "Produtor" ? v("f_ie_produtor") : (tipo === "Comprador" ? v("f_ie_comprador") : ""),
+    inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
     dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "",
     modelo_contrato: tipo === "Comprador" ? v("f_modeloContrato") : "" };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
