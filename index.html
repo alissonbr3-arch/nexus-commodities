@@ -400,6 +400,20 @@
         </table>
         </div>
         <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
+
+        <div class="ws-card" style="max-width:420px;margin-top:16px">
+          <div class="ws-name" style="margin-bottom:4px">Preço da praça — Soja (São Gabriel do Oeste)</div>
+          <div class="ws-sub" style="margin-bottom:16px">Preço praça = CBOT do contrato vigente (R$/saca) + Prêmio (basis) − Taxa portuária/Embarque − Frete, convertidos pro câmbio do dia. Aparece no topo do Workspace.</div>
+          <div class="field"><label>Contrato vigente</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Setembro</option><option>Novembro</option><option>Março</option></select></div>
+          <div class="field-row">
+            <div class="field"><label>Prêmio / basis (USD/bushel)</label><input type="number" step="0.0001" id="f_cfgPremio" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
+            <div class="field"><label>Taxa portuária / Embarque (USD/tonelada)</label><input type="number" step="0.01" id="f_cfgTaxaPortuaria" oninput="atualizarPreviewPrecoPraca()"></div>
+          </div>
+          <div class="field"><label>Frete (R$/tonelada)</label><input type="number" step="0.01" id="f_cfgFrete" oninput="atualizarPreviewPrecoPraca()"></div>
+          <div id="cfgPrecoPracaPreview" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px"></div>
+          <button class="btn-primary" onclick="salvarPrecoPraca()">Salvar</button>
+          <div id="cfgPracaSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
+        </div>
       </div>
 
       <!-- NEGOCIAÇÕES -->
@@ -583,17 +597,15 @@
         </div>
 
         <div class="ws-card" style="max-width:420px;margin-top:16px">
-          <div class="ws-name" style="margin-bottom:4px">Preço da praça — Soja (São Gabriel do Oeste)</div>
-          <div class="ws-sub" style="margin-bottom:16px">Preço praça = CBOT do contrato vigente (já convertido pra R$/saca) + Prêmio (basis) − Taxa portuária − Frete. Aparece no topo do Workspace.</div>
-          <div class="field"><label>Contrato vigente</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Setembro</option><option>Novembro</option><option>Março</option></select></div>
+          <div class="ws-name" style="margin-bottom:4px">Descontos padrão (Confirmação de Negócio)</div>
+          <div class="ws-sub" style="margin-bottom:16px">Usados para calcular o Total Líquido que aparece na Confirmação de Negócio, junto do Bruto. O Senar (0,2%) é fixo por lei e não precisa ser configurado.</div>
           <div class="field-row">
-            <div class="field"><label>Prêmio / basis (R$/saca)</label><input type="number" step="0.01" id="f_cfgPremio" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
-            <div class="field"><label>Taxa portuária (R$/saca)</label><input type="number" step="0.01" id="f_cfgTaxaPortuaria" oninput="atualizarPreviewPrecoPraca()"></div>
+            <div class="field"><label>Fundersul (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundersul"></div>
+            <div class="field"><label>Fundems (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundems"></div>
           </div>
-          <div class="field"><label>Frete (R$/saca)</label><input type="number" step="0.01" id="f_cfgFrete" oninput="atualizarPreviewPrecoPraca()"></div>
-          <div id="cfgPrecoPracaPreview" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px"></div>
-          <button class="btn-primary" onclick="salvarPrecoPraca()">Salvar</button>
-          <div id="cfgPracaSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
+          <div class="field"><label>Funrural sobre a comercialização (%)</label><input type="number" step="0.01" id="f_cfgFunruralPct"></div>
+          <button class="btn-primary" onclick="salvarDescontosPadrao()">Salvar</button>
+          <div id="cfgDescontosSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
         </div>
       </div>
 
@@ -704,7 +716,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_intencoes" }, async () => { await loadIntencoes(); renderFunil(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_fazendas" }, async () => { await loadFazendas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_equipe" }, async () => { await loadEquipe(); renderEquipe(); atualizarAvatarHeader(); })
@@ -958,6 +970,12 @@ function renderCotacoes() {
       <td>${Number(c.fas_real).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td><button class="btn-edit-text" onclick="openCotacaoModal('${c.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_cotacoes','${c.id}', loadCotacoes, renderCotacoes)">Excluir</button></td>
     </tr>`).join("");
+
+  document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Setembro";
+  document.getElementById("f_cfgPremio").value = data.config.soja_premio_basis || 0;
+  document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
+  document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
+  atualizarPreviewPrecoPraca();
 }
 document.querySelectorAll('#page-cotacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cotacoes", th.dataset.sort, renderCotacoes)));
 async function atualizarCbotAgora() {
@@ -1082,6 +1100,7 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
     <div class="field" id="f_comissaoSplitDisplay" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretora/100)} corretora (${data.config.comissao_pct_corretora}%) · ${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretor/100)} corretor (${data.config.comissao_pct_corretor}%)</div>
     <div class="field"><label>Quem paga a comissão</label><select id="f_comissaoPagador"><option ${(!item.comissao_pagador||item.comissao_pagador==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador==="Comprador"?"selected":""}>Comprador</option></select></div>
+    <div class="field"><label>Funrural (como o produtor recolhe)</label><select id="f_funruralForma"><option ${(!item.funrural_forma||item.funrural_forma==="Comercialização")?"selected":""}>Comercialização</option><option ${item.funrural_forma==="Folha de Pagamento"?"selected":""}>Folha de Pagamento</option></select></div>
     <div class="field-row"><div class="field"><label>Modalidade</label><input type="text" id="f_modalidade" value="${item.modalidade||"FOB"}"></div><div class="field"><label>Local de origem</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
@@ -1102,7 +1121,7 @@ async function saveNegocio(id) {
   const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null,
     quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
-    comissao_pagador: v("f_comissaoPagador") || "Vendedor",
+    comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
@@ -1121,6 +1140,42 @@ document.getElementById("addNegocioBtn").addEventListener("click", () => openNeg
 // ---------------- CONFIRMAÇÃO DE NEGÓCIO ----------------
 function extenso2(n) { return String(n).padStart(2, "0"); }
 function escapeHtml(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+const EXTENSO_UNIDADES = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
+const EXTENSO_DEZ_A_DEZENOVE = ["dez", "onze", "doze", "treze", "catorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+const EXTENSO_DEZENAS = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+const EXTENSO_CENTENAS = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+function extensoGrupo(n) {
+  if (n === 0) return "";
+  if (n === 100) return "cem";
+  const c = Math.floor(n / 100), r = n % 100;
+  const partes = [];
+  if (c) partes.push(EXTENSO_CENTENAS[c]);
+  if (r) {
+    if (r < 10) partes.push(EXTENSO_UNIDADES[r]);
+    else if (r < 20) partes.push(EXTENSO_DEZ_A_DEZENOVE[r - 10]);
+    else { const d = Math.floor(r / 10), u = r % 10; partes.push(EXTENSO_DEZENAS[d] + (u ? " e " + EXTENSO_UNIDADES[u] : "")); }
+  }
+  return partes.join(" e ");
+}
+function valorPorExtenso(valor) {
+  valor = Math.round(Math.abs(Number(valor || 0)) * 100) / 100;
+  const inteiro = Math.floor(valor);
+  const centavos = Math.round((valor - inteiro) * 100);
+  if (inteiro === 0 && centavos === 0) return "zero reais";
+  const milhoes = Math.floor(inteiro / 1000000);
+  const milhares = Math.floor((inteiro % 1000000) / 1000);
+  const unidade = inteiro % 1000;
+  const partes = [];
+  if (milhoes) partes.push(extensoGrupo(milhoes) + (milhoes === 1 ? " milhão" : " milhões"));
+  if (milhares) partes.push(extensoGrupo(milhares) + " mil");
+  if (unidade) partes.push(extensoGrupo(unidade));
+  let resultado = inteiro > 0 ? `${partes.join(", ")} ${inteiro === 1 ? "real" : "reais"}` : "";
+  if (centavos > 0) {
+    const centavosTxt = `${extensoGrupo(centavos)} ${centavos === 1 ? "centavo" : "centavos"}`;
+    resultado = resultado ? `${resultado} e ${centavosTxt}` : centavosTxt;
+  }
+  return resultado;
+}
 function gerarConfirmacao(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
@@ -1135,6 +1190,12 @@ function gerarConfirmacao(negocioId) {
   const kg = sacas * 60;
   const preco = Number(n.preco || 0);
   const total = preco * sacas;
+  const senar = total * 0.002;
+  const fundersulTotal = Number(data.config.fundersul_saca || 0) * sacas;
+  const fundemsTotal = Number(data.config.fundems_saca || 0) * sacas;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
+  const liquido = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const defaultBoilerplateHtml = `
@@ -1242,7 +1303,10 @@ function gerarConfirmacao(negocioId) {
     <tr><td class="label">PRAZO PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
   </table>
-  <p><strong>PREÇO PRE-FIXADO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas, resultando num total de ${fmtMoney(total)} (Bruto). Descontos a serem realizados: Comissão + 0,2% Senar + Fundersul valor vigente + Fundems valor vigente + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.</p>
+  <p><strong>PREÇO PRE-FIXADO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.<br>
+  <strong>TOTAL BRUTO:</strong> ${fmtMoney(total)} (${valorPorExtenso(total)}).<br>
+  <strong>TOTAL LÍQUIDO (estimado):</strong> ${fmtMoney(liquido)} (${valorPorExtenso(liquido)}) — após Comissão, 0,2% Senar, Fundersul, Fundems${funruralForma === "Comercialização" ? " e Funrural" : ""}.<br>
+  <strong>FUNRURAL:</strong> recolhido pelo produtor na ${funruralForma}${funruralForma === "Comercialização" ? `, retido no ato do pagamento` : `, sem retenção nesta comercialização`}. ICMS: Não incidente em se tratando de produtor rural.</p>
 
   ${boilerplateHtml}
 
@@ -1939,11 +2003,9 @@ function renderConfiguracoes() {
   elA.value = data.config.comissao_pct_corretora;
   elB.value = data.config.comissao_pct_corretor;
 
-  document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Setembro";
-  document.getElementById("f_cfgPremio").value = data.config.soja_premio_basis || 0;
-  document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
-  document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
-  atualizarPreviewPrecoPraca();
+  document.getElementById("f_cfgFundersul").value = data.config.fundersul_saca || 0;
+  document.getElementById("f_cfgFundems").value = data.config.fundems_saca || 0;
+  document.getElementById("f_cfgFunruralPct").value = data.config.funrural_pct ?? 1.5;
 }
 function onCfgPctChange(campo) {
   const a = document.getElementById("f_cfgPctCorretora"), b = document.getElementById("f_cfgPctCorretor");
@@ -1959,15 +2021,22 @@ async function saveConfiguracoes() {
 }
 
 // ---------------- PREÇO DE PRAÇA (SOJA) ----------------
+const BUSHEL_POR_SACA_SOJA = 60 / 27.2155;
+const TON_POR_SACA = 60 / 1000;
+function dolarAtual() { return Number(data.dolar?.ptax_auto || data.dolar?.atual || data.dolar?.ptax || 0); }
 function calcularPrecoPraca() {
   const contrato = data.config.soja_contrato_vigente || "Setembro";
   const cot = data.cotacoes.find(c => c.produto === "Soja" && c.mes === contrato);
   const cbotSaca = cot ? Number(cot.preco_saca_brl || 0) : 0;
-  const premio = Number(data.config.soja_premio_basis || 0);
-  const taxa = Number(data.config.soja_taxa_portuaria || 0);
-  const frete = Number(data.config.soja_frete || 0);
+  const dolar = dolarAtual();
+  const premioUsdBu = Number(data.config.soja_premio_basis || 0);
+  const taxaUsdTon = Number(data.config.soja_taxa_portuaria || 0);
+  const freteRsTon = Number(data.config.soja_frete || 0);
+  const premio = premioUsdBu * BUSHEL_POR_SACA_SOJA * dolar;
+  const taxa = taxaUsdTon * TON_POR_SACA * dolar;
+  const frete = freteRsTon * TON_POR_SACA;
   const total = cbotSaca + premio - taxa - frete;
-  return { contrato, cbotSaca, premio, taxa, frete, total, temCotacao: !!cot, atualizadoEm: cot?.updated_at };
+  return { contrato, cbotSaca, premio, taxa, frete, total, dolar, temCotacao: !!cot, atualizadoEm: cot?.updated_at };
 }
 function atualizarPreviewPrecoPraca() {
   const el = document.getElementById("cfgPrecoPracaPreview");
@@ -1975,10 +2044,13 @@ function atualizarPreviewPrecoPraca() {
   const contrato = v("f_cfgContratoVigente");
   const cot = data.cotacoes.find(c => c.produto === "Soja" && c.mes === contrato);
   const cbotSaca = cot ? Number(cot.preco_saca_brl || 0) : 0;
-  const premio = n("f_cfgPremio"), taxa = n("f_cfgTaxaPortuaria"), frete = n("f_cfgFrete");
+  const dolar = dolarAtual();
+  const premio = n("f_cfgPremio") * BUSHEL_POR_SACA_SOJA * dolar;
+  const taxa = n("f_cfgTaxaPortuaria") * TON_POR_SACA * dolar;
+  const frete = n("f_cfgFrete") * TON_POR_SACA;
   const total = cbotSaca + premio - taxa - frete;
   el.innerHTML = cot
-    ? `CBOT ${contrato}: ${fmtMoney(cbotSaca)} + Prêmio ${fmtMoney(premio)} − Taxa ${fmtMoney(taxa)} − Frete ${fmtMoney(frete)} = <strong style="color:var(--gold)">${fmtMoney(total)}/saca</strong>`
+    ? `CBOT ${contrato}: ${fmtMoney(cbotSaca)} + Prêmio ${fmtMoney(premio)} − Taxa ${fmtMoney(taxa)} − Frete ${fmtMoney(frete)} (câmbio ${dolar.toLocaleString("pt-BR",{minimumFractionDigits:4})}) = <strong style="color:var(--gold)">${fmtMoney(total)}/saca</strong>`
     : `Cotação de Soja ${contrato} ainda não tem R$/saca calculado — atualize em Cotações primeiro.`;
 }
 async function salvarPrecoPraca() {
@@ -1992,6 +2064,18 @@ async function salvarPrecoPraca() {
   await sb.from("nexus_config").update(payload).eq("id", 1);
   await loadConfig(); renderConfiguracoes(); renderWorkspace();
   const msg = document.getElementById("cfgPracaSavedMsg");
+  msg.style.display = "block"; setTimeout(() => msg.style.display = "none", 2000);
+}
+async function salvarDescontosPadrao() {
+  const payload = {
+    fundersul_saca: n("f_cfgFundersul"),
+    fundems_saca: n("f_cfgFundems"),
+    funrural_pct: n("f_cfgFunruralPct"),
+    updated_at: new Date().toISOString(),
+  };
+  await sb.from("nexus_config").update(payload).eq("id", 1);
+  await loadConfig(); renderConfiguracoes();
+  const msg = document.getElementById("cfgDescontosSavedMsg");
   msg.style.display = "block"; setTimeout(() => msg.style.display = "none", 2000);
 }
 
