@@ -101,6 +101,8 @@
   .card .ic-badge { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; }
   .card .value { font-size: 19px; font-weight: 500; }
   .card .foot { font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; }
+  .unit-toggle { cursor: pointer; }
+  .unit-toggle.active { color: var(--gold); font-weight: 600; }
   .value.warn { color: var(--orange); }
   .value.alert { color: var(--red); }
 
@@ -763,15 +765,19 @@ function periodFilteredNegocios() {
 }
 
 // ---------------- DASHBOARD ----------------
+let dashVolumeUnit = "sc";
+function setDashVolumeUnit(u) { dashVolumeUnit = u; renderDashboard(); }
 function renderDashboard() {
   const list = periodFilteredNegocios();
   const emAndamento = list.filter(n => n.status === "Negociação" || n.status === "Fechado").length;
   const concluidos = list.filter(n => n.status === "Entregue" || n.status === "Pago").length;
-  const volumeTotal = list.reduce((s,n) => s + Number(n.quantidade||0), 0);
+  const volumeTotalSc = list.reduce((s,n) => s + Number(n.quantidade||0), 0);
+  const volumeValue = dashVolumeUnit === "ton" ? fmtNum(volumeTotalSc * TON_POR_SACA) + " ton" : fmtNum(volumeTotalSc) + " sc";
+  const volumeFoot = `<span class="unit-toggle ${dashVolumeUnit==='sc'?'active':''}" onclick="setDashVolumeUnit('sc')">sacas</span> · <span class="unit-toggle ${dashVolumeUnit==='ton'?'active':''}" onclick="setDashVolumeUnit('ton')">toneladas</span>`;
   const comissaoTotal = list.reduce((s,n) => s + Number(n.comissao||0), 0);
   const embarquesAtrasados = data.negocios.filter(n => n.data_fim_embarque && n.data_fim_embarque < todayISO() && !n.embarque_finalizado).length;
   const cards = [
-    { label: "Volume negociado", value: fmtNum(volumeTotal) + " ton", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Volume negociado", value: volumeValue, foot: volumeFoot, ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
     { label: "Comissões", value: fmtMoney(comissaoTotal), foot: "acumulado no período", ic: "$", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Em andamento", value: emAndamento, foot: `de ${list.length} no total`, ic: "&#8599;", bg: "var(--blue-soft)", color: "var(--blue)" },
     { label: "Concluídos", value: concluidos, foot: "negociações fechadas", ic: "&#10003;", bg: "var(--orange-soft)", color: "var(--orange)" },
