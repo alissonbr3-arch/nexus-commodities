@@ -1880,6 +1880,7 @@ function convertIntencao(intencaoId) {
   convertingIntencaoId = intencaoId;
   openNegocioModal(null);
   document.getElementById("f_produtorSelect").value = it.produtor_id || "";
+  onProdutorSelectChange();
   document.getElementById("f_grao").value = it.grao || "";
   document.getElementById("f_quantidade").value = it.quantidade_sacas || "";
   document.getElementById("f_preco").value = it.preco_alvo || "";
