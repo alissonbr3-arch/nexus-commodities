@@ -113,11 +113,11 @@
   .panel-card h3 { margin: 0 0 3px; font-size: 13.5px; }
   .panel-card .hint { font-size: 11.5px; color: var(--ink-soft); margin-bottom: 10px; }
 
-  .map-box { position: relative; height: 300px; border-radius: 8px; overflow: hidden; background: radial-gradient(circle at 30% 25%, rgba(217,171,52,0.08), transparent 45%), radial-gradient(circle at 70% 70%, rgba(74,139,176,0.08), transparent 45%), repeating-linear-gradient(0deg, #1a1a1a 0 1px, transparent 1px 34px), repeating-linear-gradient(90deg, #1a1a1a 0 1px, transparent 1px 34px), #151515; border: 1px solid var(--border); }
-  .map-pin { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; cursor: default; }
-  .map-pin .dot { width: 12px; height: 12px; border-radius: 50% 50% 50% 0; background: var(--blue); transform: rotate(-45deg); box-shadow: 0 0 0 3px rgba(74,139,176,0.2); }
-  .map-pin .lbl { margin-top: 4px; background: var(--card-alt); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; }
   .map-note { font-size: 10.5px; color: var(--ink-dim); margin-top: 6px; }
+  .rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .rank-row:last-child { border-bottom: none; }
+  .rank-num { width: 22px; height: 22px; border-radius: 50%; background: var(--card-alt); color: var(--ink-soft); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rank-row:nth-child(1) .rank-num { background: var(--gold-soft); color: var(--gold); }
 
   .chart-wrap { height: 240px; }
   .legend-row { display: flex; gap: 14px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
@@ -310,16 +310,29 @@
           <div class="cards" id="dashCards"></div>
           <div class="grid-2">
             <div class="panel-card">
-              <h3>Operações por região</h3>
-              <div class="hint">Posições ilustrativas dos contatos cadastrados</div>
-              <div class="map-box" id="mapBox"></div>
-              <div class="map-note">Mapa ilustrativo — não georreferenciado.</div>
+              <h3>Volume por comprador</h3>
+              <div class="hint">Participação de cada comprador no volume negociado</div>
+              <div class="chart-wrap"><canvas id="dashCompradorChart"></canvas></div>
+              <div class="legend-row" id="dashCompradorLegend"></div>
             </div>
             <div class="panel-card">
               <h3>Volume por grão</h3>
               <div class="hint">Participação de cada commodity no período</div>
               <div class="chart-wrap"><canvas id="graoChart"></canvas></div>
               <div class="legend-row" id="graoLegend"></div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Maiores corretores</h3>
+              <div class="hint">Participação de cada corretor na comissão total</div>
+              <div class="chart-wrap"><canvas id="dashCorretorChart"></canvas></div>
+              <div class="legend-row" id="dashCorretorLegend"></div>
+            </div>
+            <div class="panel-card">
+              <h3>Ranking de corretores</h3>
+              <div class="hint">Por comissão acumulada no período</div>
+              <div id="dashCorretorRanking"></div>
             </div>
           </div>
           <div class="panel-card">
@@ -643,7 +656,7 @@ function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : 
 let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [], fazendas: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = {};
 let currentPeriod = "tudo";
-let graoChart = null, comissaoChart = null;
+let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
 let compradorGraoChart = null, compradorVolumeMensalChart = null, produtorEstadoChart = null, produtorSafraChart = null, fluxoCaixaChart = null;
 let currentUserId = null;
 let wsOwnerId = null;
@@ -786,13 +799,32 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderMap(); renderGraoChart(list); renderComissaoChart();
+  renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list);
 }
-function renderMap() {
-  const box = document.getElementById("mapBox");
-  const positions = [{x:22,y:28},{x:55,y:20},{x:38,y:52},{x:70,y:45},{x:48,y:75},{x:80,y:65},{x:15,y:60},{x:63,y:32}];
-  const cidades = [...new Set(data.cadastros.map(c => c.cidade).filter(Boolean))];
-  box.innerHTML = cidades.map((cidade, i) => { const p = positions[i % positions.length]; return `<div class="map-pin" style="left:${p.x}%; top:${p.y}%;"><div class="dot"></div><div class="lbl">${cidade}</div></div>`; }).join("");
+function renderDashCompradorChart(list) {
+  const totals = {};
+  list.forEach(n => { const nome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"); totals[nome] = (totals[nome] || 0) + Number(n.quantidade || 0); });
+  const ordenado = Object.entries(totals).sort((a,b) => b[1] - a[1]);
+  const top = ordenado.slice(0, 6);
+  const outros = ordenado.slice(6).reduce((s,x) => s + x[1], 0);
+  const labels = top.map(x => x[0]).concat(outros > 0 ? ["Outros"] : []);
+  const values = top.map(x => x[1]).concat(outros > 0 ? [outros] : []);
+  const ctx = document.getElementById("dashCompradorChart"); if (dashCompradorChart) dashCompradorChart.destroy();
+  dashCompradorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  document.getElementById("dashCompradorLegend").innerHTML = labels.length === 0 ? `<div class="legend-chip">Sem dados</div>` :
+    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("");
+}
+function renderDashCorretorChart(list) {
+  const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.comissao_corretor||0), 0) })).filter(p => p.valor > 0).sort((a,b) => b.valor - a.valor);
+  const labels = porCorretor.map(p => p.nome);
+  const values = porCorretor.map(p => p.valor);
+  const ctx = document.getElementById("dashCorretorChart"); if (dashCorretorChart) dashCorretorChart.destroy();
+  dashCorretorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  document.getElementById("dashCorretorLegend").innerHTML = labels.length === 0 ? `<div class="legend-chip">Sem dados</div>` :
+    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("");
+  const max = Math.max(1, ...values);
+  document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor com comissão no período.</div>` :
+    porCorretor.map((p,i) => `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtMoney(p.valor)}</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`).join("");
 }
 function renderGraoChart(list) {
   const totals = {}; list.forEach(n => { totals[n.grao] = (totals[n.grao] || 0) + Number(n.quantidade || 0); });
