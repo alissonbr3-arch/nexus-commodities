@@ -87,6 +87,8 @@
   .subtabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
   .subtab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .subtab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .emb-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
+  .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
 
   .filters-row { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .period-btn { background: var(--card); border: 1px solid var(--border); color: var(--ink-soft); padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
@@ -453,21 +455,20 @@
       <!-- EMBARQUES -->
       <div class="page" id="page-embarques">
         <div class="panel-head">
-          <h2>Embarques e fretes</h2>
+          <h2>Embarques</h2>
           <div class="actions-left">
-            <input type="text" class="search-input" id="logSearch" placeholder="Buscar origem, destino ou transportadora...">
-            <select class="filter" id="logFilterStatus">
-              <option value="">Todos os status</option><option>Agendado</option><option>Em trânsito</option><option>Entregue</option><option>Atrasado</option>
-            </select>
-            <button class="btn-primary" id="addLogisticaBtn">+ Novo embarque</button>
+            <input type="text" class="search-input" id="embSearch" placeholder="Buscar contrato, comprador ou produtor...">
           </div>
+        </div>
+        <div class="subtabs" id="embTabs">
+          <button class="emb-tab-btn active" data-embtab="previstos">Previstos</button>
+          <button class="emb-tab-btn" data-embtab="finalizados">Finalizados</button>
         </div>
         <table>
           <thead><tr>
-            <th data-sort="origem">Origem</th><th data-sort="destino">Destino</th><th data-sort="transportadora">Transportadora</th>
-            <th data-sort="quantidade">Qtd (ton)</th><th data-sort="data_prevista">Data prevista</th><th data-sort="status">Status</th><th></th>
+            <th>Data embarque</th><th>Contrato</th><th>Produto/Safra</th><th>Comprador</th><th>Produtor</th><th>Quantidade (sc)</th><th></th>
           </tr></thead>
-          <tbody id="logisticaBody"></tbody>
+          <tbody id="embarquesBody"></tbody>
         </table>
       </div>
 
@@ -637,7 +638,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], embarques: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [], fazendas: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [], fazendas: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null;
@@ -688,7 +689,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadEmbarques(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -699,7 +700,6 @@ function setSyncStatus(ok) {
 }
 
 async function loadNegocios() { const { data: rows, error } = await sb.from("nexus_negocios").select("*").order("data", { ascending: false }); if (!error) data.negocios = rows || []; }
-async function loadEmbarques() { const { data: rows, error } = await sb.from("nexus_embarques").select("*").order("data_prevista", { ascending: false }); if (!error) data.embarques = rows || []; }
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
@@ -711,8 +711,7 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_embarques" }, async () => { await loadEmbarques(); renderLogistica(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
@@ -725,7 +724,7 @@ function wireRealtime() {
 }
 
 function renderAll() {
-  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderLogistica(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes();
+  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes();
   const activeSub = document.querySelector(".subtab-btn.active")?.dataset.subtab;
   if (activeSub === "compradores") renderDashboardCompradores();
   if (activeSub === "produtores") renderDashboardProdutores();
@@ -770,7 +769,7 @@ function renderDashboard() {
   const concluidos = list.filter(n => n.status === "Entregue" || n.status === "Pago").length;
   const volumeTotal = list.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const comissaoTotal = list.reduce((s,n) => s + Number(n.comissao||0), 0);
-  const embarquesAtrasados = data.embarques.filter(e => e.status === "Atrasado").length;
+  const embarquesAtrasados = data.negocios.filter(n => n.data_fim_embarque && n.data_fim_embarque < todayISO() && !n.embarque_finalizado).length;
   const cards = [
     { label: "Volume negociado", value: fmtNum(volumeTotal) + " ton", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
     { label: "Comissões", value: fmtMoney(comissaoTotal), foot: "acumulado no período", ic: "$", bg: "var(--green-soft)", color: "var(--green)" },
@@ -1167,7 +1166,7 @@ function valorPorExtenso(valor) {
   const unidade = inteiro % 1000;
   const partes = [];
   if (milhoes) partes.push(extensoGrupo(milhoes) + (milhoes === 1 ? " milhão" : " milhões"));
-  if (milhares) partes.push(extensoGrupo(milhares) + " mil");
+  if (milhares) partes.push(milhares === 1 ? "mil" : extensoGrupo(milhares) + " mil");
   if (unidade) partes.push(extensoGrupo(unidade));
   let resultado = inteiro > 0 ? `${partes.join(", ")} ${inteiro === 1 ? "real" : "reais"}` : "";
   if (centavos > 0) {
@@ -1325,37 +1324,120 @@ function gerarConfirmacao(negocioId) {
 }
 
 // ---------------- EMBARQUES ----------------
-function renderLogistica() {
-  const search = document.getElementById("logSearch").value.toLowerCase(); const filterStatus = document.getElementById("logFilterStatus").value;
-  let list = data.embarques.filter(l => (!search || l.origem.toLowerCase().includes(search) || l.destino.toLowerCase().includes(search) || l.transportadora.toLowerCase().includes(search)) && (!filterStatus || l.status === filterStatus));
-  const st = sortState.embarques; if (st && st.key) list = applySort(list, st.key, st.dir);
-  const body = document.getElementById("logisticaBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhum embarque encontrado.</td></tr>` :
-    list.map(l => `<tr><td>${l.origem}</td><td>${l.destino}</td><td>${l.transportadora}${l.placa ? " · " + l.placa : ""}</td><td>${fmtNum(l.quantidade)}</td><td>${fmtDate(l.data_prevista)}</td><td><span class="badge ${badgeClass(l.status)}">${l.status}</span></td>
-      <td><button class="btn-edit-text" onclick="openLogisticaModal('${l.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_embarques','${l.id}', loadEmbarques, renderLogistica)">Excluir</button></td></tr>`).join("");
-  renderDashboard();
+let embTab = "previstos";
+document.querySelectorAll("#embTabs .emb-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#embTabs .emb-tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    embTab = btn.dataset.embtab;
+    renderEmbarquesPage();
+  });
+});
+function renderEmbarquesPage() {
+  const body = document.getElementById("embarquesBody");
+  if (!body) return;
+  const search = (document.getElementById("embSearch").value || "").toLowerCase();
+  const finalizados = embTab === "finalizados";
+  let list = data.negocios.filter(n => (n.data_inicio_embarque || n.data_fim_embarque) && !!n.embarque_finalizado === finalizados);
+  if (search) {
+    list = list.filter(n =>
+      (n.numero_contrato || "").toLowerCase().includes(search) ||
+      nomeCadastro(n.cliente_id).toLowerCase().includes(search) ||
+      (n.contraparte || "").toLowerCase().includes(search) ||
+      nomeCadastro(n.produtor_id).toLowerCase().includes(search));
+  }
+  list.sort((a, b) => (a.data_inicio_embarque || a.data_fim_embarque || "").localeCompare(b.data_inicio_embarque || b.data_fim_embarque || ""));
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">${finalizados ? "Nenhum embarque finalizado ainda." : "Nenhum embarque previsto."}</td></tr>` :
+    list.map(n => {
+      const periodo = n.data_inicio_embarque && n.data_fim_embarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : fmtDate(n.data_inicio_embarque || n.data_fim_embarque);
+      const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
+      const acoes = finalizados
+        ? `<span style="font-size:11.5px;color:var(--ink-soft)">Finalizado em ${fmtDate((n.embarque_finalizado_em||"").slice(0,10))}</span>`
+        : `<button class="btn-edit-text" onclick="gerarLiberacaoEmbarque('${n.id}')">Liberação</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
+      return `<tr><td>${periodo}</td><td>${n.numero_contrato || "—"}</td><td>${(n.grao||"—")}${n.safra ? " " + n.safra : ""}</td><td>${comprador}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>${acoes}</td></tr>`;
+    }).join("");
 }
-document.getElementById("logSearch").addEventListener("input", renderLogistica);
-document.getElementById("logFilterStatus").addEventListener("change", renderLogistica);
-document.querySelectorAll('#page-embarques thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("embarques", th.dataset.sort, renderLogistica)));
-function openLogisticaModal(id) {
-  const item = id ? data.embarques.find(l => l.id === id) : { origem: "", destino: "", transportadora: "", placa: "", quantidade: "", data_prevista: "", status: "Agendado", obs: "" };
-  document.getElementById("modalContent").innerHTML = `
-    <h3>${id ? "Editar embarque" : "Novo embarque"}</h3>
-    <div class="field-row"><div class="field"><label>Origem</label><input type="text" id="f_origem" value="${item.origem}"></div><div class="field"><label>Destino</label><input type="text" id="f_destino" value="${item.destino}"></div></div>
-    <div class="field-row"><div class="field"><label>Transportadora</label><input type="text" id="f_transportadora" value="${item.transportadora}"></div><div class="field"><label>Placa</label><input type="text" id="f_placa" value="${item.placa || ""}"></div></div>
-    <div class="field-row"><div class="field"><label>Quantidade (ton)</label><input type="number" id="f_lquantidade" value="${item.quantidade}"></div><div class="field"><label>Data prevista</label><input type="date" id="f_dataPrevista" value="${item.data_prevista||""}"></div></div>
-    <div class="field"><label>Status</label><select id="f_lstatus">${["Agendado","Em trânsito","Entregue","Atrasado"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
-    <div class="field"><label>Observações</label><textarea id="f_lobs" rows="2">${item.obs || ""}</textarea></div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveLogistica('${id || ""}')">Salvar</button></div>`;
-  showModal();
+document.getElementById("embSearch").addEventListener("input", renderEmbarquesPage);
+async function finalizarEmbarque(id) {
+  const ok = await askConfirm("O embarque sai da lista de previstos e vai para Finalizados. Você pode continuar consultando os dados por lá.", "Finalizar embarque", "Finalizar", "btn-primary");
+  if (!ok) return;
+  await sb.from("nexus_negocios").update({ embarque_finalizado: true, embarque_finalizado_em: new Date().toISOString() }).eq("id", id);
+  await loadNegocios(); renderEmbarquesPage(); renderDashboard();
 }
-async function saveLogistica(id) {
-  const payload = { origem: v("f_origem")||"—", destino: v("f_destino")||"—", transportadora: v("f_transportadora")||"—", placa: v("f_placa"), quantidade: n("f_lquantidade"), data_prevista: v("f_dataPrevista") || null, status: v("f_lstatus"), obs: v("f_lobs") };
-  if (id) await sb.from("nexus_embarques").update(payload).eq("id", id); else await sb.from("nexus_embarques").insert([payload]);
-  await loadEmbarques(); closeModal(); renderLogistica();
+function numeroPorExtenso(valorInteiro) {
+  const inteiro = Math.round(Math.abs(Number(valorInteiro || 0)));
+  if (inteiro === 0) return "ZERO";
+  const milhoes = Math.floor(inteiro / 1000000);
+  const milhares = Math.floor((inteiro % 1000000) / 1000);
+  const unidade = inteiro % 1000;
+  const partes = [];
+  if (milhoes) partes.push(extensoGrupo(milhoes) + (milhoes === 1 ? " milhão" : " milhões"));
+  if (milhares) partes.push(milhares === 1 ? "mil" : extensoGrupo(milhares) + " mil");
+  if (unidade) partes.push(extensoGrupo(unidade));
+  return partes.join(", ").toUpperCase();
 }
-document.getElementById("addLogisticaBtn").addEventListener("click", () => openLogisticaModal(null));
+function gerarLiberacaoEmbarque(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a liberação."); return; }
+  if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return; }
+  const sacas = Number(n.quantidade || 0);
+  const kg = sacas * 60;
+  const destinatario = n.local_origem || "—";
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Liberação de Embarque ${n.numero_contrato || ""}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0; }
+    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
+    table.dados td.label { width: 260px; font-weight: bold; background: #f2f2f2; }
+    h3 { font-size: 12.5px; margin: 16px 0 4px; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <p style="text-align:right">São Gabriel do Oeste - MS, ${hoje}</p>
+  <h1>TERMO FORMAL DE LIBERAÇÃO PARA EMBARQUE DE GRÃOS</h1>
+  <p><strong>Referente à Confirmação de Negócio Nº ${n.numero_contrato || "—"} – ${vendedor.nome} X ${comprador.nome}</strong></p>
+
+  <h3>DESTINATÁRIO PRINCIPAL E NOTIFICAÇÕES (C/C):</h3>
+  <table class="dados">
+    <tr><td class="label">Destinatário</td><td>${destinatario}</td></tr>
+    <tr><td class="label">C/C (Comprador)</td><td>${comprador.nome}</td></tr>
+    <tr><td class="label">C/C (Vendedor/Armazém)</td><td>${vendedor.nome}<br>${destinatario}</td></tr>
+  </table>
+
+  <p>Pelo presente instrumento, a NEXUS COMMODITIES formaliza e comunica a autorização e liberação oficial para o início das operações de carregamento e embarque da mercadoria pactuada, nos termos da Confirmação de Negócio de Compra e Venda nº ${n.numero_contrato || "—"}, observadas as especificações e condições detalhadas a seguir:</p>
+
+  <h3>1. DETALHAMENTO DO EMBARQUE E ESPECIFICAÇÕES DO PRODUTO:</h3>
+  <table class="dados">
+    <tr><td class="label">Produto / Mercadoria</td><td>${(n.grao||"—").toUpperCase()} EM GRÃOS A GRANEL (PADRÃO COMERCIAL)</td></tr>
+    <tr><td class="label">Volume / Quantidade Liberada</td><td>${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG</td></tr>
+    <tr><td class="label">Data Efetiva de Liberação</td><td>${fmtDate(n.data_inicio_embarque)} (Autorizado o carregamento a partir desta data)</td></tr>
+    <tr><td class="label">Local de Carregamento e Retirada</td><td>${destinatario}</td></tr>
+  </table>
+
+  <h3>2. DISPOSIÇÕES SOBRE ARMAZENAGEM, QUEBRA TÉCNICA E RESPONSABILIDADES:</h3>
+  <p><strong>Responsabilidade de Custos:</strong> Todos os custos decorrentes de armazenagem, retenção e eventuais percentuais de quebra técnica do produto correrão por conta e responsabilidade exclusiva do VENDEDOR até a data limite de <strong>${fmtDate(n.data_fim_embarque) || "—"}</strong>.</p>
+
+  <p style="text-align:center; margin-top:40px; font-size:11px; color:#555">${NEXUS_EMPRESA.nome}<br>${NEXUS_EMPRESA.endereco}<br>Fone / WhatsApp: ${NEXUS_EMPRESA.telefone}<br>E-mail: ${NEXUS_EMPRESA.email}</p>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar a liberação."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 
 // ---------------- CADASTROS ----------------
 function renderContatos() {
@@ -2084,12 +2166,12 @@ function showModal() { document.getElementById("overlay").classList.add("active"
 function closeModal() { document.getElementById("overlay").classList.remove("active"); convertingIntencaoId = null; }
 document.getElementById("overlay").addEventListener("click", (e) => { if (e.target.id === "overlay") closeModal(); });
 
-function askConfirm(message) {
+function askConfirm(message, title, confirmLabel, confirmClass) {
   return new Promise((resolve) => {
     document.getElementById("modalContent").innerHTML = `
-      <h3>Confirmar exclusão</h3>
+      <h3>${title || "Confirmar exclusão"}</h3>
       <p style="color:var(--ink-soft);margin:10px 0 20px">${message}</p>
-      <div class="modal-actions"><button class="btn-ghost" id="confirmCancelBtn">Cancelar</button><button class="btn-danger" id="confirmOkBtn">Excluir</button></div>`;
+      <div class="modal-actions"><button class="btn-ghost" id="confirmCancelBtn">Cancelar</button><button class="${confirmClass || "btn-danger"}" id="confirmOkBtn">${confirmLabel || "Excluir"}</button></div>`;
     showModal();
     document.getElementById("confirmCancelBtn").onclick = () => { closeModal(); resolve(false); };
     document.getElementById("confirmOkBtn").onclick = () => { closeModal(); resolve(true); };
