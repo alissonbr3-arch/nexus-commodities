@@ -445,16 +445,17 @@
         <div class="panel-head">
           <h2>Negociações — compra e venda</h2>
           <div class="actions-left">
-            <input type="text" class="search-input" id="negSearch" placeholder="Buscar contraparte ou grão...">
+            <input type="text" class="search-input" id="negSearch" placeholder="Buscar contrato, vendedor ou grão...">
             <select class="filter" id="negFilterStatus">
               <option value="">Todos os status</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
             </select>
+            <button class="btn-ghost" id="lixeiraNegociosBtn">Lixeira</button>
             <button class="btn-primary" id="addNegocioBtn">+ Nova negociação</button>
           </div>
         </div>
         <table>
           <thead><tr>
-            <th data-sort="grao">Grão</th><th data-sort="contraparte">Contraparte</th>
+            <th data-sort="grao">Grão</th><th data-sort="numero_contrato">Nº Contrato</th><th>Vendedor</th>
             <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
             <th data-sort="data">Data</th><th data-sort="status">Status</th><th></th>
           </tr></thead>
@@ -781,7 +782,7 @@ function setSyncStatus(ok) {
   el.innerHTML = ok ? `<span class="sync-dot"></span>sincronizado` : `<span class="sync-dot" style="background:var(--red)"></span>reconectando...`;
 }
 
-async function loadNegocios() { const { data: rows, error } = await sb.from("nexus_negocios").select("*").order("data", { ascending: false }); if (!error) data.negocios = rows || []; }
+async function loadNegocios() { const { data: rows, error } = await sb.from("nexus_negocios").select("*").is("deleted_at", null).order("data", { ascending: false }); if (!error) data.negocios = rows || []; }
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
@@ -1132,17 +1133,49 @@ function n(id) { return Number(document.getElementById(id).value) || 0; }
 // ---------------- NEGOCIAÇÕES ----------------
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
-  let list = data.negocios.filter(n => (!search || n.contraparte.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
+  let list = data.negocios.filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || nomeCadastro(n.produtor_id).toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_negocios','${n.id}', loadNegocios, renderNegocios)">Excluir</button></td></tr>`).join("");
+    list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
 document.getElementById("negFilterStatus").addEventListener("change", renderNegocios);
 document.querySelectorAll('#page-negociacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("negocios", th.dataset.sort, renderNegocios)));
+
+// ---------------- LIXEIRA DE NEGOCIAÇÕES ----------------
+document.getElementById("lixeiraNegociosBtn").addEventListener("click", abrirLixeiraNegocios);
+async function abrirLixeiraNegocios() {
+  const { data: rows } = await sb.from("nexus_negocios").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+  const excluidos = rows || [];
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Lixeira — negociações excluídas</h3>
+    <div style="max-height:60vh;overflow-y:auto">
+      <table>
+        <thead><tr><th>Grão</th><th>Nº Contrato</th><th>Vendedor</th><th>Excluído em</th><th></th></tr></thead>
+        <tbody>${excluidos.length === 0 ? `<tr class="empty-row"><td colspan="5">Lixeira vazia.</td></tr>` :
+          excluidos.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtDate((n.deleted_at||"").slice(0,10))}</td><td><button class="btn-edit-text" onclick="restaurarNegocio('${n.id}')">Restaurar</button></td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Fechar</button></div>`;
+  showModal();
+}
+async function excluirNegocio(id) {
+  const ok = await askConfirm("A negociação vai para a lixeira — você pode restaurá-la depois se precisar.", "Excluir negociação", "Excluir");
+  if (!ok) return;
+  await sb.from("nexus_negocios").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  await loadNegocios();
+  renderNegocios(); renderWorkspace(); renderDashboard(); renderFinanceiro(); renderEmbarquesPage(); renderAgendaSemana();
+}
+async function restaurarNegocio(id) {
+  await sb.from("nexus_negocios").update({ deleted_at: null }).eq("id", id);
+  await loadNegocios();
+  renderNegocios(); renderWorkspace(); renderDashboard(); renderFinanceiro(); renderEmbarquesPage(); renderAgendaSemana();
+  abrirLixeiraNegocios();
+}
 function onClienteSelectChange() {
   const sel = v("f_clienteSelect");
   document.getElementById("f_contraparteWrap").style.display = sel === "__outro__" ? "block" : "none";
