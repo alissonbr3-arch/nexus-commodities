@@ -1947,7 +1947,7 @@ function renderWorkspace() {
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div style="display:flex;gap:6px;align-items:center">
           <input type="text" class="ws-reminder-input" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete — clique para anotar" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()">
-          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;font-size:11px;white-space:nowrap" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)">&rarr; Funil</button>` : ""}
+          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;display:flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
         </div>
         <div class="ws-foot">
           <div class="ws-phone">&#9742; ${c.telefone || "—"}</div>
@@ -1969,8 +1969,8 @@ function renderWorkspace() {
         <td>${labelUltimoContato(c.last_contact_date)}</td>
         <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
         <td style="white-space:nowrap">
-          <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "Marcar contato"}</button>
-          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;font-size:11.5px;margin-left:4px" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)">&rarr; Funil</button>` : ""}
+          <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
+          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;margin-left:4px;display:inline-flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
         </td>
       </tr>`;
     }).join("");
