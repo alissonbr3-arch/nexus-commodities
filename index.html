@@ -656,7 +656,13 @@
       <!-- RELATÓRIOS -->
       <div class="page" id="page-relatorios">
         <div class="panel-head"><h2>Relatórios</h2></div>
-        <div class="placeholder-box">Relatórios exportáveis (PDF/Excel) em desenvolvimento.</div>
+        <div class="panel-card" style="max-width:520px">
+          <h3>Relatório de negócios por produtor</h3>
+          <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha o produtor e as safras e gere um relatório com vendas, recebimentos e embarques.</div>
+          <div class="field"><label>Produtor</label><select id="relProdutorSelect" onchange="onRelProdutorChange()"></select></div>
+          <div class="field"><label>Safras</label><div id="relSafrasWrap" class="placeholder-box" style="font-size:12px;padding:14px">Selecione um produtor.</div></div>
+          <button class="btn-primary" id="relGerarBtn" disabled onclick="gerarRelatorioProdutor()">Gerar relatório</button>
+        </div>
       </div>
 
       <!-- CONFIGURAÇÕES -->
@@ -788,7 +794,7 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 function wireRealtime() {
   sb.channel("nexus-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
@@ -800,7 +806,7 @@ function wireRealtime() {
 }
 
 function renderAll() {
-  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes();
+  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); renderRelatorios();
   const activeSub = document.querySelector(".subtab-btn.active")?.dataset.subtab;
   if (activeSub === "compradores") renderDashboardCompradores();
   if (activeSub === "produtores") renderDashboardProdutores();
@@ -1993,6 +1999,105 @@ function gerarReciboRepasseCorretor(negocioId) {
   </body></html>`;
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// ---------------- RELATÓRIOS ----------------
+function renderRelatorios() {
+  const sel = document.getElementById("relProdutorSelect");
+  if (!sel) return;
+  const cur = sel.value;
+  const produtores = data.cadastros.filter(c => c.tipo === "Produtor").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  sel.innerHTML = `<option value="">— Selecione um produtor —</option>` + produtores.map(p => `<option value="${p.id}" ${p.id===cur?"selected":""}>${p.nome}</option>`).join("");
+  if (cur && produtores.some(p => p.id === cur)) onRelProdutorChange();
+}
+function onRelProdutorChange() {
+  const produtorId = document.getElementById("relProdutorSelect").value;
+  const wrap = document.getElementById("relSafrasWrap");
+  const btn = document.getElementById("relGerarBtn");
+  if (!produtorId) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Selecione um produtor."; btn.disabled = true; return; }
+  const safras = [...new Set(data.negocios.filter(n => n.produtor_id === produtorId).map(n => n.safra).filter(Boolean))].sort();
+  if (safras.length === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Nenhum negócio registrado para este produtor ainda."; btn.disabled = true; return; }
+  wrap.className = ""; wrap.style.cssText = "";
+  wrap.innerHTML = safras.map(s => `<label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;margin-bottom:6px;font-size:12.5px"><input type="checkbox" class="rel-safra-chk" value="${s}" checked> ${s}</label>`).join("");
+  btn.disabled = false;
+}
+function gerarRelatorioProdutor() {
+  const produtorId = document.getElementById("relProdutorSelect").value;
+  const produtor = data.cadastros.find(c => c.id === produtorId);
+  if (!produtor) return;
+  const safrasSelecionadas = Array.from(document.querySelectorAll(".rel-safra-chk:checked")).map(chk => chk.value);
+  if (safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
+  const negocios = data.negocios.filter(n => n.produtor_id === produtorId && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||""));
+  if (negocios.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
+
+  const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
+  const totalValor = negocios.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
+  const recebidos = negocios.filter(n => n.status === "Pago").length;
+  const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const linhas = negocios.map(n => {
+    const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
+    const valor = Number(n.quantidade||0) * Number(n.preco||0);
+    const recebido = n.status === "Pago";
+    const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
+    const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
+    const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
+    return `<tr>
+      <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${(n.grao||"—")} ${n.safra||""}</td><td>${compradorNome}</td>
+      <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
+      <td>${fmtDate(n.data_pagamento)}<br><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
+      <td>${embPeriodo}${embStatus ? `<br><span style=\"font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado?"#2f7d32":"#a6741a"}\">${embStatus.toUpperCase()}</span>` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios — ${produtor.nome}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0 4px; }
+    .sub { text-align: center; font-size: 12px; color: #555; margin-bottom: 18px; }
+    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
+    table.dados td.label { width: 180px; font-weight: bold; background: #f2f2f2; }
+    table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
+    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
+    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; }
+    .resumo .item b { display: block; font-size: 15px; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } @page { size: A4 landscape; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>RELATÓRIO DE NEGÓCIOS</h1>
+  <div class="sub">${produtor.nome} — Safra(s) ${safrasSelecionadas.join(", ")} — emitido em ${hoje}</div>
+  <table class="dados">
+    <tr><td class="label">Produtor</td><td>${produtor.nome}</td></tr>
+    <tr><td class="label">CPF</td><td>${produtor.cpf || "—"}</td></tr>
+    <tr><td class="label">Município/UF</td><td>${produtor.cidade || "—"}</td></tr>
+  </table>
+  <table class="linhas">
+    <thead><tr><th>Contrato</th><th>Data</th><th>Produto/Safra</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Recebimento</th><th>Embarque</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <div class="resumo">
+    <div class="item"><span>Negócios no período</span><b>${negocios.length}</b></div>
+    <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
+    <div class="item"><span>Valor total</span><b>${fmtMoney(totalValor)}</b></div>
+    <div class="item"><span>Recebidos</span><b>${recebidos} de ${negocios.length}</b></div>
+    <div class="item"><span>Embarques finalizados</span><b>${embarquesFinalizados} de ${negocios.length}</b></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
 
