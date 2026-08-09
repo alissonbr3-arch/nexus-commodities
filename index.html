@@ -804,6 +804,9 @@ function renderDashboard() {
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list);
 }
+const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
+const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
+const PALETTE_CORRETOR = ["#6fa348", "#4d7a32", "#96c477", "#365821", "#b8dba0", "#82b85f"];
 function renderDashCompradorChart(list) {
   const totals = {};
   list.forEach(n => { const nome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"); totals[nome] = (totals[nome] || 0) + Number(n.quantidade || 0); });
@@ -813,25 +816,25 @@ function renderDashCompradorChart(list) {
   const labels = top.map(x => x[0]).concat(outros > 0 ? ["Outros"] : []);
   const values = top.map(x => x[1]).concat(outros > 0 ? [outros] : []);
   const ctx = document.getElementById("dashCompradorChart"); if (dashCompradorChart) dashCompradorChart.destroy();
-  dashCompradorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  dashCompradorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: PALETTE_COMPRADOR, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
   document.getElementById("dashCompradorLegend").innerHTML = labels.length === 0 ? `<div class="legend-chip">Sem dados</div>` :
-    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("");
+    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${PALETTE_COMPRADOR[i % PALETTE_COMPRADOR.length]}"></span>${l}</div>`).join("");
 }
 function renderDashCorretorChart(list) {
   const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.comissao_corretor||0), 0) })).filter(p => p.valor > 0).sort((a,b) => b.valor - a.valor);
   const labels = porCorretor.map(p => p.nome);
   const values = porCorretor.map(p => p.valor);
   const ctx = document.getElementById("dashCorretorChart"); if (dashCorretorChart) dashCorretorChart.destroy();
-  dashCorretorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: CHART_PALETTE, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+  dashCorretorChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: PALETTE_CORRETOR, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
   document.getElementById("dashCorretorLegend").innerHTML = labels.length === 0 ? `<div class="legend-chip">Sem dados</div>` :
-    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>${l}</div>`).join("");
+    labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${PALETTE_CORRETOR[i % PALETTE_CORRETOR.length]}"></span>${l}</div>`).join("");
   const max = Math.max(1, ...values);
   document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor com comissão no período.</div>` :
     porCorretor.map((p,i) => `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtMoney(p.valor)}</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`).join("");
 }
 function renderGraoChart(list) {
   const totals = {}; list.forEach(n => { totals[n.grao] = (totals[n.grao] || 0) + Number(n.quantidade || 0); });
-  const labels = Object.keys(totals); const palette = ["#d9ab34", "#cf7f2c", "#4a8bb0", "#6fa348", "#c0574a"];
+  const labels = Object.keys(totals); const palette = PALETTE_GRAO;
   const ctx = document.getElementById("graoChart"); if (graoChart) graoChart.destroy();
   graoChart = new Chart(ctx, { type: "doughnut", data: { labels, datasets: [{ data: Object.values(totals), backgroundColor: palette, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
   document.getElementById("graoLegend").innerHTML = labels.map((l,i) => `<div class="legend-chip"><span class="legend-dot" style="background:${palette[i % palette.length]}"></span>${l}</div>`).join("");
