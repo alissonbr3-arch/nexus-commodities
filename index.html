@@ -89,6 +89,8 @@
   .subtab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .emb-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .fin-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
+  .fin-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
   .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
   .flag-badge.active.milho { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
@@ -514,28 +516,54 @@
       <!-- FINANCEIRO -->
       <div class="page" id="page-financeiro">
         <div class="panel-head"><h2>Financeiro — comissões, fluxo de caixa e inadimplência</h2></div>
-        <div class="cards" id="finCards"></div>
-        <div class="totals-strip" id="finTotals"></div>
-        <div class="panel-card" style="margin-bottom:14px">
-          <h3>Fluxo de caixa mensal</h3>
-          <div class="hint">Comissões geradas por mês (últimos 6 meses)</div>
-          <div class="chart-wrap"><canvas id="fluxoCaixaChart"></canvas></div>
+        <div class="subtabs" id="finTabs">
+          <button class="fin-tab-btn active" data-fintab="geral">Visão geral</button>
+          <button class="fin-tab-btn" data-fintab="comissoes">Comissões</button>
         </div>
-        <div class="grid-2">
-          <div class="panel-card">
-            <h3>Comissão por corretor</h3>
-            <div id="comissaoPorCorretor"></div>
+
+        <div id="fin-geral">
+          <div class="cards" id="finCards"></div>
+          <div class="totals-strip" id="finTotals"></div>
+          <div class="panel-card" style="margin-bottom:14px">
+            <h3>Fluxo de caixa mensal</h3>
+            <div class="hint">Comissões geradas por mês (últimos 6 meses)</div>
+            <div class="chart-wrap"><canvas id="fluxoCaixaChart"></canvas></div>
+          </div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Comissão por corretor</h3>
+              <div id="comissaoPorCorretor"></div>
+            </div>
+            <div class="panel-card">
+              <h3>Próximos vencimentos (7 dias)</h3>
+              <div id="proximosVencimentos"></div>
+            </div>
           </div>
           <div class="panel-card">
-            <h3>Próximos vencimentos (7 dias)</h3>
-            <div id="proximosVencimentos"></div>
+            <h3>Detalhe dos negócios</h3>
+            <table>
+              <thead><tr><th>Grão</th><th>Contraparte</th><th>Corretor</th><th>Data</th><th>Status</th><th>Comissão total (R$)</th><th>Corretora (R$)</th><th>Corretor (R$)</th></tr></thead>
+              <tbody id="finBody"></tbody>
+            </table>
           </div>
         </div>
-        <div class="panel-card">
-          <h3>Detalhe dos negócios</h3>
+
+        <div id="fin-comissoes" style="display:none">
+          <div class="panel-head">
+            <div class="actions-left">
+              <select class="filter" id="comissoesFilterStatus">
+                <option value="pendente">A receber</option>
+                <option value="pago">Pagas</option>
+                <option value="todas">Todas</option>
+              </select>
+            </div>
+          </div>
           <table>
-            <thead><tr><th>Grão</th><th>Contraparte</th><th>Corretor</th><th>Data</th><th>Status</th><th>Comissão total (R$)</th><th>Corretora (R$)</th><th>Corretor (R$)</th></tr></thead>
-            <tbody id="finBody"></tbody>
+            <thead><tr>
+              <th data-sort="data">Data</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
+              <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="comissoesBody"></tbody>
           </table>
         </div>
       </div>
@@ -729,7 +757,7 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
@@ -1782,6 +1810,108 @@ function renderFinanceiro() {
 
   document.getElementById("finBody").innerHTML = data.negocios.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhuma negociação cadastrada.</td></tr>` :
     data.negocios.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${nomeCorretor(n.corretor_id)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td><td>${fmtMoney(n.comissao)}</td><td>${fmtMoney(n.comissao_corretora)}</td><td>${fmtMoney(n.comissao_corretor)}</td></tr>`).join("");
+
+  renderComissoesPage();
+}
+
+// ---------------- FINANCEIRO: COMISSÕES ----------------
+document.querySelectorAll("#finTabs .fin-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#finTabs .fin-tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("fin-geral").style.display = btn.dataset.fintab === "geral" ? "block" : "none";
+    document.getElementById("fin-comissoes").style.display = btn.dataset.fintab === "comissoes" ? "block" : "none";
+    if (btn.dataset.fintab === "comissoes") renderComissoesPage();
+  });
+});
+document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
+document.querySelectorAll('#fin-comissoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoes", th.dataset.sort, renderComissoesPage)));
+
+function renderComissoesPage() {
+  const body = document.getElementById("comissoesBody");
+  if (!body) return;
+  const filtro = document.getElementById("comissoesFilterStatus").value;
+  let list = data.negocios
+    .filter(n => filtro === "todas" || (filtro === "pago" ? n.status === "Pago" : n.status !== "Pago"))
+    .map(n => ({
+      id: n.id, data: n.data || "", vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
+      valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), status: n.status, negocio: n,
+    }));
+  const st = sortState.comissoes;
+  list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão encontrada.</td></tr>` :
+    list.map(c => {
+      const pago = c.status === "Pago";
+      return `<tr>
+        <td>${fmtDate(c.data)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
+        <td><span class="badge ${badgeClass(c.status)}">${c.status}</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
+          <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
+        </td>
+      </tr>`;
+    }).join("");
+}
+
+async function toggleComissaoPaga(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const novoStatus = n.status === "Pago" ? "Fechado" : "Pago";
+  await sb.from("nexus_negocios").update({ status: novoStatus }).eq("id", negocioId);
+  await loadNegocios();
+  renderFinanceiro(); renderNegocios(); renderDashboard();
+}
+
+function gerarReciboComissao(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = n.cliente_id ? data.cadastros.find(c => c.id === n.cliente_id) : null;
+  const valor = Number(n.comissao || 0);
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Recibo de Comissão ${n.numero_contrato || ""}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0; }
+    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
+    table.dados td.label { width: 220px; font-weight: bold; background: #f2f2f2; }
+    .assinaturas { margin-top: 60px; }
+    .assinatura { margin-top: 46px; text-align: center; width: 340px; margin-left: auto; margin-right: auto; }
+    .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>RECIBO DE COMISSÃO</h1>
+  <p>Recebemos de <strong>${(n.comissao_pagador || "Vendedor") === "Comprador" ? (comprador ? comprador.nome : n.contraparte) : (vendedor ? vendedor.nome : "—")}</strong> a quantia de <strong>${fmtMoney(valor)}</strong> (${valorPorExtenso(valor)}), referente à comissão de intermediação do negócio de ${(n.grao||"—").toUpperCase()}${n.safra ? " SAFRA " + n.safra : ""}, Confirmação de Negócio Nº ${n.numero_contrato || "—"}.</p>
+  <table class="dados">
+    <tr><td class="label">Contrato</td><td>${n.numero_contrato || "—"}</td></tr>
+    <tr><td class="label">Vendedor</td><td>${vendedor ? vendedor.nome : "—"}</td></tr>
+    <tr><td class="label">Comprador</td><td>${comprador ? comprador.nome : (n.contraparte || "—")}</td></tr>
+    <tr><td class="label">Produto</td><td>${(n.grao||"—").toUpperCase()}${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
+    <tr><td class="label">Quantidade</td><td>${fmtNum(n.quantidade)} SC/60KG</td></tr>
+    <tr><td class="label">Comissão (R$/saca)</td><td>${fmtMoney(n.comissao_saca)}</td></tr>
+    <tr><td class="label">Valor total do recibo</td><td>${fmtMoney(valor)}</td></tr>
+    <tr><td class="label">Pago por</td><td>${(n.comissao_pagador || "Vendedor").toUpperCase()}</td></tr>
+  </table>
+  <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
+  <div class="assinaturas">
+    <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // ---------------- AGENDA ----------------
