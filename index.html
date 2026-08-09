@@ -91,6 +91,8 @@
   .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .fin-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .fin-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .com-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
+  .com-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
   .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
   .flag-badge.active.milho { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
@@ -549,22 +551,50 @@
         </div>
 
         <div id="fin-comissoes" style="display:none">
-          <div class="panel-head">
-            <div class="actions-left">
-              <select class="filter" id="comissoesFilterStatus">
-                <option value="pendente">A receber</option>
-                <option value="pago">Pagas</option>
-                <option value="todas">Todas</option>
-              </select>
-            </div>
+          <div class="subtabs" id="comissoesSubTabs">
+            <button class="com-tab-btn active" data-comtab="receber">A receber (clientes)</button>
+            <button class="com-tab-btn" data-comtab="pagar">A pagar (corretores)</button>
           </div>
-          <table>
-            <thead><tr>
-              <th data-sort="data">Data</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
-              <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th>Status</th><th></th>
-            </tr></thead>
-            <tbody id="comissoesBody"></tbody>
-          </table>
+
+          <div id="com-receber">
+            <div class="panel-head">
+              <div class="actions-left">
+                <select class="filter" id="comissoesFilterStatus">
+                  <option value="pendente">A receber</option>
+                  <option value="pago">Recebidas</option>
+                  <option value="todas">Todas</option>
+                </select>
+              </div>
+            </div>
+            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador.</div>
+            <table>
+              <thead><tr>
+                <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
+                <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th>Status</th><th></th>
+              </tr></thead>
+              <tbody id="comissoesBody"></tbody>
+            </table>
+          </div>
+
+          <div id="com-pagar" style="display:none">
+            <div class="panel-head">
+              <div class="actions-left">
+                <select class="filter" id="comissoesCorretorFilterStatus">
+                  <option value="pendente">A pagar</option>
+                  <option value="pago">Pagas</option>
+                  <option value="todas">Todas</option>
+                </select>
+              </div>
+            </div>
+            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente.</div>
+            <table>
+              <thead><tr>
+                <th data-sort="recebidoEm">Recebido pela Nexus</th><th data-sort="vencimento">Vencimento</th><th data-sort="corretorNome">Corretor</th><th data-sort="negocioLabel">Negócio</th>
+                <th data-sort="valor">Valor (R$)</th><th>Status</th><th></th>
+              </tr></thead>
+              <tbody id="comissoesCorretorBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -1824,8 +1854,26 @@ document.querySelectorAll("#finTabs .fin-tab-btn").forEach(btn => {
     if (btn.dataset.fintab === "comissoes") renderComissoesPage();
   });
 });
+document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("com-receber").style.display = btn.dataset.comtab === "receber" ? "block" : "none";
+    document.getElementById("com-pagar").style.display = btn.dataset.comtab === "pagar" ? "block" : "none";
+  });
+});
 document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
-document.querySelectorAll('#fin-comissoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoes", th.dataset.sort, renderComissoesPage)));
+document.getElementById("comissoesCorretorFilterStatus").addEventListener("change", renderComissoesPage);
+document.querySelectorAll('#com-receber thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoes", th.dataset.sort, renderComissoesPage)));
+document.querySelectorAll('#com-pagar thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoesCorretor", th.dataset.sort, renderComissoesPage)));
+
+function dia10MesSeguinte(dataISO) {
+  if (!dataISO) return null;
+  const [y, m] = dataISO.split("-").map(Number);
+  let ny = y, nm = m + 1;
+  if (nm > 12) { nm = 1; ny++; }
+  return `${ny}-${String(nm).padStart(2,"0")}-10`;
+}
 
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
@@ -1834,20 +1882,48 @@ function renderComissoesPage() {
   let list = data.negocios
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.status === "Pago" : n.status !== "Pago"))
     .map(n => ({
-      id: n.id, data: n.data || "", vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
+      id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
+      vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
       valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), status: n.status, negocio: n,
     }));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão encontrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.status === "Pago";
       return `<tr>
-        <td>${fmtDate(c.data)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
-        <td><span class="badge ${badgeClass(c.status)}">${c.status}</span></td>
+        <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
+        <td><span class="badge ${pago ? "pago" : "agendado"}">${pago ? "Recebido" : "A receber"}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
+        </td>
+      </tr>`;
+    }).join("");
+
+  const bodyC = document.getElementById("comissoesCorretorBody");
+  if (!bodyC) return;
+  const filtroC = document.getElementById("comissoesCorretorFilterStatus").value;
+  let listC = data.negocios
+    .filter(n => n.corretor_id && Number(n.comissao_corretor || 0) > 0)
+    .filter(n => filtroC === "todas" || (filtroC === "pago" ? n.comissao_corretor_paga : !n.comissao_corretor_paga))
+    .map(n => ({
+      id: n.id, recebidoEm: n.comissao_recebida_em || "", vencimento: dia10MesSeguinte(n.comissao_recebida_em) || "",
+      corretorNome: nomeCorretor(n.corretor_id), negocioLabel: `${n.grao || "—"} · ${n.contraparte || nomeCadastro(n.cliente_id)}`,
+      valor: Number(n.comissao_corretor || 0), paga: n.comissao_corretor_paga, aguardando: !n.comissao_recebida_em, negocio: n,
+    }));
+  const stC = sortState.comissoesCorretor;
+  listC = stC && stC.key ? applySort(listC, stC.key, stC.dir) : listC.sort((a,b) => b.recebidoEm.localeCompare(a.recebidoEm));
+  bodyC.innerHTML = listC.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão de corretor encontrada.</td></tr>` :
+    listC.map(c => {
+      const statusLabel = c.paga ? "Pago" : c.aguardando ? "Aguardando recebimento" : "A pagar";
+      const statusClass = c.paga ? "pago" : c.aguardando ? "afazer" : "agendado";
+      return `<tr>
+        <td>${c.recebidoEm ? fmtDate(c.recebidoEm) : "—"}</td><td>${c.vencimento ? fmtDate(c.vencimento) : "—"}</td><td>${c.corretorNome}</td><td>${c.negocioLabel}</td><td>${fmtMoney(c.valor)}</td>
+        <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn-edit-text" onclick="gerarReciboRepasseCorretor('${c.id}')">Recibo</button>
+          ${c.aguardando ? "" : `<button class="btn-edit-text" style="color:${c.paga ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoCorretorPaga('${c.id}')">${c.paga ? "&#10003; Pago" : "Marcar como pago"}</button>`}
         </td>
       </tr>`;
     }).join("");
@@ -1856,10 +1932,68 @@ function renderComissoesPage() {
 async function toggleComissaoPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
-  const novoStatus = n.status === "Pago" ? "Fechado" : "Pago";
-  await sb.from("nexus_negocios").update({ status: novoStatus }).eq("id", negocioId);
+  const pago = n.status !== "Pago";
+  const payload = pago ? { status: "Pago", comissao_recebida_em: todayISO() } : { status: "Fechado", comissao_recebida_em: null };
+  await sb.from("nexus_negocios").update(payload).eq("id", negocioId);
   await loadNegocios();
   renderFinanceiro(); renderNegocios(); renderDashboard();
+}
+
+async function toggleComissaoCorretorPaga(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const pago = !n.comissao_corretor_paga;
+  await sb.from("nexus_negocios").update({ comissao_corretor_paga: pago, comissao_corretor_paga_em: pago ? todayISO() : null }).eq("id", negocioId);
+  await loadNegocios();
+  renderFinanceiro();
+}
+
+function gerarReciboRepasseCorretor(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const corretor = data.equipe.find(e => e.user_id === n.corretor_id);
+  const valor = Number(n.comissao_corretor || 0);
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Recibo de Repasse ${n.numero_contrato || ""}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0; }
+    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
+    table.dados td.label { width: 220px; font-weight: bold; background: #f2f2f2; }
+    .assinaturas { margin-top: 60px; }
+    .assinatura { margin-top: 46px; text-align: center; width: 340px; margin-left: auto; margin-right: auto; }
+    .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>RECIBO DE REPASSE DE COMISSÃO AO CORRETOR</h1>
+  <p>${NEXUS_EMPRESA.nome} pagou a <strong>${corretor ? corretor.nome : "—"}</strong> a quantia de <strong>${fmtMoney(valor)}</strong> (${valorPorExtenso(valor)}), referente ao repasse da comissão do negócio de ${(n.grao||"—").toUpperCase()}${n.safra ? " SAFRA " + n.safra : ""}, Confirmação de Negócio Nº ${n.numero_contrato || "—"}.</p>
+  <table class="dados">
+    <tr><td class="label">Contrato</td><td>${n.numero_contrato || "—"}</td></tr>
+    <tr><td class="label">Corretor</td><td>${corretor ? corretor.nome : "—"}</td></tr>
+    <tr><td class="label">Negócio</td><td>${(n.grao||"—").toUpperCase()}${n.safra ? " SAFRA " + n.safra : ""} — ${n.contraparte || nomeCadastro(n.cliente_id)}</td></tr>
+    <tr><td class="label">Comissão recebida pela Nexus em</td><td>${fmtDate(n.comissao_recebida_em)}</td></tr>
+    <tr><td class="label">Valor do repasse</td><td>${fmtMoney(valor)}</td></tr>
+  </table>
+  <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
+  <div class="assinaturas">
+    <div class="assinatura"><div class="linha">${corretor ? corretor.nome.toUpperCase() : "—"}</div></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 function gerarReciboComissao(negocioId) {
