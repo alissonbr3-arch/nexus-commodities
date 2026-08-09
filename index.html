@@ -89,6 +89,9 @@
   .subtab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .emb-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
+  .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
+  .flag-badge.active.milho { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
 
   .filters-row { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .period-btn { background: var(--card); border: 1px solid var(--border); color: var(--ink-soft); padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
@@ -576,13 +579,13 @@
               <option value="volume">Volume anual (maior primeiro)</option>
               <option value="contato">Último contato (mais recente primeiro)</option>
             </select>
-            <button class="btn-ghost" id="wsViewToggleBtn">Ver em lista</button>
+            <button class="btn-ghost" id="wsViewToggleBtn">Ver em cards</button>
           </div>
         </div>
         <div class="totals-strip" id="wsTotals"></div>
-        <div class="team-grid" id="wsCards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));"></div>
-        <table id="wsListTable" style="display:none">
-          <thead><tr><th>Nome</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
+        <div class="team-grid" id="wsCards" style="display:none;grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));"></div>
+        <table id="wsListTable">
+          <thead><tr><th>Nome</th><th>Status</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
           <tbody id="wsListBody"></tbody>
         </table>
       </div>
@@ -1854,7 +1857,7 @@ function renderWsOwnerSelect() {
 document.getElementById("wsOwnerSelect").addEventListener("change", (e) => { wsOwnerId = e.target.value; renderWorkspace(); });
 document.getElementById("wsSortSelect").addEventListener("change", renderWorkspace);
 
-let wsViewMode = "cards";
+let wsViewMode = "lista";
 document.getElementById("wsViewToggleBtn").addEventListener("click", () => {
   wsViewMode = wsViewMode === "cards" ? "lista" : "cards";
   document.getElementById("wsViewToggleBtn").textContent = wsViewMode === "cards" ? "Ver em lista" : "Ver em cards";
@@ -1899,6 +1902,22 @@ function renderPrecoPracaBanner() {
       </div>
     </div>`;
 }
+const WS_FLAGS = [
+  { campo: "flag_soja_disponivel", label: "SD", grupo: "soja", title: "Soja disponível" },
+  { campo: "flag_soja_futuro", label: "SF", grupo: "soja", title: "Soja futuro" },
+  { campo: "flag_milho_disponivel", label: "MD", grupo: "milho", title: "Milho disponível" },
+  { campo: "flag_milho_futuro", label: "MF", grupo: "milho", title: "Milho futuro" },
+];
+function flagBadgesHtml(c) {
+  return WS_FLAGS.map(f => `<button type="button" class="flag-badge ${f.grupo} ${c[f.campo] ? "active" : ""}" title="${f.title}" onclick="toggleFlag('${c.id}','${f.campo}')">${f.label}</button>`).join("");
+}
+async function toggleFlag(cadastroId, campo) {
+  const c = data.cadastros.find(x => x.id === cadastroId);
+  if (!c) return;
+  await sb.from("nexus_cadastros").update({ [campo]: !c[campo] }).eq("id", cadastroId);
+  await loadCadastros();
+  renderWorkspace();
+}
 function renderWorkspace() {
   if (!data.equipe.length) return;
   renderPrecoPracaBanner();
@@ -1939,6 +1958,7 @@ function renderWorkspace() {
             ${avatarThumbHtml(c, 34)}
             <div class="ws-name">${c.nome}</div>
           </div>
+          <div style="display:flex;gap:3px;flex-wrap:nowrap">${flagBadgesHtml(c)}</div>
         </div>
         <div class="ws-metrics">
           <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_soja)} / ${fmtNum(negSoja)} sc</div></div>
@@ -1947,21 +1967,25 @@ function renderWorkspace() {
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div style="display:flex;gap:6px;align-items:center">
           <input type="text" class="ws-reminder-input" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete — clique para anotar" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()">
-          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;display:flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
+          <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
+            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:7px 9px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003;" : "&#128222;"}</button>
+            ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;display:flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
+          </div>
         </div>
         <div class="ws-foot">
           <div class="ws-phone">&#9742; ${c.telefone || "—"}</div>
-          <button class="contact-toggle ${contatadoHoje?"done":"pending"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; " + labelUltimoContato(c.last_contact_date) : labelUltimoContato(c.last_contact_date)}</button>
+          <div style="font-size:11px;color:var(--ink-soft)">${labelUltimoContato(c.last_contact_date)}</div>
         </div>
       </div>`;
     }).join("");
 
-  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
+  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
     clientes.map(c => {
       const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
       const contatadoHoje = c.last_contact_date === today;
       return `<tr>
         <td>${c.nome}</td>
+        <td style="white-space:nowrap"><div style="display:flex;gap:3px">${flagBadgesHtml(c)}</div></td>
         <td>${fmtNum(c.volume_anual_soja)}</td>
         <td>${fmtNum(negSoja)}</td>
         <td>${fmtNum(c.volume_anual_milho)}</td>
@@ -1969,8 +1993,10 @@ function renderWorkspace() {
         <td>${labelUltimoContato(c.last_contact_date)}</td>
         <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
         <td style="white-space:nowrap">
-          <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
-          ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;margin-left:4px;display:inline-flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
+          <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
+            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
+            ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;display:inline-flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
+          </div>
         </td>
       </tr>`;
     }).join("");
