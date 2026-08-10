@@ -93,6 +93,16 @@
   .fin-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .com-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .com-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .agenda-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .agenda-cal-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-soft); text-align: center; padding-bottom: 4px; }
+  .agenda-cal-day { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-height: 90px; display: flex; flex-direction: column; gap: 5px; }
+  .agenda-cal-day.today { border-color: var(--gold); background: var(--gold-soft); }
+  .agenda-cal-day.other-month { opacity: .35; }
+  .agenda-cal-daynum { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .agenda-item-chip { font-size: 10.5px; padding: 3px 6px; border-radius: 5px; line-height: 1.35; }
+  .agenda-item-chip.pagamento { background: var(--green-soft); color: var(--green); }
+  .agenda-item-chip.embarque { background: var(--blue-soft); color: var(--blue); }
+  @media (max-width: 900px) { .agenda-cal { grid-template-columns: repeat(7, minmax(90px,1fr)); overflow-x: auto; } }
   .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
   .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
   .flag-badge.active.milho { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
@@ -602,14 +612,20 @@
       <!-- AGENDA -->
       <div class="page" id="page-agenda">
         <div class="panel-head">
-          <h2>Semana — pagamentos e embarques</h2>
+          <h2 id="agendaTitle">Semana — pagamentos e embarques</h2>
           <div class="actions-left">
-            <button class="btn-ghost" id="agendaPrevWeekBtn">&larr; Semana anterior</button>
+            <button class="btn-ghost" id="agendaPrevBtn">&larr; Anterior</button>
             <span id="agendaWeekLabel" style="font-size:12.5px;color:var(--ink-soft)"></span>
-            <button class="btn-ghost" id="agendaNextWeekBtn">Próxima semana &rarr;</button>
+            <button class="btn-ghost" id="agendaNextBtn">Próxima &rarr;</button>
+            <select class="filter" id="agendaCalGranSelect" style="display:none">
+              <option value="semana">Semana</option>
+              <option value="mes">Mês</option>
+            </select>
+            <button class="btn-ghost" id="agendaViewToggleBtn">Ver em calendário</button>
           </div>
         </div>
         <div id="agendaSemanaList" style="margin-bottom:22px"></div>
+        <div id="agendaCalendario" style="display:none;margin-bottom:22px"></div>
 
         <div class="panel-head">
           <h2>Tarefas e pendências</h2>
@@ -2222,6 +2238,9 @@ function gerarReciboComissao(negocioId) {
 
 // ---------------- AGENDA ----------------
 let agendaWeekOffset = 0;
+let agendaMonthOffset = 0;
+let agendaViewMode = "lista";
+let agendaCalGran = "semana";
 function inicioSemana(offset) {
   const d = new Date();
   const diaSemana = d.getDay();
@@ -2231,30 +2250,97 @@ function inicioSemana(offset) {
   return d;
 }
 function toISODate(d) { return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function agendaTodosItens() {
+  const itens = [];
+  data.negocios.forEach(neg => {
+    if (neg.data_pagamento) itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg });
+    if (neg.data_inicio_embarque) itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
+    if (neg.data_fim_embarque) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg });
+  });
+  return itens;
+}
+function agendaItemChipHtml(it) {
+  const cls = it.tipo === "Pagamento" ? "pagamento" : "embarque";
+  const contraparte = it.tipo === "Pagamento" ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
+  return `<div class="agenda-item-chip ${cls}" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte}">${it.tipo === "Pagamento" ? "&#128176;" : "&#128666;"} ${it.neg.numero_contrato || "—"}<br>${contraparte}</div>`;
+}
+document.getElementById("agendaViewToggleBtn").addEventListener("click", () => {
+  agendaViewMode = agendaViewMode === "lista" ? "calendario" : "lista";
+  document.getElementById("agendaViewToggleBtn").textContent = agendaViewMode === "lista" ? "Ver em calendário" : "Ver em lista";
+  document.getElementById("agendaSemanaList").style.display = agendaViewMode === "lista" ? "block" : "none";
+  document.getElementById("agendaCalendario").style.display = agendaViewMode === "calendario" ? "block" : "none";
+  document.getElementById("agendaCalGranSelect").style.display = agendaViewMode === "calendario" ? "inline-block" : "none";
+  renderAgendaSemana();
+});
+document.getElementById("agendaCalGranSelect").addEventListener("change", (e) => { agendaCalGran = e.target.value; renderAgendaSemana(); });
+document.getElementById("agendaPrevBtn").addEventListener("click", () => {
+  if (agendaViewMode === "calendario" && agendaCalGran === "mes") agendaMonthOffset--; else agendaWeekOffset--;
+  renderAgendaSemana();
+});
+document.getElementById("agendaNextBtn").addEventListener("click", () => {
+  if (agendaViewMode === "calendario" && agendaCalGran === "mes") agendaMonthOffset++; else agendaWeekOffset++;
+  renderAgendaSemana();
+});
+
 function renderAgendaSemana() {
   const el = document.getElementById("agendaSemanaList");
   if (!el) return;
+  const todosItens = agendaTodosItens();
+  const hojeISO = todayISO();
+
+  if (agendaViewMode === "calendario" && agendaCalGran === "mes") {
+    document.getElementById("agendaTitle").textContent = "Mês — pagamentos e embarques";
+    const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + agendaMonthOffset);
+    document.getElementById("agendaWeekLabel").textContent = base.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    const primeiroDoMes = new Date(base.getFullYear(), base.getMonth(), 1);
+    const diaSemanaPrimeiro = primeiroDoMes.getDay();
+    const inicioGrade = new Date(primeiroDoMes); inicioGrade.setDate(inicioGrade.getDate() - (diaSemanaPrimeiro === 0 ? 6 : diaSemanaPrimeiro - 1));
+    const dias = []; for (let i = 0; i < 42; i++) { const d = new Date(inicioGrade); d.setDate(d.getDate() + i); dias.push(d); }
+    const cal = document.getElementById("agendaCalendario");
+    cal.innerHTML = `<div class="agenda-cal">${["SEG","TER","QUA","QUI","SEX","SÁB","DOM"].map(l => `<div class="agenda-cal-head">${l}</div>`).join("")}${
+      dias.map(d => {
+        const iso = toISODate(d);
+        const itensDoDia = todosItens.filter(it => it.data === iso);
+        const outroMes = d.getMonth() !== base.getMonth();
+        return `<div class="agenda-cal-day ${iso === hojeISO ? "today" : ""} ${outroMes ? "other-month" : ""}">
+          <div class="agenda-cal-daynum">${d.getDate()}</div>
+          ${itensDoDia.map(agendaItemChipHtml).join("")}
+        </div>`;
+      }).join("")
+    }</div>`;
+    return;
+  }
+
   const inicio = inicioSemana(agendaWeekOffset);
   const fim = new Date(inicio); fim.setDate(fim.getDate() + 6);
   document.getElementById("agendaWeekLabel").textContent = `${fmtDate(toISODate(inicio))} a ${fmtDate(toISODate(fim))}`;
   const inicioISO = toISODate(inicio), fimISO = toISODate(fim);
   const naSemana = (iso) => iso && iso >= inicioISO && iso <= fimISO;
+  const itens = todosItens.filter(it => naSemana(it.data)).sort((a, b) => a.data.localeCompare(b.data));
 
-  const itens = [];
-  data.negocios.forEach(neg => {
-    if (naSemana(neg.data_pagamento)) itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg });
-    if (naSemana(neg.data_inicio_embarque)) itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
-    if (naSemana(neg.data_fim_embarque)) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg });
-  });
-  itens.sort((a, b) => a.data.localeCompare(b.data));
+  if (agendaViewMode === "calendario") {
+    document.getElementById("agendaTitle").textContent = "Semana — pagamentos e embarques";
+    const dias = []; for (let i = 0; i < 7; i++) { const d = new Date(inicio); d.setDate(d.getDate() + i); dias.push(d); }
+    const cal = document.getElementById("agendaCalendario");
+    cal.innerHTML = `<div class="agenda-cal">${["SEG","TER","QUA","QUI","SEX","SÁB","DOM"].map(l => `<div class="agenda-cal-head">${l}</div>`).join("")}${
+      dias.map(d => {
+        const iso = toISODate(d);
+        const itensDoDia = itens.filter(it => it.data === iso);
+        return `<div class="agenda-cal-day ${iso === hojeISO ? "today" : ""}">
+          <div class="agenda-cal-daynum">${d.getDate()}</div>
+          ${itensDoDia.map(agendaItemChipHtml).join("")}
+        </div>`;
+      }).join("")
+    }</div>`;
+    return;
+  }
 
+  document.getElementById("agendaTitle").textContent = "Semana — pagamentos e embarques";
   el.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum pagamento ou embarque previsto nesta semana.</div>` :
     `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th></tr></thead><tbody>${
       itens.map(it => `<tr><td>${fmtDate(it.data)}</td><td><span class="badge ${it.tipo === "Pagamento" ? "pago" : "agendado"}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td></tr>`).join("")
     }</tbody></table>`;
 }
-document.getElementById("agendaPrevWeekBtn").addEventListener("click", () => { agendaWeekOffset--; renderAgendaSemana(); });
-document.getElementById("agendaNextWeekBtn").addEventListener("click", () => { agendaWeekOffset++; renderAgendaSemana(); });
 
 function renderTarefas() {
   const filterStatus = document.getElementById("tarFilterStatus").value;
