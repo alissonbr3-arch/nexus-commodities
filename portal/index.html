@@ -106,6 +106,12 @@
       <div class="field"><label>E-mail</label><input type="email" id="loginEmail" placeholder="voce@email.com"></div>
       <div class="field"><label>Senha</label><input type="password" id="loginPassword" placeholder="••••••••"></div>
       <button class="btn-primary" id="loginBtn">Entrar</button>
+      <div style="text-align:center;margin-top:12px"><a href="#" id="forgotPasswordLink" style="color:var(--ink-soft);font-size:11.5px;text-decoration:underline">Esqueci minha senha</a></div>
+    </div>
+    <div id="forgotPasswordFormWrap" style="display:none">
+      <div class="field"><label>E-mail</label><input type="email" id="forgotEmail" placeholder="voce@email.com"></div>
+      <button class="btn-primary" id="forgotPasswordBtn">Enviar link de redefinição</button>
+      <div style="text-align:center;margin-top:12px"><a href="#" id="backToLoginLink" style="color:var(--ink-soft);font-size:11.5px;text-decoration:underline">Voltar ao login</a></div>
     </div>
     <div id="setPasswordFormWrap" style="display:none">
       <div class="field"><label>Defina sua senha</label><input type="password" id="newPassword" placeholder="Mínimo 6 caracteres"></div>
@@ -258,6 +264,32 @@ async function doSetPassword() {
   history.replaceState(null, "", window.location.pathname);
   showApp();
 }
+
+document.getElementById("forgotPasswordLink").addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("loginFormWrap").style.display = "none";
+  document.getElementById("forgotPasswordFormWrap").style.display = "block";
+  document.getElementById("loginError").textContent = "";
+  document.getElementById("forgotEmail").value = v("loginEmail");
+});
+document.getElementById("backToLoginLink").addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("forgotPasswordFormWrap").style.display = "none";
+  document.getElementById("loginFormWrap").style.display = "block";
+  document.getElementById("loginError").textContent = "";
+});
+document.getElementById("forgotPasswordBtn").addEventListener("click", async () => {
+  const email = v("forgotEmail");
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  if (!email) { errEl.textContent = "Informe o e-mail."; return; }
+  const btn = document.getElementById("forgotPasswordBtn");
+  btn.disabled = true; btn.textContent = "Enviando...";
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+  btn.disabled = false; btn.textContent = "Enviar link de redefinição";
+  errEl.style.color = error ? "var(--red)" : "var(--green)";
+  errEl.textContent = error ? "Não foi possível enviar o link agora. Tente novamente." : "Link enviado! Confira seu e-mail.";
+});
 
 document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); });
 

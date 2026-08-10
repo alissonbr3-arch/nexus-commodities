@@ -6,7 +6,7 @@ function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-// Cria o login do cliente (Supabase Auth) e vincula ao cadastro correspondente.
+// Cria (ou reaproveita) o login do cliente e vincula ao cadastro correspondente.
 // Só pode ser chamada por um corretor autenticado (validado via nexus_equipe).
 export default async (req) => {
   let payload;
@@ -24,6 +24,7 @@ export default async (req) => {
   if (!serviceKey) {
     return json({ ok: false, erro: "SUPABASE_SERVICE_ROLE_KEY não configurada nas variáveis de ambiente do Netlify." }, 500);
   }
+  const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
   const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${access_token}` },
@@ -31,32 +32,48 @@ export default async (req) => {
   if (!userResp.ok) return json({ ok: false, erro: "Sessão inválida ou expirada." }, 401);
   const caller = await userResp.json();
 
-  const staffResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?user_id=eq.${caller.id}&select=user_id`, {
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-  });
+  const staffResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?user_id=eq.${caller.id}&select=user_id`, { headers: adminHeaders });
   const staffRows = await staffResp.json();
   if (!Array.isArray(staffRows) || staffRows.length === 0) {
     return json({ ok: false, erro: "Apenas corretores da equipe Nexus podem criar acesso de cliente." }, 403);
   }
 
-  const inviteResp = await fetch(`${SUPABASE_URL}/auth/v1/invite?redirect_to=${encodeURIComponent(PORTAL_URL)}`, {
-    method: "POST",
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
-  const invited = await inviteResp.json();
-  if (!inviteResp.ok) {
-    return json({ ok: false, erro: invited.msg || invited.error_description || invited.error || "Erro ao criar o convite." }, 500);
+  // Verifica se esse e-mail já tem uma conta (de uma tentativa anterior, por exemplo) antes de convidar de novo.
+  const existingResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, { headers: adminHeaders });
+  const existingData = existingResp.ok ? await existingResp.json() : { users: [] };
+  const existingUser = (existingData.users || []).find(u => (u.email || "").toLowerCase() === email.toLowerCase());
+
+  let userId;
+  if (existingUser) {
+    const linkedResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?user_id=eq.${existingUser.id}&select=id,nome`, { headers: adminHeaders });
+    const linkedRows = linkedResp.ok ? await linkedResp.json() : [];
+    const linkedToOther = (linkedRows || []).find(r => r.id !== cadastro_id);
+    if (linkedToOther) {
+      return json({ ok: false, erro: `Esse e-mail já está vinculado ao cadastro de "${linkedToOther.nome}". Use outro e-mail ou remova o vínculo antigo primeiro.` }, 409);
+    }
+    userId = existingUser.id;
+  } else {
+    const inviteResp = await fetch(`${SUPABASE_URL}/auth/v1/invite?redirect_to=${encodeURIComponent(PORTAL_URL)}`, {
+      method: "POST",
+      headers: { ...adminHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const invited = await inviteResp.json();
+    if (!inviteResp.ok) {
+      return json({ ok: false, erro: invited.msg || invited.error_description || invited.error || "Erro ao criar o convite." }, 500);
+    }
+    userId = invited.id;
   }
 
   const updateResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${cadastro_id}`, {
     method: "PATCH",
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ user_id: invited.id, email }),
+    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ user_id: userId, email }),
   });
   if (!updateResp.ok) {
-    return json({ ok: false, erro: "Convite criado, mas não consegui vincular ao cadastro. Avise o suporte." }, 500);
+    const detail = await updateResp.text();
+    return json({ ok: false, erro: `Convite criado, mas não consegui vincular ao cadastro (${updateResp.status}): ${detail.slice(0, 200)}` }, 500);
   }
 
-  return json({ ok: true, user_id: invited.id }, 200);
+  return json({ ok: true, user_id: userId }, 200);
 };
