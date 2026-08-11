@@ -575,9 +575,10 @@
                   <option value="pago">Recebidas</option>
                   <option value="todas">Todas</option>
                 </select>
+                <select class="filter" id="comissoesFilterMes"><option value="">Todos os meses</option></select>
               </div>
             </div>
-            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador.</div>
+            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador. O filtro de mês considera o vencimento.</div>
             <table>
               <thead><tr>
                 <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
@@ -595,9 +596,10 @@
                   <option value="pago">Pagas</option>
                   <option value="todas">Todas</option>
                 </select>
+                <select class="filter" id="comissoesCorretorFilterMes"><option value="">Todos os meses</option></select>
               </div>
             </div>
-            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente.</div>
+            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente. O filtro de mês considera o vencimento.</div>
             <table>
               <thead><tr>
                 <th data-sort="recebidoEm">Recebido pela Nexus</th><th data-sort="vencimento">Vencimento</th><th data-sort="corretorNome">Corretor</th><th data-sort="negocioLabel">Negócio</th>
@@ -1965,6 +1967,8 @@ document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
 });
 document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterStatus").addEventListener("change", renderComissoesPage);
+document.getElementById("comissoesFilterMes").addEventListener("change", renderComissoesPage);
+document.getElementById("comissoesCorretorFilterMes").addEventListener("change", renderComissoesPage);
 document.querySelectorAll('#com-receber thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoes", th.dataset.sort, renderComissoesPage)));
 document.querySelectorAll('#com-pagar thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoesCorretor", th.dataset.sort, renderComissoesPage)));
 
@@ -1976,17 +1980,29 @@ function dia10MesSeguinte(dataISO) {
   return `${ny}-${String(nm).padStart(2,"0")}-10`;
 }
 
+const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+function mesAnoLabel(iso) { const [y,m] = iso.split("-").map(Number); return `${MESES_PT[m-1]}/${y}`; }
+function popularFiltroMes(selectId, mesesDisponiveis) {
+  const sel = document.getElementById(selectId);
+  const atual = sel.value;
+  const meses = Array.from(new Set(mesesDisponiveis)).sort();
+  sel.innerHTML = `<option value="">Todos os meses</option>` + meses.map(m => `<option value="${m}" ${m===atual?"selected":""}>${mesAnoLabel(m)}</option>`).join("");
+  if (meses.includes(atual)) sel.value = atual;
+}
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
   if (!body) return;
   const filtro = document.getElementById("comissoesFilterStatus").value;
-  let list = data.negocios
+  const todasLinhas = data.negocios.map(n => ({
+    id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
+    vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
+    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", status: n.status, negocio: n,
+  }));
+  popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
+  const mesFiltro = document.getElementById("comissoesFilterMes").value;
+  let list = todasLinhas
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.status === "Pago" : n.status !== "Pago"))
-    .map(n => ({
-      id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
-      vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
-      valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", status: n.status, negocio: n,
-    }));
+    .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro);
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
@@ -2006,14 +2022,18 @@ function renderComissoesPage() {
   const bodyC = document.getElementById("comissoesCorretorBody");
   if (!bodyC) return;
   const filtroC = document.getElementById("comissoesCorretorFilterStatus").value;
-  let listC = data.negocios
+  const todasLinhasC = data.negocios
     .filter(n => n.corretor_id && Number(n.comissao_corretor || 0) > 0)
-    .filter(n => filtroC === "todas" || (filtroC === "pago" ? n.comissao_corretor_paga : !n.comissao_corretor_paga))
     .map(n => ({
       id: n.id, recebidoEm: n.comissao_recebida_em || "", vencimento: dia10MesSeguinte(n.comissao_recebida_em) || "",
       corretorNome: nomeCorretor(n.corretor_id), negocioLabel: `${n.grao || "—"} · ${n.contraparte || nomeCadastro(n.cliente_id)}`,
       valor: Number(n.comissao_corretor || 0), paga: n.comissao_corretor_paga, aguardando: !n.comissao_recebida_em, negocio: n,
     }));
+  popularFiltroMes("comissoesCorretorFilterMes", todasLinhasC.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
+  const mesFiltroC = document.getElementById("comissoesCorretorFilterMes").value;
+  let listC = todasLinhasC
+    .filter(n => filtroC === "todas" || (filtroC === "pago" ? n.paga : !n.paga))
+    .filter(c => !mesFiltroC || c.vencimento.slice(0,7) === mesFiltroC);
   const stC = sortState.comissoesCorretor;
   listC = stC && stC.key ? applySort(listC, stC.key, stC.dir) : listC.sort((a,b) => b.recebidoEm.localeCompare(a.recebidoEm));
   bodyC.innerHTML = listC.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão de corretor encontrada.</td></tr>` :
