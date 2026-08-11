@@ -581,7 +581,7 @@
             <table>
               <thead><tr>
                 <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
-                <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th>Status</th><th></th>
+                <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th data-sort="pagador">Pago por</th><th>Status</th><th></th>
               </tr></thead>
               <tbody id="comissoesBody"></tbody>
             </table>
@@ -1195,6 +1195,11 @@ async function restaurarNegocio(id) {
 function onClienteSelectChange() {
   const sel = v("f_clienteSelect");
   document.getElementById("f_contraparteWrap").style.display = sel === "__outro__" ? "block" : "none";
+  const comprador = data.cadastros.find(c => c.id === sel);
+  if (comprador && !n("f_comissaoSaca")) {
+    if (comprador.comissao_saca_padrao) { document.getElementById("f_comissaoSaca").value = comprador.comissao_saca_padrao; atualizarComissaoTotal(); }
+    if (comprador.comissao_pagador_padrao) document.getElementById("f_comissaoPagador").value = comprador.comissao_pagador_padrao;
+  }
 }
 function sugerirNumeroContrato() {
   const ano = new Date().getFullYear();
@@ -1811,6 +1816,11 @@ function openContatoModal(id) {
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
+      <div class="field-row">
+        <div class="field"><label>Comissão padrão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSacaPadrao" value="${item.comissao_saca_padrao||""}" placeholder="Ex: 0,25 a 0,30"></div>
+        <div class="field"><label>Quem paga a comissão (padrão)</label><select id="f_comissaoPagadorPadrao"><option ${(!item.comissao_pagador_padrao||item.comissao_pagador_padrao==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador_padrao==="Comprador"?"selected":""}>Comprador</option></select></div>
+      </div>
+      <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">Preenche automaticamente esses dois campos ao criar uma nova negociação com este comprador — pode ser ajustado negócio a negócio.</div>
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-2px">Cláusulas da Confirmação de Negócio, editáveis por comprador. Cada uma em branco usa o padrão da Nexus. Use {{VENDEDOR}}, {{COMPRADOR}}, {{COMISSAO_SACA}} e {{COMISSAO_PAGADOR}} onde quiser que o sistema preencha automaticamente.</div>
       ${clausulaFieldHtml(item, "qualidade")}
       ${clausulaFieldHtml(item, "contaminantes")}
@@ -1841,7 +1851,9 @@ async function saveContato(id) {
     clausula_qualidade: tipo === "Comprador" ? v("f_clausula_qualidade") : "",
     clausula_contaminantes: tipo === "Comprador" ? v("f_clausula_contaminantes") : "",
     clausula_condicoes_gerais: tipo === "Comprador" ? v("f_clausula_condicoesGerais") : "",
-    clausula_comissao: tipo === "Comprador" ? v("f_clausula_comissao") : "" };
+    clausula_comissao: tipo === "Comprador" ? v("f_clausula_comissao") : "",
+    comissao_saca_padrao: tipo === "Comprador" ? (n("f_comissaoSacaPadrao") || null) : null,
+    comissao_pagador_padrao: tipo === "Comprador" ? v("f_comissaoPagadorPadrao") : null };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
   await loadCadastros(); closeModal(); renderContatos(); renderWorkspace();
 }
@@ -1973,15 +1985,16 @@ function renderComissoesPage() {
     .map(n => ({
       id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
       vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
-      valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), status: n.status, negocio: n,
+      valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", status: n.status, negocio: n,
     }));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhuma comissão encontrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.status === "Pago";
       return `<tr>
         <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
+        <td>${c.pagador}</td>
         <td><span class="badge ${pago ? "pago" : "agendado"}">${pago ? "Recebido" : "A receber"}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
