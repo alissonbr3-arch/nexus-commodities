@@ -926,9 +926,9 @@ function renderDashCorretorRanking() {
   document.getElementById("dashCorretorRankingHint").innerHTML = ["mes","ano","total"].map(p =>
     `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
   const list = negociosPorPeriodoCorretor(dashCorretorPeriodo);
-  const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0) })).filter(p => p.valor > 0).sort((a,b) => b.valor - a.valor);
+  const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0) })).sort((a,b) => b.valor - a.valor);
   const max = Math.max(1, ...porCorretor.map(p => p.valor));
-  document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor com sacas negociadas no período.</div>` :
+  document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
     porCorretor.map((p,i) => `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`).join("");
 }
 function renderGraoChart(list) {
