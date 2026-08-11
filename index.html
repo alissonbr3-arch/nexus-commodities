@@ -2448,7 +2448,7 @@ function renderWorkspace() {
   renderPrecoPracaBanner();
   renderWsOwnerSelect();
   const owner = wsOwnerId || currentUserId;
-  const clientes = data.cadastros.filter(c => c.owner_id === owner);
+  const clientes = data.cadastros.filter(c => c.owner_id === owner && c.tipo === "Produtor");
   const today = todayISO();
 
   const volumeTotalCadastro = c => Number(c.volume_anual_soja||0) + Number(c.volume_anual_milho||0);
