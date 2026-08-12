@@ -64,6 +64,18 @@ export async function atualizarCotacoes() {
         headers: sbHeaders,
         body: JSON.stringify(payload),
       });
+      await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes_historico?on_conflict=codigo,data`, {
+        method: "POST",
+        headers: { ...sbHeaders, Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({
+          codigo: ativo.codigo,
+          produto: ativo.produto,
+          mes: ativo.mes,
+          data: new Date().toISOString().slice(0, 10),
+          ultima,
+          preco_saca_brl: precoSaca,
+        }),
+      });
       resultados.push({ codigo: ativo.codigo, produto: ativo.produto, mes: ativo.mes, ultima, precoSaca: Number(precoSaca.toFixed(2)), ok: upd.ok, status: upd.status });
     } catch (e) {
       resultados.push({ codigo: ativo.codigo, ok: false, erro: String(e) });
