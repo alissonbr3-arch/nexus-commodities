@@ -72,6 +72,15 @@
   .topbar .right { display: flex; align-items: center; gap: 14px; }
   .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 14px; cursor: pointer; }
   .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--gold-soft); color: var(--gold); display: flex; align-items: center; justify-content: center; font-weight: 500; font-size: 12px; }
+  .notif-wrap { position: relative; }
+  .notif-bell { position: relative; background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 6px; display: flex; align-items: center; border-radius: 8px; }
+  .notif-bell:hover { color: var(--ink); background: var(--card); }
+  .notif-badge { position: absolute; top: 2px; right: 2px; background: var(--red); color: #fff; font-size: 9.5px; font-weight: 700; border-radius: 999px; min-width: 15px; height: 15px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: absolute; top: 40px; right: 0; width: 340px; max-height: 420px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 50; padding: 6px; }
+  .notif-item { padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item .t { font-weight: 500; margin-bottom: 2px; }
+  .notif-item .d { color: var(--ink-soft); font-size: 11px; }
   .userbox { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .userbox .name { font-size: 12.5px; font-weight: 500; line-height: 1.2; }
   .userbox .role { font-size: 11px; color: var(--ink-soft); }
@@ -292,6 +301,13 @@
       <input type="text" class="search" placeholder="Pesquisar negociações, contatos, embarques...">
       <div class="right">
         <span id="syncStatus" style="font-size:11.5px;color:var(--ink-soft);"><span class="sync-dot"></span>sincronizado</span>
+        <div class="notif-wrap">
+          <button class="notif-bell" id="notifBellBtn" onclick="toggleNotifPanel()" title="Notificações">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </button>
+          <div class="notif-panel" id="notifPanel" style="display:none"></div>
+        </div>
         <div class="userbox">
           <div class="avatar" id="userAvatar" style="cursor:pointer;overflow:hidden" title="Clique para trocar sua foto" onclick="document.getElementById('avatarFileInput').click()">--</div>
           <input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="uploadAvatar(this.files[0])">
@@ -434,6 +450,12 @@
         </table>
         </div>
         <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
+
+        <div class="panel-card" style="margin-top:16px">
+          <h3>Histórico de cotações</h3>
+          <div class="hint">Evolução do preço (R$/saca) dos contratos CBOT atualizados automaticamente. Começa a partir de agora — sem dados retroativos.</div>
+          <div class="chart-wrap"><canvas id="cotacoesHistoricoChart"></canvas></div>
+        </div>
 
         <div class="ws-card" style="max-width:420px;margin-top:16px">
           <div class="ws-name" style="margin-bottom:4px">Preço da praça — Soja (São Gabriel do Oeste)</div>
@@ -675,12 +697,45 @@
       <!-- RELATÓRIOS -->
       <div class="page" id="page-relatorios">
         <div class="panel-head"><h2>Relatórios</h2></div>
-        <div class="panel-card" style="max-width:520px">
-          <h3>Relatório de negócios por produtor</h3>
-          <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha o produtor e as safras e gere um relatório com vendas, recebimentos e embarques.</div>
-          <div class="field"><label>Produtor</label><select id="relProdutorSelect" onchange="onRelProdutorChange()"></select></div>
-          <div class="field"><label>Safras</label><div id="relSafrasWrap" class="placeholder-box" style="font-size:12px;padding:14px">Selecione um produtor.</div></div>
-          <button class="btn-primary" id="relGerarBtn" disabled onclick="gerarRelatorioProdutor()">Gerar relatório</button>
+        <div class="subtabs">
+          <button class="rel-subtab-btn active" data-relsubtab="produtor">Por produtor</button>
+          <button class="rel-subtab-btn" data-relsubtab="fechamento">Fechamento mensal</button>
+          <button class="rel-subtab-btn" data-relsubtab="auditoria">Auditoria</button>
+        </div>
+
+        <div class="rel-subpage" id="relsub-produtor" style="display:block">
+          <div class="panel-card" style="max-width:520px">
+            <h3>Relatório de negócios por produtor</h3>
+            <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha o produtor e as safras e gere um relatório com vendas, recebimentos e embarques.</div>
+            <div class="field"><label>Produtor</label><select id="relProdutorSelect" onchange="onRelProdutorChange()"></select></div>
+            <div class="field"><label>Safras</label><div id="relSafrasWrap" class="placeholder-box" style="font-size:12px;padding:14px">Selecione um produtor.</div></div>
+            <button class="btn-primary" id="relGerarBtn" disabled onclick="gerarRelatorioProdutor()">Gerar relatório</button>
+          </div>
+        </div>
+
+        <div class="rel-subpage" id="relsub-fechamento" style="display:none">
+          <div class="panel-card" style="max-width:520px">
+            <h3>Fechamento mensal</h3>
+            <div class="hint">Resumo do mês — contratos, volume por grão e comissões por corretor — pronto pra imprimir ou guardar.</div>
+            <div class="field-row">
+              <div class="field"><label>Mês</label><select id="fechMesSelect"></select></div>
+              <div class="field"><label>Ano</label><select id="fechAnoSelect"></select></div>
+            </div>
+            <button class="btn-primary" onclick="gerarFechamentoMensal()">Gerar relatório</button>
+          </div>
+        </div>
+
+        <div class="rel-subpage" id="relsub-auditoria" style="display:none">
+          <div class="panel-card">
+            <h3>Histórico de alterações</h3>
+            <div class="hint">Quem criou, alterou ou excluiu negociações e cadastros. Mostra os últimos 200 eventos.</div>
+            <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
+              <select class="filter" id="auditFilterTabela" onchange="renderAuditoria()"><option value="">Todas as tabelas</option><option value="nexus_negocios">Negociações</option><option value="nexus_cadastros">Cadastros</option></select>
+              <select class="filter" id="auditFilterAcao" onchange="renderAuditoria()"><option value="">Todas as ações</option><option value="INSERT">Criação</option><option value="UPDATE">Alteração</option><option value="DELETE">Exclusão</option></select>
+              <button class="btn-ghost" onclick="loadAuditLogEAtualizar()">Atualizar</button>
+            </div>
+            <div id="auditList"></div>
+          </div>
         </div>
       </div>
 
@@ -739,7 +794,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], dolar: null, equipe: [], intencoes: [], fazendas: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
@@ -790,7 +845,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -804,6 +859,7 @@ async function loadNegocios() { const { data: rows, error } = await sb.from("nex
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
+async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000); if (!error) data.cotacoesHistorico = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
@@ -812,10 +868,10 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); renderNotificacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); renderCotacoes(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); await loadCotacoesHistorico(); renderCotacoes(); renderNotificacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_intencoes" }, async () => { await loadIntencoes(); renderFunil(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_fazendas" }, async () => { await loadFazendas(); })
@@ -825,10 +881,61 @@ function wireRealtime() {
 }
 
 function renderAll() {
-  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); renderRelatorios();
+  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); renderRelatorios(); renderNotificacoes();
   const activeSub = document.querySelector(".subtab-btn.active")?.dataset.subtab;
   if (activeSub === "compradores") renderDashboardCompradores();
   if (activeSub === "produtores") renderDashboardProdutores();
+}
+
+// ---------------- NOTIFICAÇÕES ----------------
+function calcularNotificacoes() {
+  const hoje = todayISO();
+  const alerts = [];
+  data.negocios.filter(n => n.data_fim_embarque && n.data_fim_embarque < hoje && !n.embarque_finalizado).forEach(n => {
+    const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
+    alerts.push({ nivel: "red", titulo: `Embarque atrasado — ${n.grao || "—"} · ${comprador}`, detalhe: `Previsto até ${fmtDate(n.data_fim_embarque)}`, negocioId: n.id });
+  });
+  data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento).forEach(n => {
+    const venc = dia10MesSeguinte(n.data_pagamento);
+    if (!venc) return;
+    const dias = Math.round((new Date(venc) - new Date(hoje)) / 86400000);
+    if (dias <= 7) {
+      const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
+      alerts.push({ nivel: dias < 0 ? "red" : "gold", titulo: `Comissão ${dias < 0 ? "vencida" : "vencendo"} — ${comprador}`, detalhe: `Vencimento ${fmtDate(venc)} · ${fmtMoney(n.comissao)}`, negocioId: n.id });
+    }
+  });
+  (data.cotacoes || []).filter(c => Math.abs(Number(c.pct || 0)) >= 3).forEach(c => {
+    alerts.push({ nivel: "blue", titulo: `${c.produto} ${c.mes || ""} variou ${fmtSigned(c.pct)}%`, detalhe: `Última: ${Number(c.ultima).toLocaleString("pt-BR",{minimumFractionDigits:2})}` });
+  });
+  return alerts;
+}
+function renderNotificacoes() {
+  const badge = document.getElementById("notifBadge");
+  const panel = document.getElementById("notifPanel");
+  if (!badge || !panel) return;
+  const alerts = calcularNotificacoes();
+  badge.style.display = alerts.length > 0 ? "flex" : "none";
+  badge.textContent = alerts.length > 9 ? "9+" : alerts.length;
+  const cores = { red: "var(--red)", gold: "var(--gold)", blue: "var(--blue)" };
+  panel.innerHTML = alerts.length === 0 ? `<div class="notif-item" style="text-align:center;color:var(--ink-soft)">Nenhum alerta no momento.</div>` :
+    alerts.map(a => `<div class="notif-item" ${a.negocioId ? `style="cursor:pointer" onclick="abrirNegocioDeNotificacao('${a.negocioId}')"` : ""}>
+      <div class="t" style="color:${cores[a.nivel] || "var(--ink)"}">${a.titulo}</div>
+      <div class="d">${a.detalhe}</div>
+    </div>`).join("");
+}
+function toggleNotifPanel() {
+  const panel = document.getElementById("notifPanel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+}
+document.addEventListener("click", (e) => {
+  const wrap = document.getElementById("notifBellBtn")?.closest(".notif-wrap");
+  const panel = document.getElementById("notifPanel");
+  if (wrap && panel && panel.style.display !== "none" && !wrap.contains(e.target)) panel.style.display = "none";
+});
+function abrirNegocioDeNotificacao(negocioId) {
+  document.getElementById("notifPanel").style.display = "none";
+  document.querySelector('.nav-item[data-page="negociacoes"]').click();
+  openNegocioModal(negocioId);
 }
 
 // ---------------- NAV ----------------
@@ -922,14 +1029,27 @@ function negociosPorPeriodoCorretor(p) {
   const key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   return data.negocios.filter(n => n.data && n.data.slice(0,7) === key);
 }
+function metaParaPeriodoCorretor(corretor, periodo) {
+  const meta = Number(corretor.meta_mensal_sacas || 0);
+  if (!meta) return 0;
+  if (periodo === "mes") return meta;
+  if (periodo === "ano") return meta * (new Date().getMonth() + 1);
+  return 0;
+}
 function renderDashCorretorRanking() {
   document.getElementById("dashCorretorRankingHint").innerHTML = ["mes","ano","total"].map(p =>
     `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
   const list = negociosPorPeriodoCorretor(dashCorretorPeriodo);
-  const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0) })).sort((a,b) => b.valor - a.valor);
+  const porCorretor = data.equipe.map(e => {
+    const valor = list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0);
+    return { nome: e.nome, valor, meta: metaParaPeriodoCorretor(e, dashCorretorPeriodo) };
+  }).sort((a,b) => b.valor - a.valor);
   const max = Math.max(1, ...porCorretor.map(p => p.valor));
   document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
-    porCorretor.map((p,i) => `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`).join("");
+    porCorretor.map((p,i) => {
+      const metaInfo = p.meta > 0 ? `<div style="font-size:11px;color:${p.valor>=p.meta?"var(--green)":"var(--ink-soft)"};margin-top:2px">Meta: ${fmtNum(p.meta)} sc (${Math.round(p.valor/p.meta*100)}%)</div>` : "";
+      return `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div>${metaInfo}</div></div>`;
+    }).join("");
 }
 function renderGraoChart(list) {
   const totals = {}; list.forEach(n => { totals[n.grao] = (totals[n.grao] || 0) + Number(n.quantidade || 0); });
@@ -1118,6 +1238,33 @@ function renderCotacoes() {
   document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
   atualizarPreviewPrecoPraca();
+  renderCotacoesHistoricoChart();
+}
+let cotacoesHistoricoChart = null;
+const PALETTE_COTACAO_HIST = { "ZSU26.CBT": "#d9ab34", "ZSX26.CBT": "#4a8bb0", "ZSH27.CBT": "#6fa348", "ZC=F": "#c0574a" };
+function renderCotacoesHistoricoChart() {
+  const canvas = document.getElementById("cotacoesHistoricoChart");
+  if (!canvas) return;
+  const hist = data.cotacoesHistorico || [];
+  if (hist.length === 0) {
+    if (cotacoesHistoricoChart) { cotacoesHistoricoChart.destroy(); cotacoesHistoricoChart = null; }
+    return;
+  }
+  const datas = [...new Set(hist.map(h => h.data))].sort();
+  const codigos = [...new Set(hist.map(h => h.codigo))];
+  const datasets = codigos.map(codigo => {
+    const porData = {}; hist.filter(h => h.codigo === codigo).forEach(h => { porData[h.data] = Number(h.preco_saca_brl || 0); });
+    const amostra = hist.find(h => h.codigo === codigo);
+    const label = amostra ? `${amostra.produto} ${amostra.mes || ""}`.trim() : codigo;
+    return { label, data: datas.map(d => porData[d] ?? null), borderColor: PALETTE_COTACAO_HIST[codigo] || "#999", backgroundColor: "transparent", spanGaps: true, tension: 0.25 };
+  });
+  if (cotacoesHistoricoChart) cotacoesHistoricoChart.destroy();
+  cotacoesHistoricoChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: datas.map(fmtDate), datasets },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#8b93a1" } } },
+      scales: { y: { grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
 }
 document.querySelectorAll('#page-cotacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cotacoes", th.dataset.sort, renderCotacoes)));
 async function atualizarCbotAgora() {
@@ -2135,6 +2282,15 @@ function gerarReciboRepasseCorretor(negocioId) {
 }
 
 // ---------------- RELATÓRIOS ----------------
+document.querySelectorAll(".rel-subtab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".rel-subtab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".rel-subpage").forEach(p => p.style.display = "none");
+    btn.classList.add("active");
+    document.getElementById("relsub-" + btn.dataset.relsubtab).style.display = "block";
+    if (btn.dataset.relsubtab === "auditoria" && !auditLogCarregado) loadAuditLogEAtualizar();
+  });
+});
 function renderRelatorios() {
   const sel = document.getElementById("relProdutorSelect");
   if (!sel) return;
@@ -2142,6 +2298,146 @@ function renderRelatorios() {
   const produtores = data.cadastros.filter(c => c.tipo === "Produtor").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
   sel.innerHTML = `<option value="">— Selecione um produtor —</option>` + produtores.map(p => `<option value="${p.id}" ${p.id===cur?"selected":""}>${p.nome}</option>`).join("");
   if (cur && produtores.some(p => p.id === cur)) onRelProdutorChange();
+  popularFechamentoSelects();
+}
+function popularFechamentoSelects() {
+  const selMes = document.getElementById("fechMesSelect");
+  const selAno = document.getElementById("fechAnoSelect");
+  if (!selMes || selMes.options.length) return;
+  const hoje = new Date();
+  selMes.innerHTML = MESES_PT.map((m,i) => `<option value="${i+1}" ${i===hoje.getMonth()?"selected":""}>${m}</option>`).join("");
+  const anos = []; for (let a = hoje.getFullYear(); a >= hoje.getFullYear() - 3; a--) anos.push(a);
+  selAno.innerHTML = anos.map(a => `<option value="${a}" ${a===hoje.getFullYear()?"selected":""}>${a}</option>`).join("");
+}
+
+function gerarFechamentoMensal() {
+  const mes = Number(document.getElementById("fechMesSelect").value);
+  const ano = Number(document.getElementById("fechAnoSelect").value);
+  const key = `${ano}-${String(mes).padStart(2,"0")}`;
+  const negocios = data.negocios.filter(n => n.data && n.data.startsWith(key)).sort((a,b) => (a.data||"").localeCompare(b.data||""));
+  if (negocios.length === 0) { alert(`Nenhum negócio encontrado em ${MESES_PT[mes-1]}/${ano}.`); return; }
+
+  const volumePorGrao = {};
+  negocios.forEach(n => { volumePorGrao[n.grao] = (volumePorGrao[n.grao]||0) + Number(n.quantidade||0); });
+  const volumeTotal = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
+  const valorTotal = negocios.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
+  const comissaoTotal = negocios.reduce((s,n) => s + Number(n.comissao||0), 0);
+
+  const comissaoPorCorretor = {};
+  negocios.forEach(n => { if (n.corretor_id) { const nome = nomeCorretor(n.corretor_id); comissaoPorCorretor[nome] = (comissaoPorCorretor[nome]||0) + Number(n.comissao_corretor||0); } });
+
+  const linhas = negocios.map(n => {
+    const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
+    const vendedorNome = n.produtor_id ? nomeCadastro(n.produtor_id) : "—";
+    const valor = Number(n.quantidade||0) * Number(n.preco||0);
+    return `<tr>
+      <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${n.grao||"—"}</td><td>${vendedorNome}</td><td>${compradorNome}</td>
+      <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(valor)}</td><td>${fmtMoney(n.comissao)}</td><td>${n.corretor_id ? nomeCorretor(n.corretor_id) : "—"}</td><td>${n.status}</td>
+    </tr>`;
+  }).join("");
+  const linhasGrao = Object.entries(volumePorGrao).map(([g,v]) => `<tr><td>${g}</td><td>${fmtNum(v)} sc</td></tr>`).join("");
+  const linhasCorretor = Object.entries(comissaoPorCorretor).map(([c,v]) => `<tr><td>${c}</td><td>${fmtMoney(v)}</td></tr>`).join("");
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Fechamento Mensal — ${MESES_PT[mes-1]}/${ano}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0 4px; }
+    .sub { text-align: center; font-size: 12px; color: #555; margin-bottom: 18px; }
+    table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
+    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
+    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; flex-wrap: wrap; }
+    .resumo .item b { display: block; font-size: 15px; }
+    .cols { display: flex; gap: 24px; margin-top: 18px; }
+    .cols > div { flex: 1; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } @page { size: A4 landscape; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>FECHAMENTO MENSAL</h1>
+  <div class="sub">${MESES_PT[mes-1]} de ${ano} — emitido em ${hoje}</div>
+  <div class="resumo">
+    <div class="item"><span>Negócios no mês</span><b>${negocios.length}</b></div>
+    <div class="item"><span>Volume total</span><b>${fmtNum(volumeTotal)} sc</b></div>
+    <div class="item"><span>Valor total</span><b>${fmtMoney(valorTotal)}</b></div>
+    <div class="item"><span>Comissão total</span><b>${fmtMoney(comissaoTotal)}</b></div>
+  </div>
+  <div class="cols">
+    <div><table class="linhas"><thead><tr><th>Grão</th><th>Volume</th></tr></thead><tbody>${linhasGrao}</tbody></table></div>
+    <div><table class="linhas"><thead><tr><th>Corretor</th><th>Comissão</th></tr></thead><tbody>${linhasCorretor || '<tr><td colspan="2">—</td></tr>'}</tbody></table></div>
+  </div>
+  <table class="linhas" style="margin-top:24px">
+    <thead><tr><th>Contrato</th><th>Data</th><th>Grão</th><th>Vendedor</th><th>Comprador</th><th>Qtd (sc)</th><th>Valor</th><th>Comissão</th><th>Corretor</th><th>Status</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// ---------------- AUDITORIA ----------------
+let auditLogCarregado = false;
+async function loadAuditLog() {
+  const { data: rows, error } = await sb.from("nexus_audit_log").select("*").order("created_at", { ascending: false }).limit(200);
+  if (!error) data.auditLog = rows || [];
+  auditLogCarregado = true;
+}
+async function loadAuditLogEAtualizar() { await loadAuditLog(); renderAuditoria(); }
+function auditUsuarioNome(userId) {
+  if (!userId) return "Sistema";
+  const e = data.equipe.find(x => x.user_id === userId);
+  return e ? e.nome : "Usuário removido";
+}
+function auditRegistroLabel(a) {
+  const dados = (a.alteracoes && (a.alteracoes.depois || a.alteracoes.antes)) || {};
+  if (a.tabela === "nexus_negocios") return dados.numero_contrato ? `Contrato ${dados.numero_contrato}` : (dados.grao || "Negociação");
+  if (a.tabela === "nexus_cadastros") return dados.nome || "Cadastro";
+  return a.tabela;
+}
+const AUDIT_CAMPOS_IGNORADOS = ["updated_at", "created_at"];
+function auditValLabel(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "sim" : "não";
+  return String(v);
+}
+function auditDiffHtml(a) {
+  if (a.acao !== "UPDATE") return "";
+  const antes = (a.alteracoes && a.alteracoes.antes) || {};
+  const depois = (a.alteracoes && a.alteracoes.depois) || {};
+  const chaves = Object.keys(depois).filter(k => !AUDIT_CAMPOS_IGNORADOS.includes(k) && JSON.stringify(antes[k]) !== JSON.stringify(depois[k]));
+  if (chaves.length === 0) return `<div style="color:var(--ink-soft)">Sem mudanças relevantes</div>`;
+  return chaves.map(k => `<div><b>${k}:</b> ${auditValLabel(antes[k])} → ${auditValLabel(depois[k])}</div>`).join("");
+}
+function auditRowHtml(a) {
+  const acaoLabel = { INSERT: "Criou", UPDATE: "Alterou", DELETE: "Excluiu" }[a.acao] || a.acao;
+  const acaoColor = { INSERT: "var(--green)", UPDATE: "var(--blue)", DELETE: "var(--red)" }[a.acao] || "var(--ink-soft)";
+  const quando = new Date(a.created_at).toLocaleString("pt-BR");
+  const tabelaLabel = a.tabela === "nexus_negocios" ? "negociação" : "cadastro";
+  return `<div class="rank-row" style="align-items:flex-start">
+    <div style="flex:1">
+      <div style="font-size:12.5px"><b>${auditUsuarioNome(a.usuario_id)}</b> <span style="color:${acaoColor}">${acaoLabel}</span> ${tabelaLabel} — <b>${auditRegistroLabel(a)}</b></div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${quando}</div>
+      <div style="font-size:11.5px;margin-top:6px">${auditDiffHtml(a)}</div>
+    </div>
+  </div>`;
+}
+function renderAuditoria() {
+  const el = document.getElementById("auditList");
+  if (!el) return;
+  const tabelaFiltro = document.getElementById("auditFilterTabela").value;
+  const acaoFiltro = document.getElementById("auditFilterAcao").value;
+  const list = (data.auditLog || []).filter(a => (!tabelaFiltro || a.tabela === tabelaFiltro) && (!acaoFiltro || a.acao === acaoFiltro));
+  el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhum evento encontrado.</div>` : list.map(auditRowHtml).join("");
 }
 function onRelProdutorChange() {
   const produtorId = document.getElementById("relProdutorSelect").value;
@@ -2719,8 +3015,19 @@ function renderEquipe() {
       <div class="t-role">${e.cargo || "Corretor"}</div>
       ${isMe ? `<div style="margin-top:10px"><button class="btn-ghost" style="padding:5px 10px;font-size:11.5px" onclick="document.getElementById('equipeFileInput_${e.user_id}').click()">Trocar foto</button>
         <input type="file" id="equipeFileInput_${e.user_id}" accept="image/*" style="display:none" onchange="uploadAvatarFor('${e.user_id}', this.files[0])"></div>` : ""}
+      <div style="margin-top:12px;text-align:left">
+        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meta mensal (sc)</label>
+        <input type="number" step="1" min="0" value="${e.meta_mensal_sacas || ""}" placeholder="Sem meta" style="text-align:center" onchange="salvarMetaCorretor('${e.user_id}', this.value)">
+      </div>
     </div>`;
   }).join("");
+}
+async function salvarMetaCorretor(userId, valor) {
+  const meta = valor === "" ? null : Number(valor);
+  await sb.from("nexus_equipe").update({ meta_mensal_sacas: meta }).eq("user_id", userId);
+  await loadEquipe();
+  renderEquipe();
+  renderDashCorretorRanking();
 }
 async function uploadAvatarFor(userId, file) {
   if (!file) return;
