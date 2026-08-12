@@ -2913,7 +2913,7 @@ function avatarEquipeThumbHtml(userId, size) {
   return `<div title="${e.nome}" style="width:${size}px;height:${size}px;border-radius:50%;background:var(--gold-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:500;flex-shrink:0">${iniciais}</div>`;
 }
 let funilFilterResponsavelId = "";
-const GRAO_ICONS = { Soja: "🫘", Milho: "🌽", Sorgo: "🌾", Milheto: "🌾" };
+const GRAO_ICONS = { Soja: "🌱", Milho: "🌽", Sorgo: "🌾", Milheto: "🌾" };
 function graoIconHtml(grao, size) {
   return `<span title="${grao}" style="font-size:${size||17}px;line-height:1">${GRAO_ICONS[grao] || "🌾"}</span>`;
 }
@@ -2934,7 +2934,7 @@ function renderFunil() {
       <div class="funil-card" draggable="true" data-id="${it.id}" ondragstart="onFunilCardDragStart(event,'${it.id}')" ondragend="onFunilCardDragEnd(event)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div class="fc-name">${nomeCadastro(it.produtor_id)}</div>
-          ${avatarEquipeThumbHtml(it.owner_id, 26)}
+          ${avatarEquipeThumbHtml(it.owner_id, 38)}
         </div>
         <div class="fc-sub" style="display:flex;align-items:center;gap:5px">${graoIconHtml(it.grao)} ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + nomeCadastro(it.comprador_id) : ""}</div>
         <div class="fc-precos" style="align-items:center">
