@@ -353,8 +353,8 @@
             </div>
           </div>
           <div class="panel-card">
-            <h3>Comissões por mês</h3>
-            <div class="hint">Receita de comissões nos últimos 6 meses</div>
+            <h3>Volume negociado por mês</h3>
+            <div class="hint">Sacas negociadas nos últimos 6 meses</div>
             <div class="chart-wrap"><canvas id="comissaoChart"></canvas></div>
           </div>
         </div>
@@ -941,7 +941,7 @@ function renderGraoChart(list) {
 function renderComissaoChart() {
   const months = []; const now = new Date();
   for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("pt-BR", { month: "short" }) }); }
-  const totals = months.map(m => data.negocios.filter(n => n.data && n.data.startsWith(m.key)).reduce((s,n) => s + Number(n.comissao||0), 0));
+  const totals = months.map(m => data.negocios.filter(n => n.data && n.data.startsWith(m.key)).reduce((s,n) => s + Number(n.quantidade||0), 0));
   const ctx = document.getElementById("comissaoChart"); if (comissaoChart) comissaoChart.destroy();
   comissaoChart = new Chart(ctx, { type: "bar", data: { labels: months.map(m => m.label), datasets: [{ data: totals, backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 36 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } } });
 }
