@@ -1422,7 +1422,7 @@ function openNegocioModal(id) {
         <select id="f_fazendaSelect" onchange="onFazendaSelectChange()">${fazendaOptionsHtml(item.produtor_id, item.fazenda_id)}</select>
       </div>
     </div>
-    <div class="field-row"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div></div>
+    <div class="field-row" style="grid-template-columns:1fr 1fr 1fr"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço Bruto (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div><div class="field"><label>Preço Líquido (R$/saca)</label><input type="number" step="0.01" id="f_precoLiquido" value="${item.preco_liquido || ""}" placeholder="Opcional"></div></div>
     <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
     <div class="field" id="f_comissaoSplitDisplay" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretora/100)} corretora (${data.config.comissao_pct_corretora}%) · ${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretor/100)} corretor (${data.config.comissao_pct_corretor}%)</div>
     <div class="field"><label>Quem paga a comissão</label><select id="f_comissaoPagador"><option ${(!item.comissao_pagador||item.comissao_pagador==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador==="Comprador"?"selected":""}>Comprador</option></select></div>
@@ -1445,7 +1445,7 @@ async function saveNegocio(id) {
   const comissaoSaca = n("f_comissaoSaca");
   const comissaoTotal = n("f_quantidade") * comissaoSaca;
   const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null,
-    quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), comissao: comissaoTotal, comissao_saca: comissaoSaca,
+    quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), preco_liquido: n("f_precoLiquido") || null, comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
@@ -1583,7 +1583,10 @@ function gerarConfirmacao(negocioId) {
   const fundemsTotal = Number(data.config.fundems_saca || 0) * sacas;
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
-  const liquido = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const precoLiquidoInformado = n.preco_liquido != null && n.preco_liquido !== "";
+  const precoLiquido = precoLiquidoInformado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
+  const liquido = precoLiquidoInformado ? precoLiquido * sacas : liquidoEstimado;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const boilerplateHtml = `
@@ -1647,9 +1650,10 @@ function gerarConfirmacao(negocioId) {
     <tr><td class="label">PRAZO PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
   </table>
-  <p><strong>PREÇO PRE-FIXADO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.<br>
+  <p><strong>PREÇO BRUTO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.<br>
+  <strong>PREÇO LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(precoLiquido)} por saca de 60kg${precoLiquidoInformado ? "" : ", após Comissão, 0,2% Senar, Fundersul, Fundems" + (funruralForma === "Comercialização" ? " e Funrural" : "")}.<br>
   <strong>TOTAL BRUTO:</strong> ${fmtMoney(total)} (${valorPorExtenso(total)}).<br>
-  <strong>TOTAL LÍQUIDO (estimado):</strong> ${fmtMoney(liquido)} (${valorPorExtenso(liquido)}) — após Comissão, 0,2% Senar, Fundersul, Fundems${funruralForma === "Comercialização" ? " e Funrural" : ""}.<br>
+  <strong>TOTAL LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(liquido)} (${valorPorExtenso(liquido)}).<br>
   <strong>FUNRURAL:</strong> recolhido pelo produtor na ${funruralForma}${funruralForma === "Comercialização" ? `, retido no ato do pagamento` : `, sem retenção nesta comercialização`}. ICMS: Não incidente em se tratando de produtor rural.</p>
 
   ${boilerplateHtml}
