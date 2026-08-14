@@ -440,7 +440,18 @@
 
       <!-- COTAÇÕES -->
       <div class="page" id="page-cotacoes">
-        <div class="panel-head">
+        <div class="panel-card">
+          <h3>Preço do dia — Compradores</h3>
+          <div class="hint">Preencha o preço que cada comprador está pagando hoje. Fica visível pra equipe toda.</div>
+          <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th><th></th></tr></thead>
+            <tbody id="precoMercadoBody"></tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="panel-head" style="margin-top:20px">
           <h2>Cotações — Bolsas</h2>
           <div class="actions-left">
             <button class="btn-ghost" id="atualizarCbotBtn">Atualizar CBOT agora</button>
@@ -463,17 +474,6 @@
         </table>
         </div>
         <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
-
-        <div class="panel-card" style="margin-top:16px">
-          <h3>Preço do dia — Compradores</h3>
-          <div class="hint">Preencha o preço que cada comprador está pagando hoje. Fica visível pra equipe toda.</div>
-          <div style="overflow-x:auto;">
-          <table>
-            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th><th></th></tr></thead>
-            <tbody id="precoMercadoBody"></tbody>
-          </table>
-          </div>
-        </div>
 
         <div class="panel-card" style="margin-top:16px">
           <h3>Histórico de cotações</h3>
