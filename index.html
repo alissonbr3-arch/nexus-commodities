@@ -1060,10 +1060,20 @@ function renderDashCorretorChart(list) {
 }
 let dashCorretorPeriodo = "mes";
 function setDashCorretorPeriodo(p) { dashCorretorPeriodo = p; renderDashCorretorRanking(); }
+function limitesSemanaAtual() {
+  const now = new Date();
+  const dow = now.getDay();
+  const diffToMonday = dow === 0 ? 6 : dow - 1;
+  const seg = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+  const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
+  const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return { inicio: toISO(seg), fim: toISO(dom) };
+}
 function negociosPorPeriodoCorretor(p) {
   if (p === "total") return data.negocios;
   const now = new Date();
   if (p === "ano") { const y = String(now.getFullYear()); return data.negocios.filter(n => n.data && n.data.slice(0,4) === y); }
+  if (p === "semana") { const { inicio, fim } = limitesSemanaAtual(); return data.negocios.filter(n => n.data && n.data >= inicio && n.data <= fim); }
   const key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   return data.negocios.filter(n => n.data && n.data.slice(0,7) === key);
 }
@@ -1075,8 +1085,8 @@ function metaParaPeriodoCorretor(corretor, periodo) {
   return 0;
 }
 function renderDashCorretorRanking() {
-  document.getElementById("dashCorretorRankingHint").innerHTML = ["mes","ano","total"].map(p =>
-    `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
+  document.getElementById("dashCorretorRankingHint").innerHTML = ["semana","mes","ano","total"].map(p =>
+    `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="semana"?"semana":p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
   const list = negociosPorPeriodoCorretor(dashCorretorPeriodo);
   const porCorretor = data.equipe.map(e => {
     const valor = list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0);
