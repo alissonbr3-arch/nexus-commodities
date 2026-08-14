@@ -469,7 +469,7 @@
           <div class="hint">Preencha o preço que cada comprador está pagando hoje. Fica visível pra equipe toda.</div>
           <div style="overflow-x:auto;">
           <table>
-            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th></tr></thead>
+            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th><th></th></tr></thead>
             <tbody id="precoMercadoBody"></tbody>
           </table>
           </div>
@@ -1296,25 +1296,47 @@ function tempoRelativo(iso) {
   if (diffDias === 1) return "ontem";
   return `há ${diffDias} dias`;
 }
+let precoMercadoEditando = new Set();
+function iniciarEdicaoPrecoMercado(id) { precoMercadoEditando.add(id); renderPrecoMercado(); }
+function cancelarEdicaoPrecoMercado(id) { precoMercadoEditando.delete(id); renderPrecoMercado(); }
+async function salvarPrecoMercadoLinha(id) {
+  const g = campo => { const el = document.getElementById(`pm_${campo}_${id}`); return el.value === "" ? null : Number(el.value); };
+  const payload = {
+    preco_soja_disponivel: g("sd"), preco_soja_futuro: g("sf"), preco_milho_disponivel: g("md"), preco_sorgo: g("so"),
+    preco_mercado_atualizado_em: new Date().toISOString(),
+  };
+  await sb.from("nexus_cadastros").update(payload).eq("id", id);
+  precoMercadoEditando.delete(id);
+  await loadCadastros();
+  renderPrecoMercado();
+}
 function renderPrecoMercado() {
   const body = document.getElementById("precoMercadoBody");
   if (!body) return;
   const compradores = data.cadastros.filter(c => c.tipo === "Comprador").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  body.innerHTML = compradores.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhum comprador cadastrado.</td></tr>` :
-    compradores.map(c => `<tr>
-      <td>${c.nome}</td>
-      <td><input type="number" step="0.01" value="${c.preco_soja_disponivel ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_soja_disponivel',this.value)"></td>
-      <td><input type="number" step="0.01" value="${c.preco_soja_futuro ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_soja_futuro',this.value)"></td>
-      <td><input type="number" step="0.01" value="${c.preco_milho_disponivel ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_milho_disponivel',this.value)"></td>
-      <td><input type="number" step="0.01" value="${c.preco_sorgo ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_sorgo',this.value)"></td>
-      <td style="font-size:11.5px;color:var(--ink-soft);white-space:nowrap">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
-    </tr>`).join("");
-}
-async function salvarPrecoMercado(cadastroId, campo, valor) {
-  const v = valor === "" ? null : Number(valor);
-  await sb.from("nexus_cadastros").update({ [campo]: v, preco_mercado_atualizado_em: new Date().toISOString() }).eq("id", cadastroId);
-  await loadCadastros();
-  renderPrecoMercado();
+  body.innerHTML = compradores.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhum comprador cadastrado.</td></tr>` :
+    compradores.map(c => {
+      if (precoMercadoEditando.has(c.id)) {
+        return `<tr>
+          <td>${c.nome}</td>
+          <td><input type="number" step="0.01" id="pm_sd_${c.id}" value="${c.preco_soja_disponivel ?? ""}" style="width:100px"></td>
+          <td><input type="number" step="0.01" id="pm_sf_${c.id}" value="${c.preco_soja_futuro ?? ""}" style="width:100px"></td>
+          <td><input type="number" step="0.01" id="pm_md_${c.id}" value="${c.preco_milho_disponivel ?? ""}" style="width:100px"></td>
+          <td><input type="number" step="0.01" id="pm_so_${c.id}" value="${c.preco_sorgo ?? ""}" style="width:100px"></td>
+          <td style="font-size:11.5px;color:var(--ink-soft)">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
+          <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 10px;font-size:11.5px" onclick="salvarPrecoMercadoLinha('${c.id}')">OK</button> <button class="btn-edit-text" onclick="cancelarEdicaoPrecoMercado('${c.id}')">Cancelar</button></td>
+        </tr>`;
+      }
+      return `<tr>
+        <td>${c.nome}</td>
+        <td>${c.preco_soja_disponivel != null ? fmtMoney(c.preco_soja_disponivel) : "—"}</td>
+        <td>${c.preco_soja_futuro != null ? fmtMoney(c.preco_soja_futuro) : "—"}</td>
+        <td>${c.preco_milho_disponivel != null ? fmtMoney(c.preco_milho_disponivel) : "—"}</td>
+        <td>${c.preco_sorgo != null ? fmtMoney(c.preco_sorgo) : "—"}</td>
+        <td style="font-size:11.5px;color:var(--ink-soft)">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
+        <td style="white-space:nowrap"><button class="btn-edit-text" onclick="iniciarEdicaoPrecoMercado('${c.id}')">Editar</button></td>
+      </tr>`;
+    }).join("");
 }
 let cotacoesHistoricoChart = null;
 const PALETTE_COTACAO_HIST = { "ZSU26.CBT": "#d9ab34", "ZSX26.CBT": "#4a8bb0", "ZSH27.CBT": "#6fa348", "ZC=F": "#c0574a" };
