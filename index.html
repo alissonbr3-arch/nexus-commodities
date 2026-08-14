@@ -292,7 +292,7 @@
     </div>
     <div class="nav-group">
       <button class="nav-item active" data-page="dashboard"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="label"> Dashboard</span></button>
-      <button class="nav-item" data-page="cotacoes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span><span class="label"> Cotações</span></button>
+      <button class="nav-item" data-page="cotacoes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span><span class="label"> Mercado</span></button>
       <button class="nav-item" data-page="workspace"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span><span class="label"> Workspace</span></button>
       <button class="nav-item" data-page="funil"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span><span class="label"> Funil</span></button>
       <button class="nav-item" data-page="negociacoes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></span><span class="label"> Negociações</span></button>
@@ -463,6 +463,17 @@
         </table>
         </div>
         <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
+
+        <div class="panel-card" style="margin-top:16px">
+          <h3>Preço do dia — Compradores</h3>
+          <div class="hint">Preencha o preço que cada comprador está pagando hoje. Fica visível pra equipe toda.</div>
+          <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th></tr></thead>
+            <tbody id="precoMercadoBody"></tbody>
+          </table>
+          </div>
+        </div>
 
         <div class="panel-card" style="margin-top:16px">
           <h3>Histórico de cotações</h3>
@@ -882,7 +893,7 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 function wireRealtime() {
   sb.channel("nexus-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); renderNotificacoes(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); renderPrecoMercado(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); await loadCotacoesHistorico(); renderCotacoes(); renderNotificacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
@@ -1266,6 +1277,34 @@ function renderCotacoes() {
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
   atualizarPreviewPrecoPraca();
   renderCotacoesHistoricoChart();
+  renderPrecoMercado();
+}
+function tempoRelativo(iso) {
+  if (!iso) return "—";
+  const diffDias = Math.floor((new Date() - new Date(iso)) / 86400000);
+  if (diffDias <= 0) return "hoje";
+  if (diffDias === 1) return "ontem";
+  return `há ${diffDias} dias`;
+}
+function renderPrecoMercado() {
+  const body = document.getElementById("precoMercadoBody");
+  if (!body) return;
+  const compradores = data.cadastros.filter(c => c.tipo === "Comprador").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  body.innerHTML = compradores.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhum comprador cadastrado.</td></tr>` :
+    compradores.map(c => `<tr>
+      <td>${c.nome}</td>
+      <td><input type="number" step="0.01" value="${c.preco_soja_disponivel ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_soja_disponivel',this.value)"></td>
+      <td><input type="number" step="0.01" value="${c.preco_soja_futuro ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_soja_futuro',this.value)"></td>
+      <td><input type="number" step="0.01" value="${c.preco_milho_disponivel ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_milho_disponivel',this.value)"></td>
+      <td><input type="number" step="0.01" value="${c.preco_sorgo ?? ""}" style="width:100px" onchange="salvarPrecoMercado('${c.id}','preco_sorgo',this.value)"></td>
+      <td style="font-size:11.5px;color:var(--ink-soft);white-space:nowrap">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
+    </tr>`).join("");
+}
+async function salvarPrecoMercado(cadastroId, campo, valor) {
+  const v = valor === "" ? null : Number(valor);
+  await sb.from("nexus_cadastros").update({ [campo]: v, preco_mercado_atualizado_em: new Date().toISOString() }).eq("id", cadastroId);
+  await loadCadastros();
+  renderPrecoMercado();
 }
 let cotacoesHistoricoChart = null;
 const PALETTE_COTACAO_HIST = { "ZSU26.CBT": "#d9ab34", "ZSX26.CBT": "#4a8bb0", "ZSH27.CBT": "#6fa348", "ZC=F": "#c0574a" };
