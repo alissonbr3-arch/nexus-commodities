@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -1462,7 +1463,7 @@ function renderNegocios() {
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -1713,12 +1714,12 @@ function textoClausula(comprador, chave, n) {
     .replace(/\{\{COMISSAO_SACA\}\}/g, fmtMoney(n.comissao_saca || 0))
     .replace(/\{\{COMISSAO_PAGADOR\}\}/g, (n.comissao_pagador || "Vendedor").toUpperCase());
 }
-function gerarConfirmacao(negocioId) {
+function montarConfirmacaoHtml(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
-  if (!n) return;
+  if (!n) return null;
   const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
   const comprador = data.cadastros.find(c => c.id === n.cliente_id);
-  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a confirmação."); return; }
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a confirmação."); return null; }
   const fazenda = n.fazenda_id ? data.fazendas.find(f => f.id === n.fazenda_id) : null;
   const propriedadeNome = fazenda ? fazenda.nome : (vendedor.propriedade || "—");
   const propriedadeMunicipioUf = fazenda ? (fazenda.municipio_uf || vendedor.cidade || "—") : (vendedor.cidade || "—");
@@ -1817,9 +1818,37 @@ function gerarConfirmacao(negocioId) {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
+  return { html, numeroContrato: n.numero_contrato };
+}
+function gerarConfirmacao(negocioId) {
+  const r = montarConfirmacaoHtml(negocioId);
+  if (!r) return;
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  win.document.open(); win.document.write(r.html); win.document.close();
+}
+async function salvarConfirmacaoPDF(negocioId) {
+  const r = montarConfirmacaoHtml(negocioId);
+  if (!r) return;
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;border:0";
+  document.body.appendChild(iframe);
+  iframe.srcdoc = r.html.replace(/<script[\s\S]*?<\/script>/, "");
+  await new Promise(resolve => { iframe.onload = resolve; });
+  try {
+    await html2pdf().set({
+      margin: 0,
+      filename: `Confirmacao_${r.numeroContrato || "negocio"}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    }).from(iframe.contentDocument.body).save();
+  } catch (e) {
+    alert("Erro ao gerar o PDF: " + e.message);
+  } finally {
+    document.body.removeChild(iframe);
+  }
 }
 
 // ---------------- EMBARQUES ----------------
