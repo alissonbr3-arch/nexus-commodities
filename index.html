@@ -1794,9 +1794,9 @@ function gerarConfirmacao(negocioId) {
     <tr><td class="label">PRODUTO</td><td>${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
     <tr><td class="label">MODALIDADE</td><td>${n.modalidade || "FOB"}</td></tr>
     <tr><td class="label">LOCAL DE ORIGEM</td><td>${n.local_origem || "—"}</td></tr>
+    <tr><td class="label">DATA DE PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
     <tr><td class="label">DATA INÍCIO DE EMBARQUE</td><td>${fmtDate(n.data_inicio_embarque)}</td></tr>
     <tr><td class="label">DATA FIM DE EMBARQUE</td><td>${fmtDate(n.data_fim_embarque)}</td></tr>
-    <tr><td class="label">PRAZO PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
   </table>
   <p><strong>PREÇO BRUTO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.<br>
