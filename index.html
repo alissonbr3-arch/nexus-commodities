@@ -1470,8 +1470,14 @@ function onClienteSelectChange() {
 }
 function sugerirNumeroContrato() {
   const ano = new Date().getFullYear();
-  const seq = data.negocios.filter(nn => (nn.numero_contrato || "").startsWith(`CT-${ano}-`)).length + 1;
-  return `CT-${ano}-${String(seq).padStart(3, "0")}`;
+  const prefixo = `CT-${ano}-`;
+  const max = data.negocios.reduce((m, nn) => {
+    const num = nn.numero_contrato || "";
+    if (!num.startsWith(prefixo)) return m;
+    const seq = parseInt(num.slice(prefixo.length), 10);
+    return isNaN(seq) ? m : Math.max(m, seq);
+  }, 0);
+  return `${prefixo}${String(max + 1).padStart(3, "0")}`;
 }
 function fazendaOptionsHtml(produtorId, selectedId) {
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
