@@ -104,8 +104,8 @@
   .page-sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 16px; }
 
   .subtabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-  .subtab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
-  .subtab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .subtab-btn, .con-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
+  .subtab-btn.active, .con-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .emb-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .fin-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
@@ -554,17 +554,21 @@
       <!-- CADASTROS -->
       <div class="page" id="page-cadastros">
         <div class="panel-head">
-          <h2>Cadastros — clientes, produtores e transportadoras</h2>
+          <h2>Cadastros — produtores e compradores</h2>
           <div class="actions-left">
             <input type="text" class="search-input" id="conSearch" placeholder="Buscar nome ou cidade...">
-            <select class="filter" id="conFilterTipo">
-              <option value="">Todos os tipos</option><option>Produtor</option><option>Comprador</option><option>Transportadora</option>
+            <select class="filter" id="conFilterTipo" style="display:none">
+              <option value="Produtor" selected>Produtor</option><option value="Comprador">Comprador</option><option value="Transportadora">Transportadora</option>
             </select>
             <button class="btn-ghost" id="exportCadastrosBtn">Exportar .xlsx</button>
             <button class="btn-ghost" id="importCadastrosBtn">Importar produtores .xlsx</button>
             <input type="file" id="importCadastrosFileInput" accept=".xlsx,.xls" style="display:none" onchange="onImportCadastrosFile(this.files[0])">
             <button class="btn-primary" id="addContatoBtn">+ Novo cadastro</button>
           </div>
+        </div>
+        <div class="subtabs">
+          <button class="con-tab-btn active" data-contipo="Produtor">Produtores</button>
+          <button class="con-tab-btn" data-contipo="Comprador">Compradores</button>
         </div>
         <table>
           <thead><tr><th></th><th data-sort="nome">Nome</th><th data-sort="tipo">Tipo</th><th data-sort="telefone">Telefone</th><th data-sort="cidade">Cidade/UF</th><th>Responsável</th><th></th></tr></thead>
@@ -1986,6 +1990,14 @@ async function onImportCadastrosFile(file) {
 }
 document.getElementById("conSearch").addEventListener("input", renderContatos);
 document.getElementById("conFilterTipo").addEventListener("change", renderContatos);
+document.querySelectorAll(".con-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".con-tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("conFilterTipo").value = btn.dataset.contipo;
+    renderContatos();
+  });
+});
 document.querySelectorAll('#page-cadastros thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cadastros", th.dataset.sort, renderContatos)));
 function onCadastroTipoChange() {
   const tipo = v("f_ctipo");
