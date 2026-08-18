@@ -735,9 +735,13 @@
         <div class="rel-subpage" id="relsub-produtor" style="display:block">
           <div class="panel-card" style="max-width:520px">
             <h3>Relatório de negócios por produtor</h3>
-            <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha o produtor e as safras e gere um relatório com vendas, recebimentos e embarques.</div>
-            <div class="field"><label>Produtor</label><select id="relProdutorSelect" onchange="onRelProdutorChange()"></select></div>
-            <div class="field"><label>Safras</label><div id="relSafrasWrap" class="placeholder-box" style="font-size:12px;padding:14px">Selecione um produtor.</div></div>
+            <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha um ou mais produtores (útil pra grupos que negociam juntos, com CPFs diferentes) e as safras, e gere um relatório com vendas, recebimentos e embarques.</div>
+            <div class="field">
+              <label>Produtor(es)</label>
+              <input type="text" class="search-input" id="relProdutorSearch" placeholder="Buscar produtor..." oninput="renderRelProdutorList()" style="width:100%;margin-bottom:6px">
+              <div id="relProdutorList" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+            </div>
+            <div class="field"><label>Safras</label><div id="relSafrasWrap" class="placeholder-box" style="font-size:12px;padding:14px">Selecione um ou mais produtores.</div></div>
             <button class="btn-primary" id="relGerarBtn" disabled onclick="gerarRelatorioProdutor()">Gerar relatório</button>
           </div>
         </div>
@@ -2449,12 +2453,9 @@ document.querySelectorAll(".rel-subtab-btn").forEach(btn => {
   });
 });
 function renderRelatorios() {
-  const sel = document.getElementById("relProdutorSelect");
-  if (!sel) return;
-  const cur = sel.value;
-  const produtores = data.cadastros.filter(c => c.tipo === "Produtor").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  sel.innerHTML = `<option value="">— Selecione um produtor —</option>` + produtores.map(p => `<option value="${p.id}" ${p.id===cur?"selected":""}>${p.nome}</option>`).join("");
-  if (cur && produtores.some(p => p.id === cur)) onRelProdutorChange();
+  const list = document.getElementById("relProdutorList");
+  if (!list) return;
+  renderRelProdutorList();
   popularFechamentoSelects();
 }
 function popularFechamentoSelects() {
@@ -2596,24 +2597,35 @@ function renderAuditoria() {
   const list = (data.auditLog || []).filter(a => (!tabelaFiltro || a.tabela === tabelaFiltro) && (!acaoFiltro || a.acao === acaoFiltro));
   el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhum evento encontrado.</div>` : list.map(auditRowHtml).join("");
 }
-function onRelProdutorChange() {
-  const produtorId = document.getElementById("relProdutorSelect").value;
+let relProdutoresSelecionados = new Set();
+function renderRelProdutorList() {
+  const list = document.getElementById("relProdutorList");
+  if (!list) return;
+  const busca = (document.getElementById("relProdutorSearch").value || "").toLowerCase();
+  const produtores = data.cadastros.filter(c => c.tipo === "Produtor" && (!busca || c.nome.toLowerCase().includes(busca))).sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  list.innerHTML = produtores.length === 0 ? `<div style="font-size:12px;color:var(--ink-soft)">Nenhum produtor encontrado.</div>` :
+    produtores.map(p => `<label style="display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:12.5px"><input type="checkbox" class="rel-produtor-chk" value="${p.id}" ${relProdutoresSelecionados.has(p.id)?"checked":""} onchange="onRelProdutorCheckChange('${p.id}',this.checked)"> ${p.nome}${p.cpf ? ` <span style="color:var(--ink-soft);font-size:11px">(${p.cpf})</span>` : ""}</label>`).join("");
+}
+function onRelProdutorCheckChange(produtorId, checked) {
+  if (checked) relProdutoresSelecionados.add(produtorId); else relProdutoresSelecionados.delete(produtorId);
+  atualizarRelSafras();
+}
+function atualizarRelSafras() {
   const wrap = document.getElementById("relSafrasWrap");
   const btn = document.getElementById("relGerarBtn");
-  if (!produtorId) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Selecione um produtor."; btn.disabled = true; return; }
-  const safras = [...new Set(data.negocios.filter(n => n.produtor_id === produtorId).map(n => n.safra).filter(Boolean))].sort();
-  if (safras.length === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Nenhum negócio registrado para este produtor ainda."; btn.disabled = true; return; }
+  if (relProdutoresSelecionados.size === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Selecione um ou mais produtores."; btn.disabled = true; return; }
+  const safras = [...new Set(data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id)).map(n => n.safra).filter(Boolean))].sort();
+  if (safras.length === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Nenhum negócio registrado para os produtores selecionados ainda."; btn.disabled = true; return; }
   wrap.className = ""; wrap.style.cssText = "";
   wrap.innerHTML = safras.map(s => `<label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;margin-bottom:6px;font-size:12.5px"><input type="checkbox" class="rel-safra-chk" value="${s}" checked> ${s}</label>`).join("");
   btn.disabled = false;
 }
 function gerarRelatorioProdutor() {
-  const produtorId = document.getElementById("relProdutorSelect").value;
-  const produtor = data.cadastros.find(c => c.id === produtorId);
-  if (!produtor) return;
+  const produtores = data.cadastros.filter(c => relProdutoresSelecionados.has(c.id));
+  if (produtores.length === 0) return;
   const safrasSelecionadas = Array.from(document.querySelectorAll(".rel-safra-chk:checked")).map(chk => chk.value);
   if (safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
-  const negocios = data.negocios.filter(n => n.produtor_id === produtorId && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||""));
+  const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||""));
   if (negocios.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
@@ -2621,6 +2633,8 @@ function gerarRelatorioProdutor() {
   const recebidos = negocios.filter(n => n.status === "Pago").length;
   const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const grupo = produtores.length > 1;
+  const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
   const linhas = negocios.map(n => {
     const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
@@ -2629,15 +2643,18 @@ function gerarRelatorioProdutor() {
     const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
     const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
     const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
+    const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
     return `<tr>
-      <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${(n.grao||"—")} ${n.safra||""}</td><td>${compradorNome}</td>
+      <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${(n.grao||"—")} ${n.safra||""}</td><td>${compradorNome}</td>
       <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
       <td>${fmtDate(n.data_pagamento)}<br><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
       <td>${embPeriodo}${embStatus ? `<br><span style=\"font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado?"#2f7d32":"#a6741a"}\">${embStatus.toUpperCase()}</span>` : ""}</td>
     </tr>`;
   }).join("");
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios — ${produtor.nome}</title>
+  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? " — CPF " + p.cpf : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios — ${grupo ? "Grupo" : produtores[0].nome}</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
@@ -2661,15 +2678,13 @@ function gerarRelatorioProdutor() {
     <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
     <img src="${NEXUS_LOGO}" style="height:54px">
   </div>
-  <h1>RELATÓRIO DE NEGÓCIOS</h1>
-  <div class="sub">${produtor.nome} — Safra(s) ${safrasSelecionadas.join(", ")} — emitido em ${hoje}</div>
+  <h1>RELATÓRIO DE NEGÓCIOS${grupo ? " — GRUPO" : ""}</h1>
+  <div class="sub">${tituloProdutores} — Safra(s) ${safrasSelecionadas.join(", ")} — emitido em ${hoje}</div>
   <table class="dados">
-    <tr><td class="label">Produtor</td><td>${produtor.nome}</td></tr>
-    <tr><td class="label">CPF</td><td>${produtor.cpf || "—"}</td></tr>
-    <tr><td class="label">Município/UF</td><td>${produtor.cidade || "—"}</td></tr>
+    ${dadosProdutores}
   </table>
   <table class="linhas">
-    <thead><tr><th>Contrato</th><th>Data</th><th>Produto/Safra</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Recebimento</th><th>Embarque</th></tr></thead>
+    <thead><tr><th>Contrato</th><th>Data</th>${grupo ? "<th>Produtor</th>" : ""}<th>Produto/Safra</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Recebimento</th><th>Embarque</th></tr></thead>
     <tbody>${linhas}</tbody>
   </table>
   <div class="resumo">
