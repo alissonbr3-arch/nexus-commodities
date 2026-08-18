@@ -378,6 +378,7 @@
             <div class="panel-card">
               <h3>Ranking de corretores</h3>
               <div class="hint">Por sacas negociadas — <span id="dashCorretorRankingHint"></span></div>
+              <div id="dashCorretorPeriodoNav" style="margin-bottom:10px"></div>
               <div id="dashCorretorRanking"></div>
             </div>
           </div>
@@ -1063,44 +1064,80 @@ function renderDashCorretorChart(list) {
   renderDashCorretorRanking();
 }
 let dashCorretorPeriodo = "mes";
-function setDashCorretorPeriodo(p) { dashCorretorPeriodo = p; renderDashCorretorRanking(); }
-function limitesSemanaAtual() {
+let dashCorretorOffset = 0;
+function setDashCorretorPeriodo(p) { dashCorretorPeriodo = p; dashCorretorOffset = 0; renderDashCorretorRanking(); }
+function moverDashCorretorOffset(delta) {
+  const novo = dashCorretorOffset + delta;
+  if (novo > 0) return;
+  dashCorretorOffset = novo;
+  renderDashCorretorRanking();
+}
+function dashCorretorDataRef() {
   const now = new Date();
-  const dow = now.getDay();
+  if (dashCorretorPeriodo === "mes") return new Date(now.getFullYear(), now.getMonth() + dashCorretorOffset, 1);
+  if (dashCorretorPeriodo === "ano") return new Date(now.getFullYear() + dashCorretorOffset, now.getMonth(), 1);
+  if (dashCorretorPeriodo === "semana") return new Date(now.getFullYear(), now.getMonth(), now.getDate() + dashCorretorOffset * 7);
+  return now;
+}
+function limitesSemana(ref) {
+  const dow = ref.getDay();
   const diffToMonday = dow === 0 ? 6 : dow - 1;
-  const seg = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+  const seg = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - diffToMonday);
   const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
   const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  return { inicio: toISO(seg), fim: toISO(dom) };
+  return { inicio: toISO(seg), fim: toISO(dom), segData: seg, domData: dom };
 }
 function negociosPorPeriodoCorretor(p) {
   if (p === "total") return data.negocios;
-  const now = new Date();
-  if (p === "ano") { const y = String(now.getFullYear()); return data.negocios.filter(n => n.data && n.data.slice(0,4) === y); }
-  if (p === "semana") { const { inicio, fim } = limitesSemanaAtual(); return data.negocios.filter(n => n.data && n.data >= inicio && n.data <= fim); }
-  const key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const ref = dashCorretorDataRef();
+  if (p === "ano") { const y = String(ref.getFullYear()); return data.negocios.filter(n => n.data && n.data.slice(0,4) === y); }
+  if (p === "semana") { const { inicio, fim } = limitesSemana(ref); return data.negocios.filter(n => n.data && n.data >= inicio && n.data <= fim); }
+  const key = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}`;
   return data.negocios.filter(n => n.data && n.data.slice(0,7) === key);
 }
 function metaParaPeriodoCorretor(corretor, periodo) {
   const meta = Number(corretor.meta_mensal_sacas || 0);
   if (!meta) return 0;
   if (periodo === "mes") return meta;
-  if (periodo === "ano") return meta * (new Date().getMonth() + 1);
+  if (periodo === "ano") {
+    const ref = dashCorretorDataRef();
+    const now = new Date();
+    const mesesNoAno = ref.getFullYear() < now.getFullYear() ? 12 : (now.getMonth() + 1);
+    return meta * mesesNoAno;
+  }
   return 0;
+}
+function dashCorretorPeriodoLabel() {
+  const ref = dashCorretorDataRef();
+  if (dashCorretorPeriodo === "mes") return `${MESES_PT[ref.getMonth()]}/${ref.getFullYear()}`;
+  if (dashCorretorPeriodo === "ano") return `${ref.getFullYear()}`;
+  if (dashCorretorPeriodo === "semana") { const lim = limitesSemana(ref); return `${fmtDate(lim.inicio)} – ${fmtDate(lim.fim)}`; }
+  return "";
 }
 function renderDashCorretorRanking() {
   document.getElementById("dashCorretorRankingHint").innerHTML = ["semana","mes","ano","total"].map(p =>
     `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="semana"?"semana":p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
+  const navEl = document.getElementById("dashCorretorPeriodoNav");
+  if (dashCorretorPeriodo === "total") {
+    navEl.innerHTML = "";
+  } else {
+    navEl.innerHTML = `<button class="btn-ghost" style="padding:2px 8px;font-size:11px" onclick="moverDashCorretorOffset(-1)">&#8249;</button>
+      <span style="font-size:11.5px;color:var(--ink-soft);min-width:110px;text-align:center;display:inline-block">${dashCorretorPeriodoLabel()}</span>
+      <button class="btn-ghost" style="padding:2px 8px;font-size:11px" ${dashCorretorOffset>=0?"disabled":""} onclick="moverDashCorretorOffset(1)">&#8250;</button>`;
+  }
   const list = negociosPorPeriodoCorretor(dashCorretorPeriodo);
   const porCorretor = data.equipe.map(e => {
     const valor = list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0);
     return { nome: e.nome, valor, meta: metaParaPeriodoCorretor(e, dashCorretorPeriodo) };
   }).sort((a,b) => b.valor - a.valor);
   const max = Math.max(1, ...porCorretor.map(p => p.valor));
+  const MEDALHAS = ["🥇","🥈","🥉"];
   document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
     porCorretor.map((p,i) => {
-      const metaInfo = p.meta > 0 ? `<div style="font-size:11px;color:${p.valor>=p.meta?"var(--green)":"var(--ink-soft)"};margin-top:2px">Meta: ${fmtNum(p.meta)} sc (${Math.round(p.valor/p.meta*100)}%)</div>` : "";
-      return `<div class="rank-row"><div class="rank-num">${i+1}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div>${metaInfo}</div></div>`;
+      const pctMeta = p.meta > 0 ? Math.round(p.valor/p.meta*100) : 0;
+      const metaLine = p.meta > 0 ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-soft);margin-bottom:3px"><span>Meta: ${fmtNum(p.meta)} sc</span><span style="font-weight:700;color:${pctMeta>=100?"var(--green)":"var(--ink-soft)"}">${pctMeta}% da meta</span></div>` : "";
+      const medalha = MEDALHAS[i] || "";
+      return `<div class="rank-row"><div class="rank-num" style="${medalha?"font-size:14px;background:none":""}">${medalha || (i+1)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div>${metaLine}<div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`;
     }).join("");
 }
 function renderGraoChart(list) {
