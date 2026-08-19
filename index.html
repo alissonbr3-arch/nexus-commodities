@@ -2947,7 +2947,11 @@ function agendaTodosItens() {
 function agendaItemChipHtml(it) {
   const cls = it.tipo === "Pagamento" ? "pagamento" : "embarque";
   const contraparte = it.tipo === "Pagamento" ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
-  return `<div class="agenda-item-chip ${cls}" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte}">${it.tipo === "Pagamento" ? "&#128176;" : "&#128666;"} ${it.neg.numero_contrato || "—"}<br>${contraparte}</div>`;
+  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${it.tipo === "Pagamento" ? "&#128176;" : "&#128666;"} ${it.neg.numero_contrato || "—"}<br>${contraparte}</div>`;
+}
+function abrirNegocioDaAgenda(negocioId) {
+  document.querySelector('.nav-item[data-page="negociacoes"]').click();
+  openNegocioModal(negocioId);
 }
 document.getElementById("agendaViewToggleBtn").addEventListener("click", () => {
   agendaViewMode = agendaViewMode === "lista" ? "calendario" : "lista";
@@ -3023,7 +3027,7 @@ function renderAgendaSemana() {
   document.getElementById("agendaTitle").textContent = "Semana — pagamentos e embarques";
   el.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum pagamento ou embarque previsto nesta semana.</div>` :
     `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th></tr></thead><tbody>${
-      itens.map(it => `<tr><td>${fmtDate(it.data)}</td><td><span class="badge ${it.tipo === "Pagamento" ? "pago" : "agendado"}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td></tr>`).join("")
+      itens.map(it => `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${it.tipo === "Pagamento" ? "pago" : "agendado"}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td></tr>`).join("")
     }</tbody></table>`;
 }
 
