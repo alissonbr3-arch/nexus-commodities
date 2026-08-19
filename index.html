@@ -503,7 +503,7 @@
         <div class="panel-head">
           <h2>Negociações — compra e venda</h2>
           <div class="actions-left">
-            <input type="text" class="search-input" id="negSearch" placeholder="Buscar contrato, vendedor ou grão...">
+            <input type="text" class="search-input" id="negSearch" placeholder="Buscar contrato, vendedor, comprador ou grão...">
             <select class="filter" id="negFilterStatus">
               <option value="">Todos os status</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
             </select>
@@ -513,7 +513,7 @@
         </div>
         <table>
           <thead><tr>
-            <th data-sort="grao">Grão</th><th data-sort="numero_contrato">Nº Contrato</th><th>Vendedor</th>
+            <th data-sort="grao">Grão</th><th data-sort="numero_contrato">Nº Contrato</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
             <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
             <th data-sort="data">Data</th><th data-sort="status">Status</th><th></th>
           </tr></thead>
@@ -1458,11 +1458,12 @@ function n(id) { return Number(document.getElementById(id).value) || 0; }
 // ---------------- NEGOCIAÇÕES ----------------
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
-  let list = data.negocios.filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || nomeCadastro(n.produtor_id).toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
+  let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—") }))
+    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma negociação encontrada.</td></tr>` :
+    list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
@@ -1661,6 +1662,11 @@ a) Até 14% de Umidade
 b) Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)
 c) Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)
 d) Até 8% de Grãos Esverdeados`,
+    defaultMilho: `Os defeitos serão determinados de acordo com os conceitos expressos na Instrução Normativa MAPA nº 60, 22/12/2011:
+a) Até 14% de Umidade
+b) Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)
+c) Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)
+d) Até 8% de Grãos Esverdeados`,
   },
   contaminantes: {
     label: "Contaminantes",
@@ -1707,7 +1713,8 @@ j) Outras sementes com efeito tóxico`,
 };
 function textoClausula(comprador, chave, n) {
   const def = CLAUSULAS_CONTRATO[chave];
-  const bruto = (comprador[def.campo] || "").trim() || def.default;
+  const padrao = (def.defaultMilho && n.grao === "Milho") ? def.defaultMilho : def.default;
+  const bruto = (comprador[def.campo] || "").trim() || padrao;
   return escapeHtml(bruto)
     .replace(/\{\{VENDEDOR\}\}/g, data.cadastros.find(c => c.id === n.produtor_id)?.nome || "")
     .replace(/\{\{COMPRADOR\}\}/g, comprador.nome)
