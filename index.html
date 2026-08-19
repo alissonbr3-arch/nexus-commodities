@@ -466,7 +466,23 @@
             </table>
           </div>
         </div>
-        <div class="subpage" id="sub-analitico" style="display:none"><div class="placeholder-box">Painel analítico em desenvolvimento.</div></div>
+        <div class="subpage" id="sub-analitico" style="display:none">
+          <div class="panel-card">
+            <h3>Evolução da comissão média</h3>
+            <div class="hint">Comissão média por saca (R$/sc), mês a mês, nos últimos 12 meses</div>
+            <div class="chart-wrap"><canvas id="analiticoMargemChart"></canvas></div>
+          </div>
+          <div class="panel-card">
+            <h3>Sazonalidade por safra</h3>
+            <div class="hint">Volume negociado por mês do calendário, somando todos os anos — mostra os meses de pico</div>
+            <div class="chart-wrap"><canvas id="analiticoSazonalidadeChart"></canvas></div>
+          </div>
+          <div class="panel-card">
+            <h3>Comparativo ano a ano</h3>
+            <div class="hint">Volume negociado por mês, uma linha por ano</div>
+            <div class="chart-wrap"><canvas id="analiticoAnoAnoChart"></canvas></div>
+          </div>
+        </div>
       </div>
 
       <!-- COTAÇÕES -->
@@ -1068,6 +1084,7 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     if (btn.dataset.subtab === "compradores") renderDashboardCompradores();
     if (btn.dataset.subtab === "produtores") renderDashboardProdutores();
     if (btn.dataset.subtab === "corretores") renderDashboardCorretores();
+    if (btn.dataset.subtab === "analitico") renderDashboardAnalitico();
   });
 });
 document.querySelectorAll(".period-btn").forEach(btn => {
@@ -1109,6 +1126,63 @@ function dentroDoPeriodoCorretores(dataISO, limites) {
   if (!limites) return true;
   if (!dataISO) return false;
   return dataISO >= limites.inicio && dataISO <= limites.fim;
+}
+// ---------------- DASHBOARD ANALÍTICO ----------------
+let analiticoMargemChart = null, analiticoSazonalidadeChart = null, analiticoAnoAnoChart = null;
+function renderDashboardAnalitico() {
+  renderAnaliticoMargemChart();
+  renderAnaliticoSazonalidadeChart();
+  renderAnaliticoAnoAnoChart();
+}
+function renderAnaliticoMargemChart() {
+  const canvas = document.getElementById("analiticoMargemChart");
+  if (!canvas) return;
+  const meses = []; const now = new Date();
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); meses.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }) }); }
+  const valores = meses.map(m => {
+    const negs = data.negocios.filter(n => n.data && n.data.startsWith(m.key));
+    const volume = negs.reduce((s,n) => s + Number(n.quantidade||0), 0);
+    const comissao = negs.reduce((s,n) => s + Number(n.comissao||0), 0);
+    return volume > 0 ? comissao / volume : null;
+  });
+  if (analiticoMargemChart) analiticoMargemChart.destroy();
+  analiticoMargemChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: meses.map(m => m.label), datasets: [{ label: "Comissão média (R$/sc)", data: valores, borderColor: "#d9ab34", backgroundColor: "transparent", spanGaps: true, tension: 0.25 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
+}
+function renderAnaliticoSazonalidadeChart() {
+  const canvas = document.getElementById("analiticoSazonalidadeChart");
+  if (!canvas) return;
+  const totaisPorMes = new Array(12).fill(0);
+  data.negocios.forEach(n => { if (n.data) { const mes = Number(n.data.slice(5,7)) - 1; totaisPorMes[mes] += Number(n.quantidade||0); } });
+  if (analiticoSazonalidadeChart) analiticoSazonalidadeChart.destroy();
+  analiticoSazonalidadeChart = new Chart(canvas, {
+    type: "bar",
+    data: { labels: MESES_PT.map(m => m.slice(0,3)), datasets: [{ label: "Volume (sc)", data: totaisPorMes, backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 36 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
+}
+function renderAnaliticoAnoAnoChart() {
+  const canvas = document.getElementById("analiticoAnoAnoChart");
+  if (!canvas) return;
+  const anos = [...new Set(data.negocios.filter(n => n.data).map(n => n.data.slice(0,4)))].sort();
+  const paleta = ["#d9ab34", "#4a8bb0", "#6fa348", "#c0574a"];
+  const datasets = anos.map((ano, i) => {
+    const porMes = new Array(12).fill(0);
+    data.negocios.forEach(n => { if (n.data && n.data.slice(0,4) === ano) { const mes = Number(n.data.slice(5,7)) - 1; porMes[mes] += Number(n.quantidade||0); } });
+    return { label: ano, data: porMes, borderColor: paleta[i % paleta.length], backgroundColor: "transparent", tension: 0.25 };
+  });
+  if (analiticoAnoAnoChart) analiticoAnoAnoChart.destroy();
+  analiticoAnoAnoChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: MESES_PT.map(m => m.slice(0,3)), datasets },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#8b93a1" } } },
+      scales: { y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
 }
 function renderDashboardCorretores() {
   const body = document.getElementById("corretoresComissaoBody");
