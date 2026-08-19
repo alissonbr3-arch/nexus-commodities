@@ -128,8 +128,8 @@
   .flag-badge.active.milho { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
 
   .filters-row { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .period-btn { background: var(--card); border: 1px solid var(--border); color: var(--ink-soft); padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
-  .period-btn.active { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
+  .period-btn, .corretor-period-btn { background: var(--card); border: 1px solid var(--border); color: var(--ink-soft); padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+  .period-btn.active, .corretor-period-btn.active { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 16px; }
@@ -344,6 +344,7 @@
           <button class="subtab-btn active" data-subtab="executivo">Executivo</button>
           <button class="subtab-btn" data-subtab="compradores">Compradores</button>
           <button class="subtab-btn" data-subtab="produtores">Produtores</button>
+          <button class="subtab-btn" data-subtab="corretores">Corretores</button>
           <button class="subtab-btn" data-subtab="analitico">Analítico</button>
         </div>
 
@@ -434,6 +435,23 @@
             <table>
               <thead><tr><th>#</th><th>Produtor</th><th>Cidade/UF</th><th>Corretor</th><th>Volume (sc)</th><th>Comissão</th><th>Negócios</th><th>Fazendas</th><th>Área (ha)</th><th>Part. %</th></tr></thead>
               <tbody id="rankingProdutoresBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="subpage" id="sub-corretores" style="display:none">
+          <div class="filters-row">
+            <button class="corretor-period-btn" data-corretorperiodo="semana">Semana</button>
+            <button class="corretor-period-btn active" data-corretorperiodo="mes">Mês</button>
+            <button class="corretor-period-btn" data-corretorperiodo="ano">Ano</button>
+            <button class="corretor-period-btn" data-corretorperiodo="total">Total</button>
+          </div>
+          <div class="cards" id="corretoresCards"></div>
+          <div class="panel-card">
+            <h3>Comissões por corretor</h3>
+            <div class="hint" id="corretoresTableHint">Recebida = comissão já paga ao corretor no período. A receber = pendente, com vencimento dentro do período.</div>
+            <table>
+              <thead><tr><th>Corretor</th><th>Sacas negociadas</th><th>Comissão recebida</th><th>Comissão a receber</th><th>Total</th></tr></thead>
+              <tbody id="corretoresComissaoBody"></tbody>
             </table>
           </div>
         </div>
@@ -1003,6 +1021,7 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     document.getElementById("sub-" + btn.dataset.subtab).style.display = "block";
     if (btn.dataset.subtab === "compradores") renderDashboardCompradores();
     if (btn.dataset.subtab === "produtores") renderDashboardProdutores();
+    if (btn.dataset.subtab === "corretores") renderDashboardCorretores();
   });
 });
 document.querySelectorAll(".period-btn").forEach(btn => {
@@ -1016,6 +1035,59 @@ function periodFilteredNegocios() {
   if (currentPeriod === "tudo") return data.negocios;
   const days = Number(currentPeriod); const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
   return data.negocios.filter(n => n.data && new Date(n.data) >= cutoff);
+}
+
+// ---------------- DASHBOARD CORRETORES ----------------
+let dashCorretoresPeriodo = "mes";
+document.querySelectorAll(".corretor-period-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".corretor-period-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active"); dashCorretoresPeriodo = btn.dataset.corretorperiodo; renderDashboardCorretores();
+  });
+});
+function limitesPeriodoCorretores(periodo) {
+  const hoje = new Date();
+  const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  if (periodo === "total") return null;
+  if (periodo === "semana") {
+    const dow = hoje.getDay(); const diffToMonday = dow === 0 ? 6 : dow - 1;
+    const seg = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - diffToMonday);
+    const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
+    return { inicio: toISO(seg), fim: toISO(dom) };
+  }
+  if (periodo === "ano") return { inicio: `${hoje.getFullYear()}-01-01`, fim: `${hoje.getFullYear()}-12-31` };
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  return { inicio: `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-01`, fim: toISO(fimMes) };
+}
+function dentroDoPeriodoCorretores(dataISO, limites) {
+  if (!limites) return true;
+  if (!dataISO) return false;
+  return dataISO >= limites.inicio && dataISO <= limites.fim;
+}
+function renderDashboardCorretores() {
+  const body = document.getElementById("corretoresComissaoBody");
+  if (!body) return;
+  const limites = limitesPeriodoCorretores(dashCorretoresPeriodo);
+  const stats = data.equipe.map(e => {
+    const negocios = data.negocios.filter(n => n.corretor_id === e.user_id && Number(n.comissao_corretor||0) > 0);
+    const recebida = negocios.filter(n => n.comissao_corretor_paga && dentroDoPeriodoCorretores(n.comissao_corretor_paga_em, limites)).reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
+    const aReceber = negocios.filter(n => !n.comissao_corretor_paga && dentroDoPeriodoCorretores(dia10MesSeguinte(n.comissao_recebida_em), limites)).reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
+    const volume = negocios.filter(n => dentroDoPeriodoCorretores(n.data, limites)).reduce((s,n) => s + Number(n.quantidade||0), 0);
+    return { nome: e.nome, recebida, aReceber, volume, total: recebida + aReceber };
+  }).sort((a,b) => b.total - a.total);
+
+  const totalRecebida = stats.reduce((s,x) => s + x.recebida, 0);
+  const totalAReceber = stats.reduce((s,x) => s + x.aReceber, 0);
+  const destaque = stats.reduce((max,x) => x.total > (max?.total||0) ? x : max, null);
+  document.getElementById("corretoresCards").innerHTML = [
+    { label: "Comissão recebida", value: fmtMoney(totalRecebida), foot: "extraída no período", ic: "&#10003;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Comissão a receber", value: fmtMoney(totalAReceber), foot: "pendente no período", ic: "&#128337;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Total geral", value: fmtMoney(totalRecebida + totalAReceber), foot: "recebida + a receber", ic: "$", bg: "var(--blue-soft)", color: "var(--blue)" },
+    { label: "Destaque do período", value: destaque && destaque.total > 0 ? destaque.nome : "—", foot: destaque && destaque.total > 0 ? fmtMoney(destaque.total) : "sem dados", ic: "&#127942;", bg: "var(--orange-soft)", color: "var(--orange)", small: true },
+  ].map(dashCardHtml).join("");
+
+  body.innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum corretor cadastrado.</td></tr>` :
+    stats.map(s => `<tr><td>${s.nome}</td><td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.recebida)}</td><td>${fmtMoney(s.aReceber)}</td><td style="font-weight:500">${fmtMoney(s.total)}</td></tr>`).join("");
 }
 
 // ---------------- DASHBOARD ----------------
