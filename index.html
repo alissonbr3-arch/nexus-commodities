@@ -2171,7 +2171,7 @@ function openContatoModal(id) {
     </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
-    <div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div>
+    <div class="field-row"><div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div><div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div></div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
@@ -2194,7 +2194,7 @@ function openContatoModal(id) {
       <div class="field"><label>Acesso do cliente (portal)</label>
         ${!id ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para criar o acesso do cliente.</div>`
           : item.user_id ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Acesso criado: ${item.email || "—"}</div>`
-          : `<div class="field-row"><input type="email" id="f_acessoEmail" placeholder="email@cliente.com" style="flex:1"><button type="button" class="btn-ghost" style="white-space:nowrap" onclick="criarAcessoCliente('${id}')">Criar acesso</button></div>
+          : `<div class="field-row"><input type="email" id="f_acessoEmail" value="${item.email || ""}" placeholder="email@cliente.com" style="flex:1"><button type="button" class="btn-ghost" style="white-space:nowrap" onclick="criarAcessoCliente('${id}')">Criar acesso</button></div>
              <div id="acessoClienteMsg" style="font-size:11.5px;margin-top:6px"></div>`}
       </div>
     </div>
@@ -2207,7 +2207,7 @@ function openContatoModal(id) {
 }
 async function saveContato(id) {
   const tipo = v("f_ctipo");
-  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
+  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), email: v("f_email") || null, obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
     dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "",
