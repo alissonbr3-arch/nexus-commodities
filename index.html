@@ -362,11 +362,6 @@
             <button class="period-btn" data-period="90">90d</button>
           </div>
           <div class="cards" id="dashCards"></div>
-          <div class="panel-card">
-            <h3>Contatos pendentes</h3>
-            <div class="hint">Produtores e compradores com lembrete anotado, do mais atrasado pro mais recente</div>
-            <div id="dashContatosPendentes"></div>
-          </div>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Volume por comprador</h3>
@@ -1232,24 +1227,7 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashContatosPendentes();
-}
-function diasDesdeOuInfinito(dateStr) { const d = diasDesde(dateStr); return d === null ? Infinity : d; }
-function renderDashContatosPendentes() {
-  const el = document.getElementById("dashContatosPendentes");
-  if (!el) return;
-  const pendentes = data.cadastros
-    .filter(c => (c.tipo === "Produtor" || c.tipo === "Comprador") && (c.lembrete || "").trim())
-    .sort((a,b) => diasDesdeOuInfinito(b.last_contact_date) - diasDesdeOuInfinito(a.last_contact_date))
-    .slice(0, 8);
-  el.innerHTML = pendentes.length === 0 ? `<div class="placeholder-box">Nenhum lembrete de contato pendente.</div>` :
-    pendentes.map(c => `<div class="rank-row">
-      <div style="flex:1">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px"><span><b>${c.nome}</b> <span style="color:var(--ink-soft)">(${c.tipo})</span></span><span style="font-size:11px;color:var(--ink-soft)">${nomeCorretor(c.owner_id)} · ${labelUltimoContato(c.last_contact_date)}</span></div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${c.lembrete}</div>
-      </div>
-      <button class="btn-edit-text" style="white-space:nowrap" onclick="toggleContato('${c.id}')">Contatado</button>
-    </div>`).join("");
+  renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list);
 }
 const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
 const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
@@ -3518,7 +3496,7 @@ async function toggleContato(cadastroId) {
   const today = todayISO();
   const novo = c.last_contact_date === today ? null : today;
   await sb.from("nexus_cadastros").update({ last_contact_date: novo }).eq("id", cadastroId);
-  await loadCadastros(); renderWorkspace(); renderContatos(); renderDashContatosPendentes();
+  await loadCadastros(); renderWorkspace(); renderContatos();
 }
 async function salvarLembreteRapido(cadastroId, novoValor) {
   const c = data.cadastros.find(x => x.id === cadastroId);
