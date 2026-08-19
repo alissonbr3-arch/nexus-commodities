@@ -3538,13 +3538,37 @@ function openIntencaoModal(id) {
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar intenção" : "Nova intenção de venda"}</h3>
     <div class="field"><label>Produtor</label><select id="f_intProdutor"><option value="">— Selecione —</option>${produtorOptions}</select></div>
-    <div class="field-row"><div class="field"><label>Grão</label><select id="f_intGrao">${GRAOS.map(g => `<option ${item.grao===g?"selected":""}>${g}</option>`).join("")}</select></div><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_intQuantidade" value="${item.quantidade_sacas}"></div></div>
+    <div class="field-row"><div class="field"><label>Grão</label><select id="f_intGrao" onchange="atualizarComparativoPrecos()">${GRAOS.map(g => `<option ${item.grao===g?"selected":""}>${g}</option>`).join("")}</select></div><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_intQuantidade" value="${item.quantidade_sacas}"></div></div>
     <div class="field-row"><div class="field"><label>Preço alvo (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoAlvo" value="${item.preco_alvo}"></div><div class="field"><label>Preço referência (R$/sc)</label><input type="number" step="0.01" id="f_intPrecoRef" value="${item.preco_referencia}"></div></div>
+    <div class="field"><label>Comparador de preços do dia</label><div id="intComparativoPrecos"></div></div>
     <div class="field"><label>Comprador (opcional)</label><select id="f_intComprador"><option value="">— Nenhum —</option>${compradorOptions}</select></div>
     <div class="field"><label>Status</label><select id="f_intStatus">${FUNIL_STATUS.map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_intObs" rows="2">${item.obs || ""}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveIntencao('${id || ""}')">Salvar</button></div>`;
   showModal();
+  atualizarComparativoPrecos();
+}
+const CAMPO_PRECO_POR_GRAO = { Soja: ["soja_disponivel","soja_futuro"], Milho: ["milho_disponivel"], Sorgo: ["sorgo"] };
+function atualizarComparativoPrecos() {
+  const wrap = document.getElementById("intComparativoPrecos");
+  if (!wrap) return;
+  const grao = document.getElementById("f_intGrao").value;
+  const campos = CAMPO_PRECO_POR_GRAO[grao];
+  if (!campos) { wrap.innerHTML = `<div class="placeholder-box" style="font-size:12px;padding:10px">Sem preço do dia cadastrado para ${grao}.</div>`; return; }
+  const compradores = data.cadastros.filter(c => c.tipo === "Comprador");
+  const linhas = [];
+  compradores.forEach(c => {
+    campos.forEach(campo => {
+      const valor = c["preco_" + campo];
+      if (valor != null) linhas.push({ nome: c.nome, campoLabel: CAMPO_PRECO_LABELS[campo] || campo, preco: Number(valor) });
+    });
+  });
+  linhas.sort((a,b) => b.preco - a.preco);
+  wrap.innerHTML = linhas.length === 0 ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Nenhum comprador com preço do dia cadastrado para ${grao}. Preencha em Mercado.</div>` :
+    linhas.map((l,i) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+      <span>${i===0 ? "🥇 " : ""}${l.nome} <span style="color:var(--ink-soft);font-size:11px">(${l.campoLabel})</span></span>
+      <span style="font-weight:${i===0?"700":"400"};color:${i===0?"var(--green)":"var(--ink)"}">${fmtMoney(l.preco)}</span>
+    </div>`).join("");
 }
 async function saveIntencao(id) {
   const payload = { produtor_id: v("f_intProdutor") || null, grao: v("f_intGrao"), quantidade_sacas: n("f_intQuantidade"), preco_alvo: n("f_intPrecoAlvo"), preco_referencia: n("f_intPrecoRef"),
