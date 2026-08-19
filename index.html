@@ -622,6 +622,7 @@
         <div class="subtabs" id="finTabs">
           <button class="fin-tab-btn active" data-fintab="geral">Visão geral</button>
           <button class="fin-tab-btn" data-fintab="comissoes">Comissões</button>
+          <button class="fin-tab-btn" data-fintab="despesas">Despesas</button>
         </div>
 
         <div id="fin-geral">
@@ -698,6 +699,24 @@
               <tbody id="comissoesCorretorBody"></tbody>
             </table>
           </div>
+        </div>
+
+        <div id="fin-despesas" style="display:none">
+          <div class="cards" id="despesasCards"></div>
+          <div class="panel-head">
+            <div class="actions-left">
+              <select class="filter" id="despesasFilterCategoria">
+                <option value="">Todas as categorias</option>
+                <option>Aluguel</option><option>Salários</option><option>Combustível</option><option>Escritório</option><option>Marketing</option><option>Impostos</option><option>Outros</option>
+              </select>
+              <select class="filter" id="despesasFilterMes"><option value="">Todos os meses</option></select>
+            </div>
+            <button class="btn-primary" id="addDespesaBtn">+ Nova despesa</button>
+          </div>
+          <table>
+            <thead><tr><th data-sort="data">Data</th><th data-sort="descricao">Descrição</th><th data-sort="categoria">Categoria</th><th data-sort="valor">Valor</th><th></th></tr></thead>
+            <tbody id="despesasBody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -869,7 +888,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
@@ -920,7 +939,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -936,6 +955,7 @@ async function loadTarefas() { const { data: rows, error } = await sb.from("nexu
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
 async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000); if (!error) data.cotacoesHistorico = rows || []; }
 async function loadPrecoCompradorHistorico() { const { data: rows, error } = await sb.from("nexus_preco_comprador_historico").select("*").order("data").limit(2000); if (!error) data.precoCompradorHistorico = rows || []; }
+async function loadDespesas() { const { data: rows, error } = await sb.from("nexus_despesas").select("*").order("data", { ascending: false }); if (!error) data.despesas = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
@@ -954,6 +974,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_equipe" }, async () => { await loadEquipe(); renderEquipe(); atualizarAvatarHeader(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_config" }, async () => { await loadConfig(); renderConfiguracoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_preco_comprador_historico" }, async () => { await loadPrecoCompradorHistorico(); renderPrecoCompradorHistoricoChart(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_despesas" }, async () => { await loadDespesas(); renderDespesasPage(); })
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
@@ -2582,7 +2603,9 @@ document.querySelectorAll("#finTabs .fin-tab-btn").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("fin-geral").style.display = btn.dataset.fintab === "geral" ? "block" : "none";
     document.getElementById("fin-comissoes").style.display = btn.dataset.fintab === "comissoes" ? "block" : "none";
+    document.getElementById("fin-despesas").style.display = btn.dataset.fintab === "despesas" ? "block" : "none";
     if (btn.dataset.fintab === "comissoes") renderComissoesPage();
+    if (btn.dataset.fintab === "despesas") renderDespesasPage();
   });
 });
 document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
@@ -3055,6 +3078,65 @@ function gerarReciboComissao(negocioId) {
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
   win.document.open(); win.document.write(html); win.document.close();
+}
+
+// ---------------- FINANCEIRO: DESPESAS ----------------
+function renderDespesasPage() {
+  const body = document.getElementById("despesasBody");
+  if (!body) return;
+  popularFiltroMes("despesasFilterMes", data.despesas.map(d => (d.data || "").slice(0,7)));
+  const filtroCategoria = document.getElementById("despesasFilterCategoria").value;
+  const filtroMes = document.getElementById("despesasFilterMes").value;
+  const list = data.despesas
+    .filter(d => (!filtroCategoria || d.categoria === filtroCategoria) && (!filtroMes || (d.data||"").slice(0,7) === filtroMes))
+    .sort((a,b) => (b.data||"").localeCompare(a.data||""));
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhuma despesa encontrada.</td></tr>` :
+    list.map(d => `<tr><td>${fmtDate(d.data)}</td><td>${d.descricao}</td><td>${d.categoria}</td><td>${fmtMoney(d.valor)}</td>
+      <td><button class="btn-edit-text" onclick="openDespesaModal('${d.id}')">Editar</button><button class="btn-danger-text" onclick="excluirDespesa('${d.id}')">Excluir</button></td></tr>`).join("");
+
+  const hoje = new Date();
+  const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}`;
+  const anoAtual = String(hoje.getFullYear());
+  const despesasMes = data.despesas.filter(d => (d.data||"").slice(0,7) === mesAtualKey).reduce((s,d) => s + Number(d.valor||0), 0);
+  const despesasAno = data.despesas.filter(d => (d.data||"").slice(0,4) === anoAtual).reduce((s,d) => s + Number(d.valor||0), 0);
+  const comissaoMes = data.negocios.filter(n => n.data && n.data.slice(0,7) === mesAtualKey).reduce((s,n) => s + Number(n.comissao||0), 0);
+  const resultadoLiquido = comissaoMes - despesasMes;
+  document.getElementById("despesasCards").innerHTML = [
+    { label: "Despesas no mês", value: fmtMoney(despesasMes), foot: mesAnoLabel(mesAtualKey), ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Despesas no ano", value: fmtMoney(despesasAno), foot: anoAtual, ic: "&#128202;", bg: "var(--orange-soft)", color: "var(--orange)" },
+    { label: "Comissão gerada no mês", value: fmtMoney(comissaoMes), foot: "receita bruta", ic: "$", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Resultado líquido do mês", value: fmtMoney(resultadoLiquido), foot: "comissão − despesas", ic: resultadoLiquido >= 0 ? "&#10003;" : "&#9888;", bg: resultadoLiquido >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: resultadoLiquido >= 0 ? "var(--blue)" : "var(--red)" },
+  ].map(dashCardHtml).join("");
+}
+document.getElementById("despesasFilterCategoria").addEventListener("change", renderDespesasPage);
+document.getElementById("despesasFilterMes").addEventListener("change", renderDespesasPage);
+document.getElementById("addDespesaBtn").addEventListener("click", () => openDespesaModal(null));
+function openDespesaModal(id) {
+  const item = id ? data.despesas.find(d => d.id === id) : { descricao: "", categoria: "Outros", valor: "", data: todayISO(), obs: "" };
+  document.getElementById("modalContent").innerHTML = `
+    <h3>${id ? "Editar despesa" : "Nova despesa"}</h3>
+    <div class="field"><label>Descrição</label><input type="text" id="f_despDescricao" value="${item.descricao || ""}" placeholder="Ex: Aluguel do escritório"></div>
+    <div class="field-row">
+      <div class="field"><label>Categoria</label><select id="f_despCategoria">${["Aluguel","Salários","Combustível","Escritório","Marketing","Impostos","Outros"].map(c => `<option ${item.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="f_despValor" value="${item.valor || ""}"></div>
+    </div>
+    <div class="field"><label>Data</label><input type="date" id="f_despData" value="${item.data || todayISO()}"></div>
+    <div class="field"><label>Observações</label><textarea id="f_despObs" rows="2">${item.obs || ""}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveDespesa('${id || ""}')">Salvar</button></div>`;
+  showModal();
+}
+async function saveDespesa(id) {
+  const payload = { descricao: v("f_despDescricao"), categoria: v("f_despCategoria"), valor: n("f_despValor"), data: v("f_despData") || todayISO(), obs: v("f_despObs"), updated_at: new Date().toISOString() };
+  if (!payload.descricao.trim()) { alert("Informe a descrição da despesa."); return; }
+  if (id) { await sb.from("nexus_despesas").update(payload).eq("id", id); }
+  else { payload.created_by = currentUserId; await sb.from("nexus_despesas").insert([payload]); }
+  await loadDespesas(); closeModal(); renderDespesasPage();
+}
+async function excluirDespesa(id) {
+  const ok = await askConfirm("Tem certeza que deseja excluir esta despesa? Essa ação não pode ser desfeita.");
+  if (!ok) return;
+  await sb.from("nexus_despesas").delete().eq("id", id);
+  await loadDespesas(); renderDespesasPage();
 }
 
 // ---------------- AGENDA ----------------
