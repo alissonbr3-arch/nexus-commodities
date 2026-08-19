@@ -1464,7 +1464,7 @@ function renderNegocios() {
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -1819,8 +1819,8 @@ function montarConfirmacaoHtml(negocioId) {
   <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
 
   <div class="assinaturas">
-    <div class="assinatura"><div class="linha">${vendedor.nome.toUpperCase()}<br>${vendedor.cpf || ""}</div></div>
-    <div class="assinatura"><div class="linha">${comprador.nome.toUpperCase()}<br>${comprador.cnpj || ""}</div></div>
+    <div class="assinatura"><span style="font-size:1px;color:#fff">[[ASSINA_VENDEDOR]]</span><div class="linha">${vendedor.nome.toUpperCase()}<br>${vendedor.cpf || ""}</div></div>
+    <div class="assinatura"><span style="font-size:1px;color:#fff">[[ASSINA_COMPRADOR]]</span><div class="linha">${comprador.nome.toUpperCase()}<br>${comprador.cnpj || ""}</div></div>
     <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
@@ -1833,6 +1833,65 @@ function gerarConfirmacao(negocioId) {
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
   win.document.open(); win.document.write(r.html); win.document.close();
+}
+async function enviarParaAssinatura(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados."); return; }
+  if (!vendedor.email || !comprador.email) {
+    const faltando = [!vendedor.email ? vendedor.nome : null, !comprador.email ? comprador.nome : null].filter(Boolean).join(" e ");
+    alert(`Cadastre o e-mail de contato de ${faltando} antes de enviar (aba Cadastros).`);
+    return;
+  }
+  const confirmar = confirm(`Enviar a Confirmação ${n.numero_contrato || ""} por e-mail e DocuSign para:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})\n\nConfirmar envio?`);
+  if (!confirmar) return;
+
+  const r = montarConfirmacaoHtml(negocioId);
+  if (!r) return;
+  const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;border:0";
+  document.body.appendChild(iframe);
+  iframe.srcdoc = htmlSemScript;
+  await new Promise(resolve => { iframe.onload = resolve; });
+  let pdfBase64 = null;
+  try {
+    const dataUri = await html2pdf().set({
+      margin: 0,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    }).from(iframe.contentDocument.body).outputPdf("datauristring");
+    pdfBase64 = dataUri.split(",")[1];
+  } catch (e) {
+    alert("Erro ao gerar o PDF pra anexar no e-mail: " + e.message);
+  } finally {
+    document.body.removeChild(iframe);
+  }
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+
+  try {
+    const resp = await fetch("/.netlify/functions/enviar-confirmacao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, html: htmlSemScript, pdf_base64: pdfBase64 }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    const partes = [
+      j.resultado.email?.ok ? "✓ E-mail enviado" : "✗ E-mail: " + j.resultado.email?.erro,
+      j.resultado.docusign?.ok ? "✓ Envelope DocuSign criado" : "✗ DocuSign: " + j.resultado.docusign?.erro,
+    ];
+    alert(partes.join("\n"));
+  } catch (e) {
+    alert("Erro ao enviar: " + e.message);
+  }
 }
 async function salvarConfirmacaoPDF(negocioId) {
   const r = montarConfirmacaoHtml(negocioId);
