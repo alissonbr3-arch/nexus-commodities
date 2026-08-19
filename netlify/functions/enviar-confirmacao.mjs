@@ -17,6 +17,19 @@ function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
+// Reconstrói o PEM independente de como a chave foi colada nas env vars do Netlify
+// (com quebras de linha reais, com "\n" literal, ou tudo achatado numa linha só).
+function normalizarChavePem(raw) {
+  let key = raw.trim().replace(/\\n/g, "\n");
+  if (key.includes("\n")) return key;
+  const match = key.match(/-----BEGIN ([^-]+)-----(.*)-----END ([^-]+)-----/);
+  if (!match) return key;
+  const tipo = match[1];
+  const corpo = match[2].replace(/\s+/g, "");
+  const linhas = corpo.match(/.{1,64}/g) || [];
+  return `-----BEGIN ${tipo}-----\n${linhas.join("\n")}\n-----END ${tipo}-----\n`;
+}
+
 function base64url(input) {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -166,7 +179,7 @@ export default async (req) => {
   const { DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, DOCUSIGN_ACCOUNT_ID, DOCUSIGN_PRIVATE_KEY } = process.env;
   if (DOCUSIGN_INTEGRATION_KEY && DOCUSIGN_USER_ID && DOCUSIGN_ACCOUNT_ID && DOCUSIGN_PRIVATE_KEY) {
     try {
-      const privateKey = DOCUSIGN_PRIVATE_KEY.replace(/\\n/g, "\n");
+      const privateKey = normalizarChavePem(DOCUSIGN_PRIVATE_KEY);
       const jwt = criarJwtDocusign(DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, privateKey);
       const accessToken = await obterAccessTokenDocusign(jwt);
       const envelope = await criarEnvelopeDocusign({
