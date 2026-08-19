@@ -482,6 +482,13 @@
           </div>
         </div>
 
+        <div class="panel-card">
+          <h3>Histórico de preço por comprador</h3>
+          <div class="hint">Evolução dos preços salvos dia a dia. Começa a partir de agora — sem dados retroativos.</div>
+          <div class="field" style="max-width:320px"><label>Comprador</label><select id="precoCompradorHistSelect" onchange="renderPrecoCompradorHistoricoChart()"></select></div>
+          <div class="chart-wrap"><canvas id="precoCompradorHistoricoChart"></canvas></div>
+        </div>
+
         <div class="panel-head" style="margin-top:20px">
           <h2>Cotações — Bolsas</h2>
           <div class="actions-left">
@@ -862,7 +869,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = {};
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
@@ -913,7 +920,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -928,6 +935,7 @@ async function loadCadastros() { const { data: rows, error } = await sb.from("ne
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
 async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000); if (!error) data.cotacoesHistorico = rows || []; }
+async function loadPrecoCompradorHistorico() { const { data: rows, error } = await sb.from("nexus_preco_comprador_historico").select("*").order("data").limit(2000); if (!error) data.precoCompradorHistorico = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
@@ -945,6 +953,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_fazendas" }, async () => { await loadFazendas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_equipe" }, async () => { await loadEquipe(); renderEquipe(); atualizarAvatarHeader(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_config" }, async () => { await loadConfig(); renderConfiguracoes(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_preco_comprador_historico" }, async () => { await loadPrecoCompradorHistorico(); renderPrecoCompradorHistoricoChart(); })
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
@@ -1457,6 +1466,14 @@ async function salvarPrecoMercadoLinha(id) {
     preco_mercado_atualizado_em: new Date().toISOString(),
   };
   await sb.from("nexus_cadastros").update(payload).eq("id", id);
+  const hoje = todayISO();
+  const historico = [
+    { campo: "soja_disponivel", valor: payload.preco_soja_disponivel },
+    { campo: "soja_futuro", valor: payload.preco_soja_futuro },
+    { campo: "milho_disponivel", valor: payload.preco_milho_disponivel },
+    { campo: "sorgo", valor: payload.preco_sorgo },
+  ].filter(x => x.valor != null).map(x => ({ comprador_id: id, campo: x.campo, data: hoje, preco: x.valor }));
+  if (historico.length > 0) { await sb.from("nexus_preco_comprador_historico").upsert(historico, { onConflict: "comprador_id,campo,data" }); await loadPrecoCompradorHistorico(); }
   precoMercadoEditando.delete(id);
   await loadCadastros();
   renderPrecoMercado();
@@ -1488,6 +1505,38 @@ function renderPrecoMercado() {
         <td style="white-space:nowrap"><button class="btn-edit-text" onclick="iniciarEdicaoPrecoMercado('${c.id}')">Editar</button></td>
       </tr>`;
     }).join("");
+
+  const sel = document.getElementById("precoCompradorHistSelect");
+  if (sel) {
+    const atual = sel.value;
+    sel.innerHTML = compradores.length === 0 ? `<option value="">Nenhum comprador</option>` :
+      compradores.map(c => `<option value="${c.id}" ${c.id===atual?"selected":""}>${c.nome}</option>`).join("");
+    renderPrecoCompradorHistoricoChart();
+  }
+}
+let precoCompradorHistoricoChart = null;
+const CAMPO_PRECO_LABELS = { soja_disponivel: "Soja Disponível", soja_futuro: "Soja Futuro", milho_disponivel: "Milho Disponível", sorgo: "Sorgo" };
+const PALETTE_PRECO_COMPRADOR = { soja_disponivel: "#d9ab34", soja_futuro: "#b8860b", milho_disponivel: "#6fa348", sorgo: "#4a8bb0" };
+function renderPrecoCompradorHistoricoChart() {
+  const canvas = document.getElementById("precoCompradorHistoricoChart");
+  const sel = document.getElementById("precoCompradorHistSelect");
+  if (!canvas || !sel) return;
+  const compradorId = sel.value;
+  const hist = (data.precoCompradorHistorico || []).filter(h => h.comprador_id === compradorId);
+  if (precoCompradorHistoricoChart) { precoCompradorHistoricoChart.destroy(); precoCompradorHistoricoChart = null; }
+  if (hist.length === 0) return;
+  const datas = [...new Set(hist.map(h => h.data))].sort();
+  const campos = [...new Set(hist.map(h => h.campo))];
+  const datasets = campos.map(campo => {
+    const porData = {}; hist.filter(h => h.campo === campo).forEach(h => { porData[h.data] = Number(h.preco); });
+    return { label: CAMPO_PRECO_LABELS[campo] || campo, data: datas.map(d => porData[d] ?? null), borderColor: PALETTE_PRECO_COMPRADOR[campo] || "#999", backgroundColor: "transparent", spanGaps: true, tension: 0.25 };
+  });
+  precoCompradorHistoricoChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: datas.map(fmtDate), datasets },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#8b93a1" } } },
+      scales: { y: { grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
 }
 let cotacoesHistoricoChart = null;
 const PALETTE_COTACAO_HIST = { "ZSU26.CBT": "#d9ab34", "ZSX26.CBT": "#4a8bb0", "ZSH27.CBT": "#6fa348", "ZC=F": "#c0574a" };
