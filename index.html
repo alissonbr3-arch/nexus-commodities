@@ -1690,7 +1690,14 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
     <div class="field"><label>Status</label><select id="f_status">${["Negociação","Fechado","Entregue","Pago"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_obs" rows="2">${item.obs || ""}</textarea></div>
+    <div class="field"><label>Anexos (nota fiscal, comprovante, contrato assinado...)</label>
+      ${id ? `<input type="file" id="anexoFileInput" style="display:none" onchange="uploadAnexoNegocio('${id}', this.files[0])">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('anexoFileInput').click()">+ Adicionar anexo</button>
+        <div id="anexosNegocioList" style="margin-top:8px"></div>`
+      : `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve a negociação para adicionar anexos.</div>`}
+    </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveNegocio('${id || ""}')">Salvar</button></div>`;
+  if (id) renderAnexosNegocio(id);
   showModal();
 }
 async function saveNegocio(id) {
@@ -1721,6 +1728,47 @@ async function saveNegocio(id) {
   await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace();
 }
 document.getElementById("addNegocioBtn").addEventListener("click", () => openNegocioModal(null));
+
+// ---------------- ANEXOS DA NEGOCIAÇÃO ----------------
+async function listarAnexosNegocio(negocioId) {
+  const { data: files, error } = await sb.storage.from("nexus-anexos").list(negocioId, { sortBy: { column: "created_at", order: "desc" } });
+  if (error) return [];
+  return (files || []).filter(f => f.name !== ".emptyFolderPlaceholder");
+}
+function anexoTamanhoLabel(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+async function renderAnexosNegocio(negocioId) {
+  const wrap = document.getElementById("anexosNegocioList");
+  if (!wrap) return;
+  wrap.innerHTML = `<div style="font-size:11.5px;color:var(--ink-soft)">Carregando...</div>`;
+  const files = await listarAnexosNegocio(negocioId);
+  wrap.innerHTML = files.length === 0 ? `<div style="font-size:11.5px;color:var(--ink-soft)">Nenhum anexo ainda.</div>` :
+    files.map(f => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span>${f.name.replace(/^\d+_/, "")} <span style="color:var(--ink-soft);font-size:10.5px">${anexoTamanhoLabel(f.metadata?.size)}</span></span>
+      <span style="white-space:nowrap"><button class="btn-edit-text" onclick="baixarAnexoNegocio('${negocioId}','${f.name}')">Baixar</button><button class="btn-danger-text" onclick="excluirAnexoNegocio('${negocioId}','${f.name}')">Excluir</button></span>
+    </div>`).join("");
+}
+async function uploadAnexoNegocio(negocioId, file) {
+  if (!file) return;
+  const path = `${negocioId}/${Date.now()}_${file.name}`;
+  const { error } = await sb.storage.from("nexus-anexos").upload(path, file);
+  if (error) { alert("Erro ao enviar o anexo: " + error.message); return; }
+  renderAnexosNegocio(negocioId);
+}
+async function baixarAnexoNegocio(negocioId, fileName) {
+  const { data, error } = await sb.storage.from("nexus-anexos").createSignedUrl(`${negocioId}/${fileName}`, 60);
+  if (error) { alert("Erro ao gerar o link: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
+}
+async function excluirAnexoNegocio(negocioId, fileName) {
+  if (!confirm("Excluir este anexo? Essa ação não pode ser desfeita.")) return;
+  const { error } = await sb.storage.from("nexus-anexos").remove([`${negocioId}/${fileName}`]);
+  if (error) { alert("Erro ao excluir o anexo: " + error.message); return; }
+  renderAnexosNegocio(negocioId);
+}
 
 // ---------------- CONFIRMAÇÃO DE NEGÓCIO ----------------
 function extenso2(n) { return String(n).padStart(2, "0"); }
