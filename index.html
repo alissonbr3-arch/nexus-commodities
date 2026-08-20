@@ -128,6 +128,8 @@
   .agenda-item-chip { font-size: 10.5px; padding: 3px 6px; border-radius: 5px; line-height: 1.35; }
   .agenda-item-chip.pagamento { background: var(--green-soft); color: var(--green); }
   .agenda-item-chip.embarque { background: var(--blue-soft); color: var(--blue); }
+  .agenda-item-chip.feito { background: var(--green-soft); color: var(--green); }
+  .agenda-item-chip.pendente { background: var(--gold-soft); color: var(--gold); }
   @media (max-width: 900px) { .agenda-cal { grid-template-columns: repeat(7, minmax(90px,1fr)); overflow-x: auto; } }
   .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
   .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
@@ -965,7 +967,28 @@ function setSyncStatus(ok) {
   el.innerHTML = ok ? `<span class="sync-dot"></span>sincronizado` : `<span class="sync-dot" style="background:var(--red)"></span>reconectando...`;
 }
 
-async function loadNegocios() { const { data: rows, error } = await sb.from("nexus_negocios").select("*").is("deleted_at", null).order("data", { ascending: false }); if (!error) data.negocios = rows || []; }
+async function loadNegocios() {
+  const { data: rows, error } = await sb.from("nexus_negocios").select("*").is("deleted_at", null).order("data", { ascending: false });
+  if (!error) data.negocios = rows || [];
+  await autoCompletarChecklistPorData();
+}
+// Quando a data de fim de embarque ou de pagamento já passou, marca sozinho o checklist como feito
+// (o corretor ainda pode desmarcar manualmente se precisar corrigir).
+async function autoCompletarChecklistPorData() {
+  const hoje = todayISO();
+  const pendentes = data.negocios.filter(n =>
+    (n.data_fim_embarque && n.data_fim_embarque <= hoje && !n.check_embarque_entrega) ||
+    (n.data_pagamento && n.data_pagamento <= hoje && !n.check_pagamento)
+  );
+  if (pendentes.length === 0) return;
+  await Promise.all(pendentes.map(n => {
+    const payload = {};
+    if (n.data_fim_embarque && n.data_fim_embarque <= hoje && !n.check_embarque_entrega) payload.check_embarque_entrega = true;
+    if (n.data_pagamento && n.data_pagamento <= hoje && !n.check_pagamento) payload.check_pagamento = true;
+    Object.assign(n, payload);
+    return sb.from("nexus_negocios").update(payload).eq("id", n.id);
+  }));
+}
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
@@ -1708,6 +1731,7 @@ async function toggleNegocioCheck(id, campo) {
   await sb.from("nexus_negocios").update({ [campo]: novo }).eq("id", id);
   await loadNegocios();
   renderNegocios();
+  renderAgendaSemana();
 }
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
@@ -3232,19 +3256,50 @@ function inicioSemana(offset) {
   return d;
 }
 function toISODate(d) { return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function addDiasISO(dataISO, dias) {
+  if (!dataISO) return null;
+  const [y, m, d] = dataISO.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + dias);
+  return toISODate(dt);
+}
+const AGENDA_TIPO_ICONE = {
+  "Confirmação": "&#128077;", "Contrato": "&#9997;&#65039;", "Nota Fiscal": "&#129534;", "Contra Nota": "&#128209;",
+  "Liberação de Embarque": "&#128666;", "Início embarque": "&#128666;", "Fim embarque": "&#128230;",
+  "Pagamento": "&#128178;", "Comissão": "&#128176;",
+};
+// Itens do checklist de cada negócio, com a data em que devem aparecer na agenda:
+// Contrato = 1 dia após a negociação; Nota Fiscal/Contra Nota/Liberação = 1 dia antes do início do embarque;
+// Fim de embarque e Pagamento se auto-completam sozinhos quando a data chega (ver autoCompletarChecklistPorData).
 function agendaTodosItens() {
   const itens = [];
   data.negocios.forEach(neg => {
-    if (neg.data_pagamento) itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg });
-    if (neg.data_inicio_embarque) itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
-    if (neg.data_fim_embarque) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg });
+    if (neg.data) {
+      itens.push({ data: neg.data, tipo: "Confirmação", neg, campo: "check_confirmacao" });
+      itens.push({ data: addDiasISO(neg.data, 1), tipo: "Contrato", neg, campo: "check_contrato" });
+    }
+    if (neg.data_inicio_embarque) {
+      const dPrep = addDiasISO(neg.data_inicio_embarque, -1);
+      itens.push({ data: dPrep, tipo: "Nota Fiscal", neg, campo: "check_nota_fiscal" });
+      itens.push({ data: dPrep, tipo: "Contra Nota", neg, campo: "check_contra_nota" });
+      itens.push({ data: dPrep, tipo: "Liberação de Embarque", neg, campo: "check_liberacao_embarque" });
+      itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
+    }
+    if (neg.data_fim_embarque) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg, campo: "check_embarque_entrega" });
+    if (neg.data_pagamento) {
+      itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg, campo: "check_pagamento" });
+      itens.push({ data: neg.data_pagamento, tipo: "Comissão", neg, campo: "check_comissao" });
+    }
   });
   return itens;
 }
 function agendaItemChipHtml(it) {
-  const cls = it.tipo === "Pagamento" ? "pagamento" : "embarque";
-  const contraparte = it.tipo === "Pagamento" ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
-  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${it.tipo === "Pagamento" ? "&#128176;" : "&#128666;"} ${it.neg.numero_contrato || "—"}<br>${contraparte}</div>`;
+  const done = it.campo ? !!it.neg[it.campo] : false;
+  const cls = it.campo ? (done ? "feito" : "pendente") : "embarque";
+  const contraparte = (it.tipo === "Pagamento" || it.tipo === "Comissão") ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
+  const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
+  const checkHtml = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:11px;float:right" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">&#10003;</span>` : "";
+  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${checkHtml}${icone} ${it.tipo}<br>${it.neg.numero_contrato || "—"} — ${contraparte}</div>`;
 }
 function abrirNegocioDaAgenda(negocioId) {
   document.querySelector('.nav-item[data-page="negociacoes"]').click();
@@ -3323,8 +3378,13 @@ function renderAgendaSemana() {
 
   document.getElementById("agendaTitle").textContent = "Semana — pagamentos e embarques";
   el.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum pagamento ou embarque previsto nesta semana.</div>` :
-    `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th></tr></thead><tbody>${
-      itens.map(it => `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${it.tipo === "Pagamento" ? "pago" : "agendado"}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td></tr>`).join("")
+    `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th><th>Checklist</th></tr></thead><tbody>${
+      itens.map(it => {
+        const done = it.campo ? !!it.neg[it.campo] : false;
+        const badgeCls = it.campo ? (done ? "pago" : "agendado") : "agendado";
+        const checkCell = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${AGENDA_TIPO_ICONE[it.tipo] || ""}</span>` : "—";
+        return `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${badgeCls}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td><td>${checkCell}</td></tr>`;
+      }).join("")
     }</tbody></table>`;
 }
 
