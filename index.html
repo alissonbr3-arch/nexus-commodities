@@ -14,7 +14,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -2200,32 +2201,59 @@ function gerarConfirmacao(negocioId) {
   if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
   win.document.open(); win.document.write(r.html); win.document.close();
 }
-// Gera o PDF a partir de um elemento renderizado (iframe.body), redesenhando o canvas capturado
-// sobre um canvas novo com fundo branco explícito antes de virar JPEG — sem isso, o JPEG que o
-// html2canvas gera às vezes sai com um perfil de cor que alguns leitores de PDF (Preview do Mac,
-// por exemplo) interpretam errado e mostram com fundo preto, mesmo o conteúdo estando correto.
+// O canvas.toDataURL('image/jpeg') do navegador embute um perfil de cor (marcador ICC_PROFILE)
+// dentro do JPEG. Isso é ignorado por leitores de PDF mais tolerantes, mas faz leitores mais
+// rígidos (o visualizador de PDF do Chrome, por exemplo) renderizarem a imagem com as cores
+// erradas — o documento aparece com fundo preto mesmo estando correto. Remove esse marcador
+// dos bytes do JPEG antes de embutir no PDF.
+function removerPerfilIccDoJpeg(dataUrl) {
+  const bytes = Uint8Array.from(atob(dataUrl.split(",")[1]), c => c.charCodeAt(0));
+  const out = [bytes[0], bytes[1]];
+  let i = 2;
+  while (i < bytes.length - 1) {
+    if (bytes[i] !== 0xFF) { out.push(bytes[i]); i++; continue; }
+    const marker = bytes[i + 1];
+    if (marker === 0xD8 || marker === 0xD9) { out.push(bytes[i], bytes[i + 1]); i += 2; continue; }
+    if (marker === 0xDA) { for (let j = i; j < bytes.length; j++) out.push(bytes[j]); break; }
+    const length = (bytes[i + 2] << 8) | bytes[i + 3];
+    const segEnd = i + 2 + length;
+    if (marker === 0xE2) {
+      let sig = "";
+      for (let k = 0; k < 11; k++) sig += String.fromCharCode(bytes[i + 4 + k]);
+      if (sig === "ICC_PROFILE") { i = segEnd; continue; }
+    }
+    for (let j = i; j < segEnd; j++) out.push(bytes[j]);
+    i = segEnd;
+  }
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let k = 0; k < out.length; k += CHUNK) bin += String.fromCharCode.apply(null, out.slice(k, k + CHUNK));
+  return "data:image/jpeg;base64," + btoa(bin);
+}
+// Gera o PDF a partir de um elemento renderizado (iframe.body): captura com html2canvas,
+// fatia manualmente em páginas A4 e monta com jsPDF, removendo o perfil ICC de cada fatia.
 async function gerarPdfNormalizado(elemento, filename) {
-  const opts = {
-    margin: 0,
-    image: { type: "jpeg", quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-    jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
-    pagebreak: { mode: ["css", "legacy"] },
-  };
-  if (filename) opts.filename = filename;
-  const worker = html2pdf().set(opts).from(elemento);
-  await worker.toCanvas();
-  const original = worker.prop.canvas;
-  const limpo = document.createElement("canvas");
-  limpo.width = original.width; limpo.height = original.height;
-  const ctx = limpo.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, limpo.width, limpo.height);
-  ctx.drawImage(original, 0, 0);
-  worker.prop.canvas = limpo;
-  await worker.toImg().toPdf();
-  if (filename) { await worker.save(); return null; }
-  return await worker.outputPdf("datauristring");
+  const canvas = await html2canvas(elemento, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+  const pageWidthPt = 595.28, pageHeightPt = 841.89;
+  const pxPerPt = canvas.width / pageWidthPt;
+  const pageHeightPx = Math.floor(pageHeightPt * pxPerPt);
+  const totalPaginas = Math.ceil(canvas.height / pageHeightPx);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+  for (let p = 0; p < totalPaginas; p++) {
+    const alturaFatiaPx = Math.min(pageHeightPx, canvas.height - p * pageHeightPx);
+    const fatia = document.createElement("canvas");
+    fatia.width = canvas.width; fatia.height = alturaFatiaPx;
+    const ctx = fatia.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, fatia.width, fatia.height);
+    ctx.drawImage(canvas, 0, p * pageHeightPx, canvas.width, alturaFatiaPx, 0, 0, canvas.width, alturaFatiaPx);
+    const jpegLimpo = removerPerfilIccDoJpeg(fatia.toDataURL("image/jpeg", 0.95));
+    if (p > 0) doc.addPage();
+    doc.addImage(jpegLimpo, "JPEG", 0, 0, pageWidthPt, alturaFatiaPx / pxPerPt);
+  }
+  if (filename) { doc.save(filename); return null; }
+  return doc.output("datauristring");
 }
 async function enviarParaAssinatura(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
