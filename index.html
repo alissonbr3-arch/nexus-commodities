@@ -196,6 +196,11 @@
   tbody tr:hover { background: var(--card-alt); }
   .empty-row td { text-align: center; color: var(--ink-soft); padding: 24px; font-style: italic; }
 
+  .neg-checklist { display: flex; gap: 4px; flex-wrap: nowrap; }
+  .neg-check-icon { font-size: 15px; line-height: 1; cursor: pointer; filter: grayscale(100%); opacity: .3; transition: filter .15s, opacity .15s, transform .1s; }
+  .neg-check-icon:hover { opacity: .65; transform: scale(1.12); }
+  .neg-check-icon.done { filter: none; opacity: 1; }
+
   .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap; }
   .badge.compra { background: var(--blue-soft); color: var(--blue); }
   .badge.venda { background: var(--green-soft); color: var(--green); }
@@ -562,7 +567,7 @@
           <thead><tr>
             <th data-sort="grao">Grão</th><th data-sort="numero_contrato">Nº Contrato</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
             <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
-            <th data-sort="data">Data</th><th data-sort="status">Status</th><th></th>
+            <th data-sort="data">Data</th><th data-sort="status">Status</th><th>Checklist</th><th></th>
           </tr></thead>
           <tbody id="negociosBody"></tbody>
         </table>
@@ -1683,14 +1688,36 @@ function v(id) { return document.getElementById(id).value.trim(); }
 function n(id) { return Number(document.getElementById(id).value) || 0; }
 
 // ---------------- NEGOCIAÇÕES ----------------
+const NEGOCIO_CHECKLIST_ITENS = [
+  { campo: "check_confirmacao", label: "Confirmação", icone: "&#128077;" },
+  { campo: "check_contrato", label: "Contrato", icone: "&#9997;&#65039;" },
+  { campo: "check_nota_fiscal", label: "Nota Fiscal", icone: "&#129534;" },
+  { campo: "check_contra_nota", label: "Contra Nota", icone: "&#128209;" },
+  { campo: "check_liberacao_embarque", label: "Liberação de Embarque", icone: "&#128666;" },
+  { campo: "check_embarque_entrega", label: "Embarque/Entrega", icone: "&#128230;" },
+  { campo: "check_pagamento", label: "Pagamento", icone: "&#128178;" },
+  { campo: "check_comissao", label: "Comissão", icone: "&#128176;" },
+];
+function negocioChecklistHtml(n) {
+  return `<div class="neg-checklist">${NEGOCIO_CHECKLIST_ITENS.map(it => `<span class="neg-check-icon${n[it.campo] ? " done" : ""}" title="${it.label}${n[it.campo] ? " — feito" : " — pendente"}" onclick="toggleNegocioCheck('${n.id}','${it.campo}')">${it.icone}</span>`).join("")}</div>`;
+}
+async function toggleNegocioCheck(id, campo) {
+  const n = data.negocios.find(x => x.id === id);
+  if (!n) return;
+  const novo = !n[campo];
+  await sb.from("nexus_negocios").update({ [campo]: novo }).eq("id", id);
+  await loadNegocios();
+  renderNegocios();
+}
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
   let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—") }))
     .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma negociação encontrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+      <td>${negocioChecklistHtml(n)}</td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
