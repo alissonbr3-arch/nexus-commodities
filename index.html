@@ -36,6 +36,12 @@
     --blue-soft: rgba(74,139,176,0.14);
     --red: #c0574a;
     --red-soft: rgba(192,87,74,0.14);
+    --purple: #8a6bbf;
+    --purple-soft: rgba(138,107,191,0.14);
+    --teal: #3f9e91;
+    --teal-soft: rgba(63,158,145,0.14);
+    --pink: #b2588f;
+    --pink-soft: rgba(178,88,143,0.14);
     --radius: 10px;
   }
   * { box-sizing: border-box; }
@@ -126,10 +132,15 @@
   .agenda-cal-day.other-month { opacity: .35; }
   .agenda-cal-daynum { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
   .agenda-item-chip { font-size: 10.5px; padding: 3px 6px; border-radius: 5px; line-height: 1.35; }
-  .agenda-item-chip.pagamento { background: var(--green-soft); color: var(--green); }
-  .agenda-item-chip.embarque { background: var(--blue-soft); color: var(--blue); }
-  .agenda-item-chip.feito { background: var(--green-soft); color: var(--green); }
-  .agenda-item-chip.pendente { background: var(--gold-soft); color: var(--gold); }
+  .agenda-item-chip.tipo-confirmacao { background: var(--gold-soft); color: var(--gold); }
+  .agenda-item-chip.tipo-contrato { background: var(--orange-soft); color: var(--orange); }
+  .agenda-item-chip.tipo-notafiscal { background: var(--blue-soft); color: var(--blue); }
+  .agenda-item-chip.tipo-contranota { background: var(--purple-soft); color: var(--purple); }
+  .agenda-item-chip.tipo-liberacao { background: var(--teal-soft); color: var(--teal); }
+  .agenda-item-chip.tipo-inicioembarque { background: var(--card-alt); color: var(--ink-soft); }
+  .agenda-item-chip.tipo-fimembarque { background: var(--green-soft); color: var(--green); }
+  .agenda-item-chip.tipo-pagamento { background: var(--pink-soft); color: var(--pink); }
+  .agenda-item-chip.tipo-comissao { background: var(--red-soft); color: var(--red); }
   @media (max-width: 900px) { .agenda-cal { grid-template-columns: repeat(7, minmax(90px,1fr)); overflow-x: auto; } }
   .flag-badge { padding: 3px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; border: 1px solid var(--border); color: var(--ink-dim); background: none; cursor: pointer; line-height: 1.4; }
   .flag-badge.active.soja { background: var(--gold-soft); color: var(--gold); border-color: transparent; }
@@ -214,6 +225,15 @@
   .badge.emtransito { background: var(--blue-soft); color: var(--blue); }
   .badge.atrasado { background: var(--red-soft); color: var(--red); }
   .badge.afazer { background: var(--card-alt); color: var(--ink-soft); }
+  .badge.tipo-confirmacao { background: var(--gold-soft); color: var(--gold); }
+  .badge.tipo-contrato { background: var(--orange-soft); color: var(--orange); }
+  .badge.tipo-notafiscal { background: var(--blue-soft); color: var(--blue); }
+  .badge.tipo-contranota { background: var(--purple-soft); color: var(--purple); }
+  .badge.tipo-liberacao { background: var(--teal-soft); color: var(--teal); }
+  .badge.tipo-inicioembarque { background: var(--card-alt); color: var(--ink-soft); }
+  .badge.tipo-fimembarque { background: var(--green-soft); color: var(--green); }
+  .badge.tipo-pagamento { background: var(--pink-soft); color: var(--pink); }
+  .badge.tipo-comissao { background: var(--red-soft); color: var(--red); }
   .badge.emandamento { background: var(--gold-soft); color: var(--gold); }
   .badge.concluido { background: var(--green-soft); color: var(--green); }
   .val-pos { color: var(--green); }
@@ -3268,6 +3288,11 @@ const AGENDA_TIPO_ICONE = {
   "Liberação de Embarque": "&#128666;", "Início embarque": "&#128666;", "Fim embarque": "&#128230;",
   "Pagamento": "&#128178;", "Comissão": "&#128176;",
 };
+const AGENDA_TIPO_CLASSE = {
+  "Confirmação": "tipo-confirmacao", "Contrato": "tipo-contrato", "Nota Fiscal": "tipo-notafiscal", "Contra Nota": "tipo-contranota",
+  "Liberação de Embarque": "tipo-liberacao", "Início embarque": "tipo-inicioembarque", "Fim embarque": "tipo-fimembarque",
+  "Pagamento": "tipo-pagamento", "Comissão": "tipo-comissao",
+};
 // Itens do checklist de cada negócio, com a data em que devem aparecer na agenda:
 // Contrato = 1 dia após a negociação; Nota Fiscal/Contra Nota/Liberação = 1 dia antes do início do embarque;
 // Fim de embarque e Pagamento se auto-completam sozinhos quando a data chega (ver autoCompletarChecklistPorData).
@@ -3295,7 +3320,7 @@ function agendaTodosItens() {
 }
 function agendaItemChipHtml(it) {
   const done = it.campo ? !!it.neg[it.campo] : false;
-  const cls = it.campo ? (done ? "feito" : "pendente") : "embarque";
+  const cls = AGENDA_TIPO_CLASSE[it.tipo] || "";
   const contraparte = (it.tipo === "Pagamento" || it.tipo === "Comissão") ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
   const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
   const checkHtml = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:11px;float:right" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">&#10003;</span>` : "";
@@ -3381,9 +3406,8 @@ function renderAgendaSemana() {
     `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th><th>Checklist</th></tr></thead><tbody>${
       itens.map(it => {
         const done = it.campo ? !!it.neg[it.campo] : false;
-        const badgeCls = it.campo ? (done ? "pago" : "agendado") : "agendado";
         const checkCell = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${AGENDA_TIPO_ICONE[it.tipo] || ""}</span>` : "—";
-        return `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${badgeCls}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td><td>${checkCell}</td></tr>`;
+        return `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${AGENDA_TIPO_CLASSE[it.tipo] || ""}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td><td>${checkCell}</td></tr>`;
       }).join("")
     }</tbody></table>`;
 }
