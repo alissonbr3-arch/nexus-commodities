@@ -2219,16 +2219,17 @@ async function enviarParaAssinatura(negocioId) {
   const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
 
   const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;border:0";
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;height:1200px;border:0";
   document.body.appendChild(iframe);
   iframe.srcdoc = htmlSemScript;
   await new Promise(resolve => { iframe.onload = resolve; });
+  iframe.style.height = iframe.contentDocument.body.scrollHeight + "px";
   let pdfBase64 = null;
   try {
     const dataUri = await html2pdf().set({
       margin: 0,
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
       jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     }).from(iframe.contentDocument.body).outputPdf("datauristring");
@@ -2263,16 +2264,17 @@ async function salvarConfirmacaoPDF(negocioId) {
   const r = montarConfirmacaoHtml(negocioId);
   if (!r) return;
   const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;border:0";
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;height:1200px;border:0";
   document.body.appendChild(iframe);
   iframe.srcdoc = r.html.replace(/<script[\s\S]*?<\/script>/, "");
   await new Promise(resolve => { iframe.onload = resolve; });
+  iframe.style.height = iframe.contentDocument.body.scrollHeight + "px";
   try {
     await html2pdf().set({
       margin: 0,
       filename: `Confirmacao_${r.numeroContrato || "negocio"}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
       jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     }).from(iframe.contentDocument.body).save();
