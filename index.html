@@ -2200,6 +2200,33 @@ function gerarConfirmacao(negocioId) {
   if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
   win.document.open(); win.document.write(r.html); win.document.close();
 }
+// Gera o PDF a partir de um elemento renderizado (iframe.body), redesenhando o canvas capturado
+// sobre um canvas novo com fundo branco explícito antes de virar JPEG — sem isso, o JPEG que o
+// html2canvas gera às vezes sai com um perfil de cor que alguns leitores de PDF (Preview do Mac,
+// por exemplo) interpretam errado e mostram com fundo preto, mesmo o conteúdo estando correto.
+async function gerarPdfNormalizado(elemento, filename) {
+  const opts = {
+    margin: 0,
+    image: { type: "jpeg", quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+    jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["css", "legacy"] },
+  };
+  if (filename) opts.filename = filename;
+  const worker = html2pdf().set(opts).from(elemento);
+  await worker.toCanvas();
+  const original = worker.prop.canvas;
+  const limpo = document.createElement("canvas");
+  limpo.width = original.width; limpo.height = original.height;
+  const ctx = limpo.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, limpo.width, limpo.height);
+  ctx.drawImage(original, 0, 0);
+  worker.prop.canvas = limpo;
+  await worker.toImg().toPdf();
+  if (filename) { await worker.save(); return null; }
+  return await worker.outputPdf("datauristring");
+}
 async function enviarParaAssinatura(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
@@ -2226,13 +2253,7 @@ async function enviarParaAssinatura(negocioId) {
   iframe.style.height = iframe.contentDocument.body.scrollHeight + "px";
   let pdfBase64 = null;
   try {
-    const dataUri = await html2pdf().set({
-      margin: 0,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
-    }).from(iframe.contentDocument.body).outputPdf("datauristring");
+    const dataUri = await gerarPdfNormalizado(iframe.contentDocument.body);
     pdfBase64 = dataUri.split(",")[1];
   } catch (e) {
     alert("Erro ao gerar o PDF pra anexar no e-mail: " + e.message);
@@ -2270,14 +2291,7 @@ async function salvarConfirmacaoPDF(negocioId) {
   await new Promise(resolve => { iframe.onload = resolve; });
   iframe.style.height = iframe.contentDocument.body.scrollHeight + "px";
   try {
-    await html2pdf().set({
-      margin: 0,
-      filename: `Confirmacao_${r.numeroContrato || "negocio"}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
-    }).from(iframe.contentDocument.body).save();
+    await gerarPdfNormalizado(iframe.contentDocument.body, `Confirmacao_${r.numeroContrato || "negocio"}.pdf`);
   } catch (e) {
     alert("Erro ao gerar o PDF: " + e.message);
   } finally {
