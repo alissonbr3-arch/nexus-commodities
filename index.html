@@ -2361,7 +2361,10 @@ function renderEmbarquesPage() {
       const acoes = finalizados
         ? `<span style="font-size:11.5px;color:var(--ink-soft)">Finalizado em ${fmtDate((n.embarque_finalizado_em||"").slice(0,10))}</span>`
         : `<button class="btn-edit-text" onclick="gerarLiberacaoEmbarque('${n.id}')">Liberação</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
-      return `<tr><td>${periodo}</td><td>${n.numero_contrato || "—"}</td><td>${(n.grao||"—")}${n.safra ? " " + n.safra : ""}</td><td>${comprador}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>${n.transportadora_id ? nomeCadastro(n.transportadora_id) : "—"}</td><td>${n.frete_saca ? fmtMoney(n.frete_saca) + "/sc" : "—"}</td><td>${acoes}</td></tr>`;
+      const periodoCell = finalizados
+        ? `<td>${periodo}</td>`
+        : `<td><span id="embPeriodo-${n.id}" onclick="editEmbarquePeriodo('${n.id}')" style="cursor:pointer;border-bottom:1px dashed var(--ink-soft)" title="Clique para editar o período de embarque">${periodo}</span></td>`;
+      return `<tr>${periodoCell}<td>${n.numero_contrato || "—"}</td><td>${(n.grao||"—")}${n.safra ? " " + n.safra : ""}</td><td>${comprador}</td><td>${nomeCadastro(n.produtor_id)}</td><td>${fmtNum(n.quantidade)}</td><td>${n.transportadora_id ? nomeCadastro(n.transportadora_id) : "—"}</td><td>${n.frete_saca ? fmtMoney(n.frete_saca) + "/sc" : "—"}</td><td>${acoes}</td></tr>`;
     }).join("");
 }
 document.getElementById("embSearch").addEventListener("input", renderEmbarquesPage);
@@ -2370,6 +2373,24 @@ async function finalizarEmbarque(id) {
   if (!ok) return;
   await sb.from("nexus_negocios").update({ embarque_finalizado: true, embarque_finalizado_em: new Date().toISOString() }).eq("id", id);
   await loadNegocios(); renderEmbarquesPage(); renderDashboard();
+}
+function editEmbarquePeriodo(id) {
+  const el = document.getElementById(`embPeriodo-${id}`);
+  if (!el) return;
+  const n = data.negocios.find(x => x.id === id);
+  if (!n) return;
+  el.outerHTML = `<span id="embPeriodo-${id}" onclick="event.stopPropagation()" style="display:inline-flex;gap:4px;align-items:center">
+    <input type="date" id="embIni-${id}" value="${n.data_inicio_embarque || ""}" style="width:126px;font-size:12px;padding:2px 4px">
+    <input type="date" id="embFim-${id}" value="${n.data_fim_embarque || ""}" style="width:126px;font-size:12px;padding:2px 4px">
+    <button class="btn-edit-text" onclick="salvarEmbarquePeriodo('${id}')">Salvar</button>
+    <button class="btn-edit-text" onclick="renderEmbarquesPage()">Cancelar</button>
+  </span>`;
+}
+async function salvarEmbarquePeriodo(id) {
+  const ini = document.getElementById(`embIni-${id}`).value || null;
+  const fim = document.getElementById(`embFim-${id}`).value || null;
+  await sb.from("nexus_negocios").update({ data_inicio_embarque: ini, data_fim_embarque: fim }).eq("id", id);
+  await loadNegocios(); renderEmbarquesPage(); renderDashboard(); renderAgendaSemana();
 }
 function numeroPorExtenso(valorInteiro) {
   const inteiro = Math.round(Math.abs(Number(valorInteiro || 0)));
