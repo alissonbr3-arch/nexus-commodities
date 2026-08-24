@@ -2469,9 +2469,9 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
 
   <h3>DESTINATÁRIO PRINCIPAL E NOTIFICAÇÕES (C/C):</h3>
   <table class="dados">
-    <tr><td class="label">Destinatário</td><td>${destinatario}</td></tr>
+    <tr><td class="label">Destinatário (Armazém)</td><td>${destinatario}</td></tr>
     <tr><td class="label">C/C (Comprador)</td><td>${comprador.nome}</td></tr>
-    <tr><td class="label">C/C (Vendedor/Armazém)</td><td>${vendedor.nome}<br>${destinatario}</td></tr>
+    <tr><td class="label">C/C (Vendedor)</td><td>${vendedor.nome}<br>${destinatario}</td></tr>
   </table>
 
   <p>Pelo presente instrumento, a NEXUS COMMODITIES formaliza e comunica a autorização e liberação oficial para o início das operações de carregamento e embarque da mercadoria pactuada, nos termos da Confirmação de Negócio de Compra e Venda nº ${n.numero_contrato || "—"}, observadas as especificações e condições detalhadas a seguir:</p>
