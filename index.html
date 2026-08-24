@@ -592,8 +592,8 @@
         </div>
         <table>
           <thead><tr>
-            <th data-sort="grao">Grão</th><th data-sort="numero_contrato">Nº Contrato</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
-            <th data-sort="quantidade">Qtd (sc)</th><th data-sort="preco">Preço (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
+            <th data-sort="grao">Produto/Safra</th><th data-sort="numero_contrato">Nº Contrato</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
+            <th data-sort="quantidade">Qtd (sc)</th><th data-sort="precoLiquido">Preço Líquido (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
             <th data-sort="data">Data</th><th data-sort="status">Status</th><th>Checklist</th><th></th>
           </tr></thead>
           <tbody id="negociosBody"></tbody>
@@ -1748,14 +1748,30 @@ async function toggleNegocioCheck(id, campo) {
   renderNegocios();
   renderAgendaSemana();
 }
+// Preço líquido: usa o valor informado manualmente no negócio, ou estima descontando
+// comissão, 0,2% Senar, Fundersul, Fundems e Funrural (mesma conta usada na Confirmação).
+function precoLiquidoNegocio(n) {
+  const sacas = Number(n.quantidade || 0);
+  const total = Number(n.preco || 0) * sacas;
+  const senar = total * 0.002;
+  const fundersulTotal = Number(data.config.fundersul_saca || 0) * sacas;
+  const fundemsTotal = Number(data.config.fundems_saca || 0) * sacas;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
+  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const informado = n.preco_liquido != null && n.preco_liquido !== "";
+  const precoLiquido = informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
+  const liquidoTotal = informado ? precoLiquido * sacas : liquidoEstimado;
+  return { precoLiquido, liquidoTotal, informado };
+}
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
-  let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—") }))
+  let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"), precoLiquido: precoLiquidoNegocio(n).precoLiquido }))
     .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+    list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
@@ -2106,10 +2122,7 @@ function montarConfirmacaoHtml(negocioId) {
   const fundemsTotal = Number(data.config.fundems_saca || 0) * sacas;
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
-  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
-  const precoLiquidoInformado = n.preco_liquido != null && n.preco_liquido !== "";
-  const precoLiquido = precoLiquidoInformado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
-  const liquido = precoLiquidoInformado ? precoLiquido * sacas : liquidoEstimado;
+  const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const boilerplateHtml = `
