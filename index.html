@@ -927,6 +927,15 @@
           <button class="btn-primary" onclick="salvarDescontosPadrao()">Salvar</button>
           <div id="cfgDescontosSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
         </div>
+
+        <div class="ws-card" style="max-width:420px;margin-top:16px">
+          <div class="ws-name" style="margin-bottom:4px">Minha conta</div>
+          <div class="ws-sub" style="margin-bottom:16px">Troque a senha de acesso ao painel (vale só pra sua conta).</div>
+          <div class="field"><label>Nova senha</label><input type="password" id="f_novaSenha" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
+          <div class="field"><label>Confirmar nova senha</label><input type="password" id="f_confirmarSenha" autocomplete="new-password"></div>
+          <button class="btn-primary" onclick="trocarSenha()">Trocar senha</button>
+          <div id="trocarSenhaMsg" style="font-size:12px;margin-top:8px;display:none"></div>
+        </div>
       </div>
 
     </div>
@@ -4027,6 +4036,17 @@ async function salvarDescontosPadrao() {
   await loadConfig(); renderConfiguracoes();
   const msg = document.getElementById("cfgDescontosSavedMsg");
   msg.style.display = "block"; setTimeout(() => msg.style.display = "none", 2000);
+}
+async function trocarSenha() {
+  const nova = v("f_novaSenha"), confirmar = v("f_confirmarSenha");
+  const msgEl = document.getElementById("trocarSenhaMsg");
+  const mostrar = (texto, cor) => { msgEl.textContent = texto; msgEl.style.color = cor; msgEl.style.display = "block"; };
+  if (nova.length < 6) return mostrar("A senha precisa ter pelo menos 6 caracteres.", "var(--red)");
+  if (nova !== confirmar) return mostrar("As senhas não coincidem.", "var(--red)");
+  const { error } = await sb.auth.updateUser({ password: nova });
+  if (error) return mostrar("Erro: " + error.message, "var(--red)");
+  document.getElementById("f_novaSenha").value = ""; document.getElementById("f_confirmarSenha").value = "";
+  mostrar("Senha alterada com sucesso!", "var(--green)");
 }
 
 // ---------------- Shared ----------------
