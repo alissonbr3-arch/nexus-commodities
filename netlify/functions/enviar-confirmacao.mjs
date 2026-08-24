@@ -176,6 +176,15 @@ export default async (req) => {
     resultado.email = { ok: false, erro: "RESEND_API_KEY não configurada." };
   }
 
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
+    method: "POST",
+    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({
+      negocio_id, tipo: "Confirmação", destinatarios: [vendedor.email, comprador.email].join(", "),
+      enviado_por: caller.id, sucesso: !!resultado.email.ok, erro: resultado.email.ok ? null : resultado.email.erro,
+    }),
+  }).catch(() => {});
+
   const { DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, DOCUSIGN_ACCOUNT_ID, DOCUSIGN_PRIVATE_KEY } = process.env;
   if (DOCUSIGN_INTEGRATION_KEY && DOCUSIGN_USER_ID && DOCUSIGN_ACCOUNT_ID && DOCUSIGN_PRIVATE_KEY) {
     try {

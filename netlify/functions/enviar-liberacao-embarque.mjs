@@ -54,26 +54,37 @@ export default async (req) => {
   }
 
   const resendKey = process.env.RESEND_API_KEY;
+  let sucesso = false, erro = null;
   if (!resendKey) {
-    return json({ ok: false, erro: "RESEND_API_KEY não configurada." }, 500);
+    erro = "RESEND_API_KEY não configurada.";
+  } else {
+    try {
+      const resp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: FROM_EMAIL,
+          to: [vendedor.email, comprador.email],
+          subject: `Liberação de Embarque ${negocio.numero_contrato || ""} — Nexus Commodities`,
+          html,
+        }),
+      });
+      const respData = await resp.json();
+      if (!resp.ok) throw new Error(respData.message || JSON.stringify(respData));
+      sucesso = true;
+    } catch (e) {
+      erro = String(e.message || e);
+    }
   }
 
-  try {
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [vendedor.email, comprador.email],
-        subject: `Liberação de Embarque ${negocio.numero_contrato || ""} — Nexus Commodities`,
-        html,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.message || JSON.stringify(data));
-  } catch (e) {
-    return json({ ok: false, erro: String(e.message || e) }, 500);
-  }
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
+    method: "POST",
+    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({
+      negocio_id, tipo: "Liberação de Embarque", destinatarios: [vendedor.email, comprador.email].join(", "),
+      enviado_por: caller.id, sucesso, erro,
+    }),
+  }).catch(() => {});
 
-  return json({ ok: true }, 200);
+  return sucesso ? json({ ok: true }, 200) : json({ ok: false, erro }, 500);
 };

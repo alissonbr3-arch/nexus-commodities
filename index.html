@@ -879,6 +879,15 @@
             </div>
             <div id="auditList"></div>
           </div>
+          <div class="panel-card" style="margin-top:16px">
+            <h3>E-mails enviados</h3>
+            <div class="hint">Confirmações e Liberações de Embarque disparadas pelo app, e quem disparou. Mostra os últimos 200 envios.</div>
+            <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação">Confirmação</option><option value="Liberação de Embarque">Liberação de Embarque</option></select>
+              <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
+            </div>
+            <div id="emailLogList"></div>
+          </div>
         </div>
       </div>
 
@@ -940,7 +949,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0 } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
@@ -3037,6 +3046,7 @@ document.querySelectorAll(".rel-subtab-btn").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("relsub-" + btn.dataset.relsubtab).style.display = "block";
     if (btn.dataset.relsubtab === "auditoria" && !auditLogCarregado) loadAuditLogEAtualizar();
+    if (btn.dataset.relsubtab === "auditoria" && !emailLogCarregado) loadEmailLogEAtualizar();
   });
 });
 function renderRelatorios() {
@@ -3183,6 +3193,34 @@ function renderAuditoria() {
   const acaoFiltro = document.getElementById("auditFilterAcao").value;
   const list = (data.auditLog || []).filter(a => (!tabelaFiltro || a.tabela === tabelaFiltro) && (!acaoFiltro || a.acao === acaoFiltro));
   el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhum evento encontrado.</div>` : list.map(auditRowHtml).join("");
+}
+let emailLogCarregado = false;
+async function loadEmailLog() {
+  const { data: rows, error } = await sb.from("nexus_email_log").select("*").order("created_at", { ascending: false }).limit(200);
+  if (!error) data.emailLog = rows || [];
+  emailLogCarregado = true;
+}
+async function loadEmailLogEAtualizar() { await loadEmailLog(); renderEmailLog(); }
+function emailLogRowHtml(e) {
+  const negocio = e.negocio_id ? data.negocios.find(n => n.id === e.negocio_id) : null;
+  const registroLabel = negocio ? `Contrato ${negocio.numero_contrato || "—"}` : "Negócio excluído";
+  const quando = new Date(e.created_at).toLocaleString("pt-BR");
+  const statusLabel = e.sucesso ? "Enviado" : "Falhou";
+  const statusColor = e.sucesso ? "var(--green)" : "var(--red)";
+  return `<div class="rank-row" style="align-items:flex-start">
+    <div style="flex:1">
+      <div style="font-size:12.5px"><b>${auditUsuarioNome(e.enviado_por)}</b> enviou <b>${e.tipo}</b> — ${registroLabel} — <span style="color:${statusColor}">${statusLabel}</span></div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${quando} · Para: ${e.destinatarios || "—"}</div>
+      ${!e.sucesso && e.erro ? `<div style="font-size:11.5px;color:var(--red);margin-top:4px">${e.erro}</div>` : ""}
+    </div>
+  </div>`;
+}
+function renderEmailLog() {
+  const el = document.getElementById("emailLogList");
+  if (!el) return;
+  const tipoFiltro = document.getElementById("emailLogFilterTipo").value;
+  const list = (data.emailLog || []).filter(e => !tipoFiltro || e.tipo === tipoFiltro);
+  el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhum e-mail enviado ainda.</div>` : list.map(emailLogRowHtml).join("");
 }
 let relProdutoresSelecionados = new Set();
 function renderRelProdutorList() {
