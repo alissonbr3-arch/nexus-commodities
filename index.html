@@ -704,10 +704,16 @@
           <div id="com-receber">
             <div class="panel-head">
               <div class="actions-left">
+                <input type="text" class="search-input" id="comissoesFilterCliente" placeholder="Buscar cliente (vendedor ou comprador)...">
                 <select class="filter" id="comissoesFilterStatus">
                   <option value="pendente">A receber</option>
                   <option value="pago">Recebidas</option>
                   <option value="todas">Todas</option>
+                </select>
+                <select class="filter" id="comissoesFilterVencimento">
+                  <option value="">Vencidos e a vencer</option>
+                  <option value="vencido">Vencidos</option>
+                  <option value="avencer">A vencer</option>
                 </select>
                 <select class="filter" id="comissoesFilterMes"><option value="">Todos os meses</option></select>
               </div>
@@ -2804,6 +2810,8 @@ document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
   });
 });
 document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
+document.getElementById("comissoesFilterCliente").addEventListener("input", renderComissoesPage);
+document.getElementById("comissoesFilterVencimento").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterStatus").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterMes").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterMes").addEventListener("change", renderComissoesPage);
@@ -2838,18 +2846,26 @@ function renderComissoesPage() {
   }));
   popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltro = document.getElementById("comissoesFilterMes").value;
+  const clienteFiltro = document.getElementById("comissoesFilterCliente").value.trim().toLowerCase();
+  const vencimentoFiltro = document.getElementById("comissoesFilterVencimento").value;
+  const hojeISO = todayISO();
   let list = todasLinhas
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.status === "Pago" : n.status !== "Pago"))
-    .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro);
+    .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro)
+    .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro))
+    .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.status === "Pago";
+      const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
+      const statusLabel = pago ? "Recebido" : vencido ? "Vencido" : "A receber";
+      const statusClasse = pago ? "pago" : vencido ? "atrasado" : "agendado";
       return `<tr>
         <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
         <td>${c.pagador}</td>
-        <td><span class="badge ${pago ? "pago" : "agendado"}">${pago ? "Recebido" : "A receber"}</span></td>
+        <td><span class="badge ${statusClasse}">${statusLabel}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
