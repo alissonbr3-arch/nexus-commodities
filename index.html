@@ -3387,8 +3387,10 @@ function agendaItemChipHtml(it) {
   const cls = AGENDA_TIPO_CLASSE[it.tipo] || "";
   const contraparte = (it.tipo === "Pagamento" || it.tipo === "Comissão") ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
   const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
-  const checkHtml = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:11px;float:right" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">&#10003;</span>` : "";
-  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${checkHtml}${icone} ${it.tipo}<br>${it.neg.numero_contrato || "—"} — ${contraparte}</div>`;
+  const iconeHtml = it.campo
+    ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:14px" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${icone}</span>`
+    : icone;
+  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${iconeHtml} ${it.tipo}<br>${it.neg.numero_contrato || "—"} — ${contraparte}</div>`;
 }
 function abrirNegocioDaAgenda(negocioId) {
   document.querySelector('.nav-item[data-page="negociacoes"]').click();
