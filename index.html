@@ -1849,6 +1849,12 @@ function fazendaOptionsHtml(produtorId, selectedId) {
 }
 function onProdutorSelectChange() {
   document.getElementById("f_fazendaSelect").innerHTML = fazendaOptionsHtml(v("f_produtorSelect"), null);
+  atualizarContaBancariaWrap();
+}
+function atualizarContaBancariaWrap() {
+  const produtor = data.cadastros.find(c => c.id === v("f_produtorSelect"));
+  const wrap = document.getElementById("f_contaBancariaWrap");
+  if (wrap) wrap.style.display = (produtor && produtor.dados_bancarios_secundaria) ? "block" : "none";
 }
 function onFazendaSelectChange() {
   const fazenda = data.fazendas.find(f => f.id === v("f_fazendaSelect"));
@@ -1895,6 +1901,10 @@ function openNegocioModal(id) {
         <select id="f_fazendaSelect" onchange="onFazendaSelectChange()">${fazendaOptionsHtml(item.produtor_id, item.fazenda_id)}</select>
       </div>
     </div>
+    <div class="field" id="f_contaBancariaWrap" style="display:none">
+      <label>Conta bancária a usar (na Confirmação)</label>
+      <select id="f_contaBancaria"><option ${(!item.conta_bancaria||item.conta_bancaria==="Principal")?"selected":""}>Principal</option><option ${item.conta_bancaria==="Secundária"?"selected":""}>Secundária</option></select>
+    </div>
     <div class="field-row" style="grid-template-columns:1fr 1fr 1fr"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço Bruto (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div><div class="field"><label>Preço Líquido (R$/saca)</label><input type="number" step="0.01" id="f_precoLiquido" value="${item.preco_liquido || ""}" placeholder="Opcional"></div></div>
     <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
     <div class="field" id="f_comissaoSplitDisplay" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretora/100)} corretora (${data.config.comissao_pct_corretora}%) · ${fmtMoney((item.comissao||0) * data.config.comissao_pct_corretor/100)} corretor (${data.config.comissao_pct_corretor}%)</div>
@@ -1916,6 +1926,7 @@ function openNegocioModal(id) {
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveNegocio('${id || ""}')">Salvar</button></div>`;
   if (id) renderAnexosNegocio(id);
   onModalidadeChange();
+  atualizarContaBancariaWrap();
   showModal();
 }
 async function saveNegocio(id) {
@@ -1927,7 +1938,7 @@ async function saveNegocio(id) {
   if (!cliente_id && !contraparte.trim().length) { const p = data.cadastros.find(x => x.id === produtorVal); if (p) contraparte = p.nome; }
   const comissaoSaca = n("f_comissaoSaca");
   const comissaoTotal = n("f_quantidade") * comissaoSaca;
-  const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null,
+  const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null, conta_bancaria: v("f_contaBancaria") || "Principal",
     quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), preco_liquido: n("f_precoLiquido") || null, comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
@@ -2171,7 +2182,7 @@ function montarConfirmacaoHtml(negocioId) {
     <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${propriedadeIE}</td></tr>
     <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
     <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
-    <tr><td class="label">DADOS BANCÁRIOS</td><td>${vendedor.dados_bancarios || "—"}</td></tr>
+    <tr><td class="label">DADOS BANCÁRIOS</td><td>${(n.conta_bancaria === "Secundária" && vendedor.dados_bancarios_secundaria) ? vendedor.dados_bancarios_secundaria : (vendedor.dados_bancarios || "—")}</td></tr>
   </table>
   <table class="dados">
     <tr><td class="label">COMPRADOR</td><td>${comprador.nome}</td></tr>
@@ -2499,6 +2510,7 @@ function exportCadastrosXlsx() {
       "Inscrição Estadual": c.inscricao_estadual || "",
       "Fazendas": fazendasTxt,
       "Dados bancários": c.dados_bancarios || "",
+      "Dados bancários (secundária)": c.dados_bancarios_secundaria || "",
       "Volume anual soja (sc)": Number(c.volume_anual_soja || 0),
       "Volume anual milho (sc)": Number(c.volume_anual_milho || 0),
       "Responsável": nomeCorretor(c.owner_id),
@@ -2540,6 +2552,7 @@ async function onImportCadastrosFile(file) {
       cpf: String(row["CPF"] || ""),
       inscricao_estadual: String(row["Inscrição Estadual"] || ""),
       dados_bancarios: String(row["Dados bancários"] || ""),
+      dados_bancarios_secundaria: String(row["Dados bancários (secundária)"] || ""),
       lembrete: String(row["Lembrete"] || ""),
       obs: String(row["Observações"] || ""),
     };
@@ -2644,7 +2657,7 @@ function carregarClausulaPadrao(chave) {
   document.getElementById(`f_clausula_${chave}`).value = CLAUSULAS_CONTRATO[chave].default;
 }
 function openContatoModal(id) {
-  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "" };
+  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "", dados_bancarios_secundaria: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   const fotoIniciais = (item.nome || "?").split(" ").map(p=>p[0]).slice(0,2).join("").toUpperCase();
   document.getElementById("modalContent").innerHTML = `
@@ -2661,7 +2674,8 @@ function openContatoModal(id) {
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     <div class="field-row"><div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div><div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div></div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
-      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
+      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários (principal)</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
+      <div class="field"><label>Dados bancários (secundária) — opcional</label><input type="text" id="f_bancariosSecundaria" value="${item.dados_bancarios_secundaria||""}" placeholder="Preencha só se o produtor tiver uma segunda conta"></div>
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
       <div class="field"><label>Fazendas</label><div id="fazendasSection">${renderFazendasSectionHtml(id)}</div></div>
     </div>
@@ -2699,6 +2713,7 @@ async function saveContato(id) {
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
     dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "",
+    dados_bancarios_secundaria: tipo === "Produtor" ? v("f_bancariosSecundaria") : "",
     clausula_qualidade: tipo === "Comprador" ? v("f_clausula_qualidade") : "",
     clausula_contaminantes: tipo === "Comprador" ? v("f_clausula_contaminantes") : "",
     clausula_condicoes_gerais: tipo === "Comprador" ? v("f_clausula_condicoesGerais") : "",
