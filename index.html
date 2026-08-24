@@ -640,6 +640,9 @@
             <select class="filter" id="conFilterTipo" style="display:none">
               <option value="Produtor" selected>Produtor</option><option value="Comprador">Comprador</option><option value="Transportadora">Transportadora</option>
             </select>
+            <select class="filter" id="conFilterCategoriaComprador" style="display:none">
+              <option value="">Todas as categorias</option><option value="Cooperativa">Cooperativa</option><option value="Trading">Trading</option><option value="Cerealista">Cerealista</option>
+            </select>
             <button class="btn-ghost" id="exportCadastrosBtn">Exportar .xlsx</button>
             <button class="btn-ghost" id="importCadastrosBtn">Importar produtores .xlsx</button>
             <input type="file" id="importCadastrosFileInput" accept=".xlsx,.xls" style="display:none" onchange="onImportCadastrosFile(this.files[0])">
@@ -2463,11 +2466,12 @@ async function enviarLiberacaoPorEmail(negocioId) {
 // ---------------- CADASTROS ----------------
 function renderContatos() {
   const search = document.getElementById("conSearch").value.toLowerCase(); const filterTipo = document.getElementById("conFilterTipo").value;
-  let list = data.cadastros.filter(c => (!search || c.nome.toLowerCase().includes(search) || (c.cidade || "").toLowerCase().includes(search)) && (!filterTipo || c.tipo === filterTipo));
+  const filterCategoria = document.getElementById("conFilterCategoriaComprador").value;
+  let list = data.cadastros.filter(c => (!search || c.nome.toLowerCase().includes(search) || (c.cidade || "").toLowerCase().includes(search)) && (!filterTipo || c.tipo === filterTipo) && (!filterCategoria || c.categoria_comprador === filterCategoria));
   const st = sortState.cadastros; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("contatosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhum cadastro encontrado.</td></tr>` :
-    list.map(c => `<tr><td>${avatarThumbHtml(c)}</td><td>${c.nome}</td><td>${c.tipo}</td><td>${c.telefone || "—"}</td><td>${c.cidade || "—"}</td><td>${nomeCorretor(c.owner_id)}</td>
+    list.map(c => `<tr><td>${avatarThumbHtml(c)}</td><td>${c.nome}</td><td>${c.tipo}${c.categoria_comprador ? ` · ${c.categoria_comprador}` : ""}</td><td>${c.telefone || "—"}</td><td>${c.cidade || "—"}</td><td>${nomeCorretor(c.owner_id)}</td>
       <td><button class="btn-edit-text" onclick="openContatoModal('${c.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_cadastros','${c.id}', loadCadastros, renderContatos)">Excluir</button></td></tr>`).join("");
   renderDashboard();
 }
@@ -2498,6 +2502,7 @@ function exportCadastrosXlsx() {
       "Fazendas": fazendasTxt,
       "Dados bancários": c.dados_bancarios || "",
       "Dados bancários (secundária)": c.dados_bancarios_secundaria || "",
+      "Categoria (comprador)": c.categoria_comprador || "",
       "Volume anual soja (sc)": Number(c.volume_anual_soja || 0),
       "Volume anual milho (sc)": Number(c.volume_anual_milho || 0),
       "Responsável": nomeCorretor(c.owner_id),
@@ -2562,11 +2567,14 @@ async function onImportCadastrosFile(file) {
 }
 document.getElementById("conSearch").addEventListener("input", renderContatos);
 document.getElementById("conFilterTipo").addEventListener("change", renderContatos);
+document.getElementById("conFilterCategoriaComprador").addEventListener("change", renderContatos);
 document.querySelectorAll(".con-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".con-tab-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("conFilterTipo").value = btn.dataset.contipo;
+    document.getElementById("conFilterCategoriaComprador").style.display = btn.dataset.contipo === "Comprador" ? "inline-block" : "none";
+    document.getElementById("conFilterCategoriaComprador").value = "";
     renderContatos();
   });
 });
@@ -2644,7 +2652,7 @@ function carregarClausulaPadrao(chave) {
   document.getElementById(`f_clausula_${chave}`).value = CLAUSULAS_CONTRATO[chave].default;
 }
 function openContatoModal(id) {
-  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "", dados_bancarios_secundaria: "" };
+  const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "", dados_bancarios_secundaria: "", categoria_comprador: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
   const fotoIniciais = (item.nome || "?").split(" ").map(p=>p[0]).slice(0,2).join("").toUpperCase();
   document.getElementById("modalContent").innerHTML = `
@@ -2668,6 +2676,7 @@ function openContatoModal(id) {
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
+      <div class="field"><label>Categoria</label><select id="f_categoriaComprador"><option value="">— Não informado —</option>${["Cooperativa","Trading","Cerealista"].map(o => `<option ${item.categoria_comprador===o?"selected":""}>${o}</option>`).join("")}</select></div>
       <div class="field-row">
         <div class="field"><label>Comissão padrão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSacaPadrao" value="${item.comissao_saca_padrao||""}" placeholder="Ex: 0,25 a 0,30"></div>
         <div class="field"><label>Quem paga a comissão (padrão)</label><select id="f_comissaoPagadorPadrao"><option ${(!item.comissao_pagador_padrao||item.comissao_pagador_padrao==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador_padrao==="Comprador"?"selected":""}>Comprador</option></select></div>
@@ -2699,6 +2708,7 @@ async function saveContato(id) {
   const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), email: v("f_email") || null, obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
+    categoria_comprador: tipo === "Comprador" ? v("f_categoriaComprador") : "",
     dados_bancarios: tipo === "Produtor" ? v("f_bancarios") : "",
     dados_bancarios_secundaria: tipo === "Produtor" ? v("f_bancariosSecundaria") : "",
     clausula_qualidade: tipo === "Comprador" ? v("f_clausula_qualidade") : "",
