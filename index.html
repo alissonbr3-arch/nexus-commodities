@@ -873,7 +873,20 @@
             <h3>Histórico de alterações</h3>
             <div class="hint">Quem criou, alterou ou excluiu negociações e cadastros. Mostra os últimos 200 eventos.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="auditFilterTabela" onchange="renderAuditoria()"><option value="">Todas as tabelas</option><option value="nexus_negocios">Negociações</option><option value="nexus_cadastros">Cadastros</option></select>
+              <select class="filter" id="auditFilterTabela" onchange="renderAuditoria()">
+                <option value="">Todas as tabelas</option>
+                <option value="nexus_negocios">Negociações</option>
+                <option value="nexus_cadastros">Cadastros</option>
+                <option value="nexus_tarefas">Tarefas</option>
+                <option value="nexus_cotacoes">Cotações</option>
+                <option value="nexus_dolar">Dólar</option>
+                <option value="nexus_equipe">Equipe</option>
+                <option value="nexus_intencoes">Funil</option>
+                <option value="nexus_fazendas">Fazendas</option>
+                <option value="nexus_config">Configurações</option>
+                <option value="nexus_contratos_externos">Contratos externos</option>
+                <option value="nexus_despesas">Despesas</option>
+              </select>
               <select class="filter" id="auditFilterAcao" onchange="renderAuditoria()"><option value="">Todas as ações</option><option value="INSERT">Criação</option><option value="UPDATE">Alteração</option><option value="DELETE">Exclusão</option></select>
               <button class="btn-ghost" onclick="loadAuditLogEAtualizar()">Atualizar</button>
             </div>
@@ -3153,10 +3166,24 @@ function auditUsuarioNome(userId) {
   const e = data.equipe.find(x => x.user_id === userId);
   return e ? e.nome : "Usuário removido";
 }
+const AUDIT_TABELA_LABEL = {
+  nexus_negocios: "negociação", nexus_cadastros: "cadastro", nexus_tarefas: "tarefa", nexus_cotacoes: "cotação",
+  nexus_dolar: "cotação do dólar", nexus_equipe: "corretor da equipe", nexus_intencoes: "intenção do funil",
+  nexus_fazendas: "fazenda", nexus_config: "configuração geral", nexus_contratos_externos: "contrato externo", nexus_despesas: "despesa",
+};
 function auditRegistroLabel(a) {
   const dados = (a.alteracoes && (a.alteracoes.depois || a.alteracoes.antes)) || {};
   if (a.tabela === "nexus_negocios") return dados.numero_contrato ? `Contrato ${dados.numero_contrato}` : (dados.grao || "Negociação");
   if (a.tabela === "nexus_cadastros") return dados.nome || "Cadastro";
+  if (a.tabela === "nexus_tarefas") return dados.titulo || "Tarefa";
+  if (a.tabela === "nexus_cotacoes") return [dados.produto, dados.mes].filter(Boolean).join(" ") || "Cotação";
+  if (a.tabela === "nexus_dolar") return "Cotação do dólar";
+  if (a.tabela === "nexus_equipe") return dados.nome || "Corretor";
+  if (a.tabela === "nexus_intencoes") return dados.contraparte || dados.grao || "Intenção";
+  if (a.tabela === "nexus_fazendas") return dados.nome || "Fazenda";
+  if (a.tabela === "nexus_config") return "Configurações gerais";
+  if (a.tabela === "nexus_contratos_externos") return dados.corretora_nome || "Contrato externo";
+  if (a.tabela === "nexus_despesas") return dados.descricao || "Despesa";
   return a.tabela;
 }
 const AUDIT_CAMPOS_IGNORADOS = ["updated_at", "created_at"];
@@ -3177,7 +3204,7 @@ function auditRowHtml(a) {
   const acaoLabel = { INSERT: "Criou", UPDATE: "Alterou", DELETE: "Excluiu" }[a.acao] || a.acao;
   const acaoColor = { INSERT: "var(--green)", UPDATE: "var(--blue)", DELETE: "var(--red)" }[a.acao] || "var(--ink-soft)";
   const quando = new Date(a.created_at).toLocaleString("pt-BR");
-  const tabelaLabel = a.tabela === "nexus_negocios" ? "negociação" : "cadastro";
+  const tabelaLabel = AUDIT_TABELA_LABEL[a.tabela] || a.tabela;
   return `<div class="rank-row" style="align-items:flex-start">
     <div style="flex:1">
       <div style="font-size:12.5px"><b>${auditUsuarioNome(a.usuario_id)}</b> <span style="color:${acaoColor}">${acaoLabel}</span> ${tabelaLabel} — <b>${auditRegistroLabel(a)}</b></div>
