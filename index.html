@@ -2251,6 +2251,7 @@ function montarConfirmacaoHtml(negocioId) {
   <strong>TOTAL BRUTO:</strong> ${fmtMoney(total)} (${valorPorExtenso(total)}).<br>
   <strong>TOTAL LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(liquido)} (${valorPorExtenso(liquido)}).<br>
   Descontos a serem realizados: 0,2% Senar${comFundersulFundems ? " + Fundersul valor vigente + Fundems valor vigente" : ""} + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.</p>
+  ${(n.modalidade || "FOB") === "CIF" ? `<p><strong>Obs.:</strong> O produto será entregue direto da lavoura, livre de taxa de recebimento. Os descontos serão aplicados nos itens umidade, impureza e avariado seguindo a tabela do comprador.</p>` : ""}
   ${textoObsDescarga ? `<p><strong>Obs.: DESCARGA:</strong> ${textoObsDescarga}</p>` : ""}
 
   ${boilerplateHtml}
