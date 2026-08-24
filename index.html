@@ -2100,6 +2100,10 @@ a) Até 14% de Umidade
 b) Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)
 c) Até 8% de Grãos Avariados (brotados, imaturos, cochos, danificados, com máximo de 6% mofados, 4% ardidos/queimados, máximo 1% queimados)
 d) Até 8% de Grãos Esverdeados`,
+    defaultSorgo: `a) Até 13% de Umidade
+b) Até 1% de Impurezas (Matérias Estranhas e/ou Impurezas)
+c) Até 6% de Grãos Avariados (máximo de 2% ardidos, 2% brotados, 2% mofados)
+Outros: Ausência de insetos vivos, mortos e aflatoxinas ao limite máximo de 20 PPB e sementes tóxicas.`,
   },
   contaminantes: {
     label: "Contaminantes",
@@ -2151,7 +2155,9 @@ j) Outras sementes com efeito tóxico`,
 };
 function textoClausula(comprador, chave, n) {
   const def = CLAUSULAS_CONTRATO[chave];
-  const padrao = (def.defaultMilho && n.grao === "Milho") ? def.defaultMilho : def.default;
+  const padrao = (def.defaultMilho && n.grao === "Milho") ? def.defaultMilho
+    : (def.defaultSorgo && n.grao === "Sorgo") ? def.defaultSorgo
+    : def.default;
   const bruto = (comprador[def.campo] || "").trim() || padrao;
   return escapeHtml(bruto)
     .replace(/\{\{VENDEDOR\}\}/g, data.cadastros.find(c => c.id === n.produtor_id)?.nome || "")
