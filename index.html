@@ -995,24 +995,6 @@ function setSyncStatus(ok) {
 async function loadNegocios() {
   const { data: rows, error } = await sb.from("nexus_negocios").select("*").is("deleted_at", null).order("data", { ascending: false });
   if (!error) data.negocios = rows || [];
-  await autoCompletarChecklistPorData();
-}
-// Quando a data de fim de embarque ou de pagamento já passou, marca sozinho o checklist como feito
-// (o corretor ainda pode desmarcar manualmente se precisar corrigir).
-async function autoCompletarChecklistPorData() {
-  const hoje = todayISO();
-  const pendentes = data.negocios.filter(n =>
-    (n.data_fim_embarque && n.data_fim_embarque <= hoje && !n.check_embarque_entrega) ||
-    (n.data_pagamento && n.data_pagamento <= hoje && !n.check_pagamento)
-  );
-  if (pendentes.length === 0) return;
-  await Promise.all(pendentes.map(n => {
-    const payload = {};
-    if (n.data_fim_embarque && n.data_fim_embarque <= hoje && !n.check_embarque_entrega) payload.check_embarque_entrega = true;
-    if (n.data_pagamento && n.data_pagamento <= hoje && !n.check_pagamento) payload.check_pagamento = true;
-    Object.assign(n, payload);
-    return sb.from("nexus_negocios").update(payload).eq("id", n.id);
-  }));
 }
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
@@ -3376,8 +3358,8 @@ const AGENDA_TIPO_CLASSE = {
   "Pagamento": "tipo-pagamento", "Comissão": "tipo-comissao",
 };
 // Itens do checklist de cada negócio, com a data em que devem aparecer na agenda:
-// Contrato = 1 dia após a negociação; Nota Fiscal/Contra Nota/Liberação = 1 dia antes do início do embarque;
-// Fim de embarque e Pagamento se auto-completam sozinhos quando a data chega (ver autoCompletarChecklistPorData).
+// Contrato = 1 dia após a negociação; Nota Fiscal/Contra Nota/Liberação = 1 dia antes do início do embarque.
+// Todos os itens são marcados manualmente (clique na Agenda ou em Negociações), sem auto-completar por data.
 function agendaTodosItens() {
   const itens = [];
   data.negocios.forEach(neg => {
