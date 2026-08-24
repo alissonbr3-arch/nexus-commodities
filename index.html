@@ -1755,7 +1755,7 @@ function renderNegocios() {
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${Number(n.preco).toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Salvar Confirmação em PDF" onclick="salvarConfirmacaoPDF('${n.id}')">&#128190;</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -2309,24 +2309,6 @@ async function enviarParaAssinatura(negocioId) {
     alert("Erro ao enviar: " + e.message);
   }
 }
-async function salvarConfirmacaoPDF(negocioId) {
-  const r = montarConfirmacaoHtml(negocioId);
-  if (!r) return;
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:800px;height:1200px;border:0";
-  document.body.appendChild(iframe);
-  iframe.srcdoc = r.html.replace(/<script[\s\S]*?<\/script>/, "");
-  await new Promise(resolve => { iframe.onload = resolve; });
-  iframe.style.height = iframe.contentDocument.body.scrollHeight + "px";
-  try {
-    await gerarPdfNormalizado(iframe.contentDocument.body, `Confirmacao_${r.numeroContrato || "negocio"}.pdf`);
-  } catch (e) {
-    alert("Erro ao gerar o PDF: " + e.message);
-  } finally {
-    document.body.removeChild(iframe);
-  }
-}
-
 // ---------------- EMBARQUES ----------------
 let embTab = "previstos";
 document.querySelectorAll("#embTabs .emb-tab-btn").forEach(btn => {
