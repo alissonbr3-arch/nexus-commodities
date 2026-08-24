@@ -719,6 +719,7 @@
               </div>
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador. O filtro de mês considera o vencimento.</div>
+            <div class="hint" id="comissoesTotalReceber" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
             <table>
               <thead><tr>
                 <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
@@ -740,6 +741,7 @@
               </div>
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente. O filtro de mês considera o vencimento.</div>
+            <div class="hint" id="comissoesTotalPagar" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
             <table>
               <thead><tr>
                 <th data-sort="recebidoEm">Recebido pela Nexus</th><th data-sort="vencimento">Vencimento</th><th data-sort="corretorNome">Corretor</th><th data-sort="negocioLabel">Negócio</th>
@@ -2847,6 +2849,8 @@ function renderComissoesPage() {
     .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
+  const totalReceberEl = document.getElementById("comissoesTotalReceber");
+  if (totalReceberEl) totalReceberEl.textContent = list.length === 0 ? "" : `Total nesta lista: ${fmtMoney(list.reduce((s,c) => s + c.valor, 0))} (${list.length} lançamento${list.length === 1 ? "" : "s"})`;
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.status === "Pago";
@@ -2881,6 +2885,8 @@ function renderComissoesPage() {
     .filter(c => !mesFiltroC || c.vencimento.slice(0,7) === mesFiltroC);
   const stC = sortState.comissoesCorretor;
   listC = stC && stC.key ? applySort(listC, stC.key, stC.dir) : listC.sort((a,b) => b.recebidoEm.localeCompare(a.recebidoEm));
+  const totalPagarEl = document.getElementById("comissoesTotalPagar");
+  if (totalPagarEl) totalPagarEl.textContent = listC.length === 0 ? "" : `Total nesta lista: ${fmtMoney(listC.reduce((s,c) => s + c.valor, 0))} (${listC.length} lançamento${listC.length === 1 ? "" : "s"})`;
   bodyC.innerHTML = listC.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão de corretor encontrada.</td></tr>` :
     listC.map(c => {
       const statusLabel = c.paga ? "Pago" : c.aguardando ? "Aguardando recebimento" : "A pagar";
