@@ -776,6 +776,7 @@
         <div class="panel-head">
           <h2 id="agendaTitle">Semana — pagamentos e embarques</h2>
           <div class="actions-left">
+            <select class="filter" id="agendaFilterCorretor"><option value="">Todos os corretores</option></select>
             <button class="btn-ghost" id="agendaPrevBtn">&larr; Anterior</button>
             <span id="agendaWeekLabel" style="font-size:12.5px;color:var(--ink-soft)"></span>
             <button class="btn-ghost" id="agendaNextBtn">Próxima &rarr;</button>
@@ -3383,6 +3384,13 @@ const AGENDA_TIPO_CLASSE = {
   "Liberação de Embarque": "tipo-liberacao", "Início embarque": "tipo-inicioembarque", "Fim embarque": "tipo-fimembarque",
   "Pagamento": "tipo-pagamento", "Comissão": "tipo-comissao",
 };
+let agendaFilterCorretorId = "";
+function renderAgendaFilterSelect() {
+  const sel = document.getElementById("agendaFilterCorretor");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">Todos os corretores</option>` + data.equipe.map(e => `<option value="${e.user_id}" ${e.user_id===agendaFilterCorretorId?"selected":""}>${e.nome}</option>`).join("");
+}
+document.getElementById("agendaFilterCorretor").addEventListener("change", (e) => { agendaFilterCorretorId = e.target.value; renderAgendaSemana(); });
 // Itens do checklist de cada negócio, com a data em que devem aparecer na agenda:
 // Contrato = 1 dia após a negociação; Nota Fiscal/Contra Nota/Liberação = 1 dia antes do início do embarque.
 // Todos os itens são marcados manualmente (clique na Agenda ou em Negociações), sem auto-completar por data.
@@ -3443,7 +3451,8 @@ document.getElementById("agendaNextBtn").addEventListener("click", () => {
 function renderAgendaSemana() {
   const el = document.getElementById("agendaSemanaList");
   if (!el) return;
-  const todosItens = agendaTodosItens();
+  renderAgendaFilterSelect();
+  const todosItens = agendaTodosItens().filter(it => !agendaFilterCorretorId || it.neg.corretor_id === agendaFilterCorretorId);
   const hojeISO = todayISO();
 
   if (agendaViewMode === "calendario" && agendaCalGran === "mes") {
