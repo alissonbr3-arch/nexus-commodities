@@ -44,7 +44,7 @@ export default async () => {
     const xml = await resp.text();
     const todos = parsearRss(xml);
     const relevantes = todos.filter(it => PALAVRAS_RELEVANTES.some(p => it.titulo.toLowerCase().includes(p)));
-    const itens = (relevantes.length >= 5 ? relevantes : todos).slice(0, 12);
+    const itens = (relevantes.length >= 2 ? relevantes : todos).slice(0, 12);
     return json({ ok: true, itens, atualizado_em: new Date().toISOString(), fonte: "Canal Rural" });
   } catch (e) {
     return json({ ok: false, erro: String(e.message || e) }, 500);
