@@ -3,9 +3,6 @@ import { createSign } from "node:crypto";
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 
-// Remetente dos e-mails via Resend — precisa ser um domínio verificado lá (nexuscommoditiesms.com.br).
-const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
-
 // Ambiente de testes do DocuSign. Ao migrar pra produção (depois do Go-Live),
 // trocar para "account.docusign.com" (auth) e "https://www.docusign.net/restapi" (API) —
 // o account_id de produção também muda.
@@ -93,26 +90,9 @@ async function criarEnvelopeDocusign({ accessToken, accountId, html, numeroContr
   return data;
 }
 
-async function enviarEmailResend({ apiKey, to, subject, pdfBase64, filename }) {
-  const resp = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: FROM_EMAIL,
-      to,
-      subject,
-      html: `<p>Segue em anexo a Confirmação de Negócio.</p><p>Nexus Commodities</p>`,
-      attachments: pdfBase64 ? [{ filename, content: pdfBase64 }] : [],
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.message || JSON.stringify(data));
-  return data;
-}
-
-// Envia a Confirmação de Negócio por e-mail (Resend) e/ou pra assinatura digital (DocuSign).
-// Só corretores da equipe Nexus podem chamar. Cada integração roda de forma independente —
-// se uma das duas não estiver configurada (variáveis de ambiente ausentes), a outra ainda funciona.
+// Envia a Confirmação de Negócio pra assinatura digital (DocuSign) — o próprio DocuSign notifica
+// vendedor e comprador por e-mail, não precisa mandar uma cópia separada via Resend.
+// Só corretores da equipe Nexus podem chamar.
 export default async (req) => {
   let payload;
   try {
@@ -120,7 +100,7 @@ export default async (req) => {
   } catch {
     return json({ ok: false, erro: "Corpo da requisição inválido." }, 400);
   }
-  const { negocio_id, access_token, html, pdf_base64 } = payload || {};
+  const { negocio_id, access_token, html } = payload || {};
   if (!negocio_id || !access_token || !html) {
     return json({ ok: false, erro: "Dados incompletos (negocio_id, access_token e html são obrigatórios)." }, 400);
   }
@@ -158,33 +138,6 @@ export default async (req) => {
 
   const resultado = {};
 
-  const resendKey = process.env.RESEND_API_KEY;
-  if (resendKey) {
-    try {
-      await enviarEmailResend({
-        apiKey: resendKey,
-        to: [vendedor.email, comprador.email],
-        subject: `Confirmação de Negócio ${negocio.numero_contrato || ""} — Nexus Commodities`,
-        pdfBase64: pdf_base64,
-        filename: `Confirmacao_${negocio.numero_contrato || "negocio"}.pdf`,
-      });
-      resultado.email = { ok: true };
-    } catch (e) {
-      resultado.email = { ok: false, erro: String(e.message || e) };
-    }
-  } else {
-    resultado.email = { ok: false, erro: "RESEND_API_KEY não configurada." };
-  }
-
-  await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
-    method: "POST",
-    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({
-      negocio_id, tipo: "Confirmação", destinatarios: [vendedor.email, comprador.email].join(", "),
-      enviado_por: caller.id, sucesso: !!resultado.email.ok, erro: resultado.email.ok ? null : resultado.email.erro,
-    }),
-  }).catch(() => {});
-
   const { DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, DOCUSIGN_ACCOUNT_ID, DOCUSIGN_PRIVATE_KEY } = process.env;
   if (DOCUSIGN_INTEGRATION_KEY && DOCUSIGN_USER_ID && DOCUSIGN_ACCOUNT_ID && DOCUSIGN_PRIVATE_KEY) {
     try {
@@ -201,6 +154,15 @@ export default async (req) => {
   } else {
     resultado.docusign = { ok: false, erro: "Variáveis do DocuSign não configuradas." };
   }
+
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
+    method: "POST",
+    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({
+      negocio_id, tipo: "Confirmação (DocuSign)", destinatarios: [vendedor.email, comprador.email].join(", "),
+      enviado_por: caller.id, sucesso: !!resultado.docusign.ok, erro: resultado.docusign.ok ? null : resultado.docusign.erro,
+    }),
+  }).catch(() => {});
 
   return json({ ok: true, resultado }, 200);
 };
