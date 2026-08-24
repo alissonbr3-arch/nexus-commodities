@@ -1781,14 +1781,21 @@ async function toggleNegocioCheck(id, campo) {
   renderNegocios();
   renderAgendaSemana();
 }
+// Fundersul e Fundems só se aplicam quando o comprador é Trading (ou sem categoria definida).
+// Cooperativas e Cerealistas não têm esses dois descontos.
+function aplicaFundersulFundems(comprador) {
+  return !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
+}
 // Preço líquido: usa o valor informado manualmente no negócio, ou estima descontando
-// comissão, 0,2% Senar, Fundersul, Fundems e Funrural (mesma conta usada na Confirmação).
+// comissão, 0,2% Senar, Fundersul, Fundems (se aplicável) e Funrural (mesma conta usada na Confirmação).
 function precoLiquidoNegocio(n) {
   const sacas = Number(n.quantidade || 0);
   const total = Number(n.preco || 0) * sacas;
   const senar = total * 0.002;
-  const fundersulTotal = Number(data.config.fundersul_saca || 0) * sacas;
-  const fundemsTotal = Number(data.config.fundems_saca || 0) * sacas;
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const fundersulTotal = comFundersulFundems ? Number(data.config.fundersul_saca || 0) * sacas : 0;
+  const fundemsTotal = comFundersulFundems ? Number(data.config.fundems_saca || 0) * sacas : 0;
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
   const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
@@ -2136,6 +2143,11 @@ j) Outras sementes com efeito tóxico`,
     campo: "clausula_comissao",
     default: `{{COMISSAO_SACA}} por saca paga pelo {{COMISSAO_PAGADOR}} para Nexus Commodities, CNPJ: 68.049.636/0001-61`,
   },
+  obsDescarga: {
+    label: "Observação de descarga (opcional)",
+    campo: "clausula_obs_descarga",
+    default: "",
+  },
 };
 function textoClausula(comprador, chave, n) {
   const def = CLAUSULAS_CONTRATO[chave];
@@ -2167,6 +2179,8 @@ function montarConfirmacaoHtml(negocioId) {
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
   const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const boilerplateHtml = `
@@ -2233,10 +2247,11 @@ function montarConfirmacaoHtml(negocioId) {
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
   </table>
   <p><strong>PREÇO BRUTO:</strong> ${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.<br>
-  <strong>PREÇO LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(precoLiquido)} por saca de 60kg${precoLiquidoInformado ? "" : ", após Comissão, 0,2% Senar, Fundersul, Fundems" + (funruralForma === "Comercialização" ? " e Funrural" : "")}.<br>
+  <strong>PREÇO LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(precoLiquido)} por saca de 60kg${precoLiquidoInformado ? "" : ", após Comissão, 0,2% Senar" + (comFundersulFundems ? ", Fundersul, Fundems" : "") + (funruralForma === "Comercialização" ? " e Funrural" : "")}.<br>
   <strong>TOTAL BRUTO:</strong> ${fmtMoney(total)} (${valorPorExtenso(total)}).<br>
   <strong>TOTAL LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:</strong> ${fmtMoney(liquido)} (${valorPorExtenso(liquido)}).<br>
-  <strong>FUNRURAL:</strong> recolhido pelo produtor na ${funruralForma}${funruralForma === "Comercialização" ? `, retido no ato do pagamento` : `, à ser descontado 0,2% (SENAR) do preço bruto`}. ICMS: Não incidente em se tratando de produtor rural.</p>
+  Descontos a serem realizados: 0,2% Senar${comFundersulFundems ? " + Fundersul valor vigente + Fundems valor vigente" : ""} + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.</p>
+  ${textoObsDescarga ? `<p><strong>Obs.: DESCARGA:</strong> ${textoObsDescarga}</p>` : ""}
 
   ${boilerplateHtml}
 
@@ -2687,6 +2702,10 @@ function openContatoModal(id) {
       ${clausulaFieldHtml(item, "contaminantes")}
       ${clausulaFieldHtml(item, "condicoesGerais")}
       ${clausulaFieldHtml(item, "comissao")}
+      <div class="field">
+        <label>Observação de descarga na Confirmação <span style="font-weight:400;color:var(--ink-soft)">(opcional — deixe em branco pra não mostrar)</span></label>
+        <textarea id="f_clausula_obsDescarga" rows="4" placeholder="Ex: instruções de horário e procedimento de descarga desse comprador.">${item.clausula_obs_descarga || ""}</textarea>
+      </div>
     </div>
     <div id="f_acessoClienteWrap" style="${(item.tipo==="Produtor"||item.tipo==="Comprador")?"":"display:none"}">
       <div class="field"><label>Acesso do cliente (portal)</label>
@@ -2715,6 +2734,7 @@ async function saveContato(id) {
     clausula_contaminantes: tipo === "Comprador" ? v("f_clausula_contaminantes") : "",
     clausula_condicoes_gerais: tipo === "Comprador" ? v("f_clausula_condicoesGerais") : "",
     clausula_comissao: tipo === "Comprador" ? v("f_clausula_comissao") : "",
+    clausula_obs_descarga: tipo === "Comprador" ? v("f_clausula_obsDescarga") : "",
     comissao_saca_padrao: tipo === "Comprador" ? (n("f_comissaoSacaPadrao") || null) : null,
     comissao_pagador_padrao: tipo === "Comprador" ? v("f_comissaoPagadorPadrao") : null };
   if (id) await sb.from("nexus_cadastros").update(payload).eq("id", id); else await sb.from("nexus_cadastros").insert([payload]);
