@@ -3,12 +3,10 @@ import { createSign } from "node:crypto";
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 
-// Ambiente de testes do DocuSign. Ao migrar pra produção (depois do Go-Live),
-// trocar para "account.docusign.com" (auth) e "https://www.docusign.net/restapi" (API) —
-// o account_id de produção também muda.
-const DOCUSIGN_AUD = "account-d.docusign.com";
-const DOCUSIGN_AUTH_URL = "https://account-d.docusign.com/oauth/token";
-const DOCUSIGN_BASE_URL = "https://demo.docusign.net/restapi";
+// Ambiente de produção do DocuSign (migrado depois do Go-Live da Integration Key).
+const DOCUSIGN_AUD = "account.docusign.com";
+const DOCUSIGN_AUTH_URL = "https://account.docusign.com/oauth/token";
+const DOCUSIGN_BASE_URL = "https://www.docusign.net/restapi";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
