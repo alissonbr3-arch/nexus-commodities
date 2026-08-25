@@ -2203,7 +2203,7 @@ function montarConfirmacaoHtml(negocioId) {
   <h3>COMISSÃO</h3>
   <p style="white-space:pre-wrap">${textoClausula(comprador, "comissao", n)}</p>`;
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Confirmação ${n.numero_contrato || ""}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Confirmação ${n.numero_contrato || ""} - ${vendedor.nome} x ${comprador.nome}</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
