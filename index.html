@@ -2675,6 +2675,32 @@ function clausulaFieldHtml(item, chave) {
 function carregarClausulaPadrao(chave) {
   document.getElementById(`f_clausula_${chave}`).value = CLAUSULAS_CONTRATO[chave].default;
 }
+const UF_LIST = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
+const CIDADES_MS = ["São Gabriel do Oeste","Chapadão do Sul","Costa Rica","Camapuã","Coxim","Rio Verde de Mato Grosso","Sonora","Pedro Gomes","Alcinópolis","Figueirão","Rio Negro","Bandeirantes","Ribas do Rio Pardo","Campo Grande","Dourados"];
+function parseCidadeUf(str) {
+  const s = (str || "").trim();
+  if (!s) return { cidade: "", uf: "MS" };
+  const m = s.match(/^(.*?)\s*[\/\-–]\s*([A-Za-z]{2})$/);
+  if (m) return { cidade: m[1].trim(), uf: m[2].toUpperCase() };
+  return { cidade: s, uf: "MS" };
+}
+function cidadeUfFieldsHtml(cidadeStr, isNovo) {
+  const parsed = isNovo && !cidadeStr ? { cidade: "São Gabriel do Oeste", uf: "MS" } : parseCidadeUf(cidadeStr);
+  const cidadeConhecida = CIDADES_MS.some(c => c.toLowerCase() === parsed.cidade.toLowerCase());
+  return `<div class="field-row">
+    <div class="field" style="flex:0 0 168px"><label>Estado</label><select id="f_uf">${UF_LIST.map(([sigla,nome]) => `<option value="${sigla}" ${parsed.uf===sigla?"selected":""}>${sigla} — ${nome}</option>`).join("")}</select></div>
+    <div class="field"><label>Cidade</label><select id="f_cidadeSelect" onchange="onCidadeSelectChange()">${CIDADES_MS.map(c => `<option ${cidadeConhecida && parsed.cidade.toLowerCase()===c.toLowerCase() ? "selected":""}>${c}</option>`).join("")}<option value="__outra__" ${!cidadeConhecida?"selected":""}>Outra cidade...</option></select></div>
+  </div>
+  <div class="field" id="f_cidadeOutraWrap" style="${cidadeConhecida?"display:none":""}"><label>Nome da cidade</label><input type="text" id="f_cidadeOutra" value="${!cidadeConhecida?parsed.cidade:""}" placeholder="Digite o nome da cidade"></div>`;
+}
+function onCidadeSelectChange() {
+  document.getElementById("f_cidadeOutraWrap").style.display = v("f_cidadeSelect") === "__outra__" ? "" : "none";
+}
+function cidadeUfValor() {
+  const uf = v("f_uf");
+  const cidade = v("f_cidadeSelect") === "__outra__" ? v("f_cidadeOutra").trim() : v("f_cidadeSelect");
+  return cidade ? `${cidade} - ${uf}` : "";
+}
 function openContatoModal(id) {
   const item = id ? data.cadastros.find(c => c.id === id) : { nome: "", tipo: "Produtor", telefone: "", cidade: "", obs: "", owner_id: currentUserId || "", volume_anual_soja: "", volume_anual_milho: "", lembrete: "", cpf: "", cnpj: "", inscricao_estadual: "", dados_bancarios: "", dados_bancarios_secundaria: "", categoria_comprador: "" };
   const equipeOptions = data.equipe.map(e => `<option value="${e.user_id}" ${item.owner_id===e.user_id?"selected":""}>${e.nome}</option>`).join("");
@@ -2691,7 +2717,8 @@ function openContatoModal(id) {
     </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
-    <div class="field-row"><div class="field"><label>Cidade/UF</label><input type="text" id="f_cidade" value="${item.cidade || ""}" placeholder="Ex: Sorriso/MT"></div><div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div></div>
+    ${cidadeUfFieldsHtml(item.cidade, !id)}
+    <div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários (principal)</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
       <div class="field"><label>Dados bancários (secundária) — opcional</label><input type="text" id="f_bancariosSecundaria" value="${item.dados_bancarios_secundaria||""}" placeholder="Preencha só se o produtor tiver uma segunda conta"></div>
@@ -2733,7 +2760,7 @@ function openContatoModal(id) {
 }
 async function saveContato(id) {
   const tipo = v("f_ctipo");
-  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: v("f_cidade"), email: v("f_email") || null, obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
+  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
     categoria_comprador: tipo === "Comprador" ? v("f_categoriaComprador") : "",
