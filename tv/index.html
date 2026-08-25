@@ -42,7 +42,7 @@
   .dolar-strip .var.up { color: var(--green); } .dolar-strip .var.down { color: var(--red); }
   .dolar-strip .ref { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
 
-  .main-grid { flex: 1; display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; min-height: 0; }
+  .main-grid { flex: 1; display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 18px; min-height: 0; }
   .col { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
 
   .cotacoes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
@@ -128,6 +128,12 @@
         <div class="panel" style="flex:1">
           <h2>Tendência de preços — Mensal (R$/saca)</h2>
           <div class="chart-box"><canvas id="tvChartMensal"></canvas></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel" style="flex:1">
+          <h2>Negócios fechados — Mensal (sacas)</h2>
+          <div class="chart-box"><canvas id="tvChartVolume"></canvas></div>
         </div>
       </div>
     </div>
@@ -257,6 +263,45 @@ function renderChartMensalTv(hist) {
   });
 }
 
+let tvChartVolumeInstance = null;
+function renderChartVolumeTv(negocios) {
+  const canvas = document.getElementById("tvChartVolume");
+  const lista = negocios || [];
+  if (lista.length === 0) {
+    if (tvChartVolumeInstance) { tvChartVolumeInstance.destroy(); tvChartVolumeInstance = null; }
+    return;
+  }
+  const hoje = new Date();
+  const meses = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  const graos = [...new Set(lista.map(n => n.grao).filter(Boolean))];
+  const datasets = graos.map((grao, i) => {
+    const porMes = {};
+    lista.filter(n => n.grao === grao).forEach(n => {
+      const mesKey = (n.data || "").slice(0, 7);
+      porMes[mesKey] = (porMes[mesKey] || 0) + Number(n.quantidade || 0);
+    });
+    return { label: grao, data: meses.map(m => porMes[m] || 0), backgroundColor: PALETTE_TV[i % PALETTE_TV.length] };
+  });
+  const labelsMes = meses.map(m => { const [y, mm] = m.split("-"); return new Date(Number(y), Number(mm) - 1, 1).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }); });
+  if (tvChartVolumeInstance) tvChartVolumeInstance.destroy();
+  tvChartVolumeInstance = new Chart(canvas, {
+    type: "bar",
+    data: { labels: labelsMes, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 11.5 } } } },
+      scales: {
+        y: { stacked: true, grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9" } },
+        x: { stacked: true, grid: { display: false }, ticks: { color: "#9aa1a9" } },
+      },
+    },
+  });
+}
+
 async function carregarNoticiasTv() {
   const track = document.getElementById("noticiasTickerTrack");
   try {
@@ -278,15 +323,19 @@ async function carregarNoticiasTv() {
 }
 
 async function carregarDadosTv() {
-  const [{ data: cotRows }, { data: dolarRow }, { data: histRows }] = await Promise.all([
+  const hoje = new Date();
+  const desde = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
+  const [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }] = await Promise.all([
     sb.from("nexus_cotacoes").select("*").order("produto"),
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
     sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
+    sb.from("nexus_negocios").select("data, grao, quantidade").is("deleted_at", null).gte("data", desde),
   ]);
   renderCotacoesTv(cotRows || []);
   renderDolarTv(dolarRow);
   renderChartTv(histRows || []);
   renderChartMensalTv(histRows || []);
+  renderChartVolumeTv(negociosRows || []);
 }
 
 function iniciarApp() {
@@ -300,6 +349,7 @@ function iniciarApp() {
   sb.channel("tv-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, carregarDadosTv)
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, carregarDadosTv)
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, carregarDadosTv)
     .subscribe();
 }
 
