@@ -894,10 +894,10 @@
             <div id="auditList"></div>
           </div>
           <div class="panel-card" style="margin-top:16px">
-            <h3>E-mails enviados</h3>
-            <div class="hint">Confirmações e Liberações de Embarque disparadas pelo app, e quem disparou. Mostra os últimos 200 envios.</div>
+            <h3>Comunicações enviadas</h3>
+            <div class="hint">E-mails e avisos de WhatsApp disparados pelo app (ou automaticamente), e quem disparou. Mostra os últimos 200 envios.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option></select>
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
               <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
             </div>
             <div id="emailLogList"></div>
@@ -3219,7 +3219,7 @@ function renderEmailLog() {
   if (!el) return;
   const tipoFiltro = document.getElementById("emailLogFilterTipo").value;
   const list = (data.emailLog || []).filter(e => !tipoFiltro || e.tipo === tipoFiltro);
-  el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhum e-mail enviado ainda.</div>` : list.map(emailLogRowHtml).join("");
+  el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhuma comunicação enviada ainda.</div>` : list.map(emailLogRowHtml).join("");
 }
 let relProdutoresSelecionados = new Set();
 function renderRelProdutorList() {
