@@ -66,6 +66,15 @@
   .noticia-item .titulo { font-size: 15.5px; font-weight: 600; line-height: 1.35; }
   .noticia-item .meta { font-size: 11px; color: var(--ink-dim); margin-top: 5px; text-transform: uppercase; letter-spacing: .04em; }
 
+  .ticker-bar { flex: 0 0 auto; display: flex; align-items: stretch; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; height: 48px; }
+  .ticker-tag { flex: 0 0 auto; display: flex; align-items: center; background: var(--gold); color: #171207; font-weight: 800; font-size: 12.5px; letter-spacing: .07em; text-transform: uppercase; padding: 0 20px; }
+  .ticker-viewport { flex: 1; overflow: hidden; position: relative; }
+  .ticker-track { position: absolute; inset: 0; display: flex; align-items: center; white-space: nowrap; will-change: transform; animation: ticker-scroll 90s linear infinite; }
+  .ticker-track .titem { display: inline-flex; align-items: center; padding: 0 36px; font-size: 15.5px; color: var(--ink); }
+  .ticker-track .titem .fonte { color: var(--gold); font-weight: 700; margin-right: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .ticker-track .titem .sep { color: var(--ink-dim); margin-left: 36px; }
+  @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
   .placeholder { color: var(--ink-dim); font-size: 13px; padding: 20px 0; text-align: center; }
 
   #loginBox {
@@ -111,16 +120,21 @@
       <div class="col">
         <div class="cotacoes-grid" id="cotacoesGridTv"></div>
         <div class="panel" style="flex:1">
-          <h2>Tendência de preços (R$/saca)</h2>
+          <h2>Tendência de preços — Diário (R$/saca)</h2>
           <div class="chart-box"><canvas id="tvChart"></canvas></div>
         </div>
       </div>
       <div class="col">
         <div class="panel" style="flex:1">
-          <h2>Notícias do agronegócio</h2>
-          <div class="noticias-list" id="noticiasListTv"><div class="placeholder">Carregando notícias...</div></div>
+          <h2>Tendência de preços — Mensal (R$/saca)</h2>
+          <div class="chart-box"><canvas id="tvChartMensal"></canvas></div>
         </div>
       </div>
+    </div>
+
+    <div class="ticker-bar">
+      <div class="ticker-tag">Agro Agora</div>
+      <div class="ticker-viewport"><div class="ticker-track" id="noticiasTickerTrack"><span class="titem">Carregando notícias...</span></div></div>
     </div>
   </div>
 
@@ -175,19 +189,24 @@ function renderCotacoesTv(lista) {
   }).join("");
 }
 
+// Milho CBOT sai do gráfico: escala de preço muito diferente da Soja, achata a linha.
+// Continua aparecendo normalmente no card de cotação, só não entra nos gráficos.
+const CODIGO_FORA_DO_GRAFICO = "ZC=F";
+
 let tvChartInstance = null;
 const PALETTE_TV = ["#e0b23f", "#4a8bb0", "#6fa348", "#c0574a", "#8a6bbf", "#3f9e91"];
 function renderChartTv(hist) {
   const canvas = document.getElementById("tvChart");
-  if (!hist || hist.length === 0) {
+  const dados = (hist || []).filter(h => h.codigo !== CODIGO_FORA_DO_GRAFICO);
+  if (dados.length === 0) {
     if (tvChartInstance) { tvChartInstance.destroy(); tvChartInstance = null; }
     return;
   }
-  const datas = [...new Set(hist.map(h => h.data))].sort();
-  const codigos = [...new Set(hist.map(h => h.codigo))];
+  const datas = [...new Set(dados.map(h => h.data))].sort();
+  const codigos = [...new Set(dados.map(h => h.codigo))];
   const datasets = codigos.map((codigo, i) => {
-    const porData = {}; hist.filter(h => h.codigo === codigo).forEach(h => { porData[h.data] = Number(h.preco_saca_brl || 0); });
-    const amostra = hist.find(h => h.codigo === codigo);
+    const porData = {}; dados.filter(h => h.codigo === codigo).forEach(h => { porData[h.data] = Number(h.preco_saca_brl || 0); });
+    const amostra = dados.find(h => h.codigo === codigo);
     const label = amostra ? `${amostra.produto} ${amostra.mes || ""}`.trim() : codigo;
     return { label, data: datas.map(d => porData[d] ?? null), borderColor: PALETTE_TV[i % PALETTE_TV.length], backgroundColor: "transparent", spanGaps: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0 };
   });
@@ -203,16 +222,58 @@ function renderChartTv(hist) {
   });
 }
 
-let noticiasRotacaoIdx = 0, noticiasRotacaoTimer = null;
+let tvChartMensalInstance = null;
+function renderChartMensalTv(hist) {
+  const canvas = document.getElementById("tvChartMensal");
+  const dados = (hist || []).filter(h => h.codigo !== CODIGO_FORA_DO_GRAFICO);
+  if (dados.length === 0) {
+    if (tvChartMensalInstance) { tvChartMensalInstance.destroy(); tvChartMensalInstance = null; }
+    return;
+  }
+  const codigos = [...new Set(dados.map(h => h.codigo))];
+  const meses = [...new Set(dados.map(h => h.data.slice(0, 7)))].sort();
+  const datasets = codigos.map((codigo, i) => {
+    const porMes = {};
+    dados.filter(h => h.codigo === codigo).forEach(h => {
+      const mesKey = h.data.slice(0, 7);
+      if (!porMes[mesKey]) porMes[mesKey] = { soma: 0, n: 0 };
+      porMes[mesKey].soma += Number(h.preco_saca_brl || 0);
+      porMes[mesKey].n += 1;
+    });
+    const amostra = dados.find(h => h.codigo === codigo);
+    const label = amostra ? `${amostra.produto} ${amostra.mes || ""}`.trim() : codigo;
+    return { label, data: meses.map(m => porMes[m] ? porMes[m].soma / porMes[m].n : null), borderColor: PALETTE_TV[i % PALETTE_TV.length], backgroundColor: "transparent", spanGaps: true, tension: 0.3, borderWidth: 2.5, pointRadius: 3 };
+  });
+  const labelsMes = meses.map(m => { const [y, mm] = m.split("-"); return new Date(Number(y), Number(mm) - 1, 1).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }); });
+  if (tvChartMensalInstance) tvChartMensalInstance.destroy();
+  tvChartMensalInstance = new Chart(canvas, {
+    type: "line",
+    data: { labels: labelsMes, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 11.5 } } } },
+      scales: { y: { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9" } }, x: { grid: { display: false }, ticks: { color: "#9aa1a9" } } },
+    },
+  });
+}
+
 async function carregarNoticiasTv() {
-  const el = document.getElementById("noticiasListTv");
+  const track = document.getElementById("noticiasTickerTrack");
   try {
     const resp = await fetch("/.netlify/functions/noticias-agro");
     const j = await resp.json();
-    if (!j.ok || !j.itens || j.itens.length === 0) { el.innerHTML = `<div class="placeholder">Sem notícias no momento.</div>`; return; }
-    el.innerHTML = j.itens.map(it => `<div class="noticia-item"><div class="titulo">${it.titulo}</div><div class="meta">${it.data ? new Date(it.data).toLocaleDateString("pt-BR") : ""} · Canal Rural</div></div>`).join("");
+    if (!j.ok || !j.itens || j.itens.length === 0) { track.style.animation = "none"; track.innerHTML = `<span class="titem">Sem notícias no momento.</span>`; return; }
+    const itemHtml = j.itens.map(it => `<span class="titem"><span class="fonte">${it.fonte || ""}</span>${it.titulo}</span><span class="sep">•</span>`).join("");
+    // duplica o conteúdo pra loop contínuo (a animação anda 50% da largura total)
+    track.innerHTML = itemHtml + itemHtml;
+    track.style.animation = "none";
+    void track.offsetWidth;
+    const largura = track.scrollWidth / 2;
+    const duracao = Math.max(30, largura / 55);
+    track.style.animation = `ticker-scroll ${duracao}s linear infinite`;
   } catch (e) {
-    el.innerHTML = `<div class="placeholder">Não consegui carregar as notícias agora.</div>`;
+    track.style.animation = "none";
+    track.innerHTML = `<span class="titem">Não consegui carregar as notícias agora.</span>`;
   }
 }
 
@@ -220,11 +281,12 @@ async function carregarDadosTv() {
   const [{ data: cotRows }, { data: dolarRow }, { data: histRows }] = await Promise.all([
     sb.from("nexus_cotacoes").select("*").order("produto"),
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
-    sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000),
+    sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
   ]);
   renderCotacoesTv(cotRows || []);
   renderDolarTv(dolarRow);
   renderChartTv(histRows || []);
+  renderChartMensalTv(histRows || []);
 }
 
 function iniciarApp() {
