@@ -118,15 +118,18 @@ export default async (req) => {
   if (!SUPABASE_SERVICE_ROLE_KEY) return json({ ok: false, erro: "SUPABASE_SERVICE_ROLE_KEY não configurada." }, 500);
 
   let payload;
-  try { payload = await req.json(); } catch { return json({ ok: true }); }
+  try { payload = await req.json(); } catch (e) { console.log("DEBUG payload inválido:", String(e)); return json({ ok: true }); }
+  console.log("DEBUG payload recebido:", JSON.stringify(payload));
 
   if (payload.fromMe || payload.isGroup || !payload.text?.message || !payload.phone) {
+    console.log("DEBUG ignorado por: fromMe/isGroup/sem texto/sem phone", { fromMe: payload.fromMe, isGroup: payload.isGroup, temTexto: !!payload.text?.message, temPhone: !!payload.phone });
     return json({ ok: true, ignorado: true });
   }
 
   const texto = payload.text.message;
   const primeiraLinha = normalizarTexto((texto.split("\n")[0] || ""));
   if (!primeiraLinha.startsWith("nova negociacao")) {
+    console.log("DEBUG primeira linha não bateu com o gatilho:", JSON.stringify(primeiraLinha));
     return json({ ok: true, ignorado: true });
   }
 
@@ -136,9 +139,10 @@ export default async (req) => {
   const equipeResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=user_id,nome,telefone`, { headers: adminHeaders });
   const equipe = await equipeResp.json();
   const remetente = ultimosDigitos(payload.phone);
+  console.log("DEBUG remetente:", remetente, "equipe:", JSON.stringify(equipe.map(e => ({ nome: e.nome, telefone: e.telefone, ultimosDigitos: ultimosDigitos(e.telefone) }))));
   const corretor = equipe.find(e => e.telefone && ultimosDigitos(e.telefone) === remetente);
   if (!corretor) {
-    // número não cadastrado em nenhum corretor — ignora silenciosamente
+    console.log("DEBUG número não bateu com nenhum corretor cadastrado");
     return json({ ok: true, ignorado: true });
   }
 
