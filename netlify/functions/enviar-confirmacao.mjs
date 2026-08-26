@@ -6,7 +6,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Ambiente de produção do DocuSign (migrado depois do Go-Live da Integration Key).
 const DOCUSIGN_AUD = "account.docusign.com";
 const DOCUSIGN_AUTH_URL = "https://account.docusign.com/oauth/token";
-const DOCUSIGN_BASE_URL = "https://www.docusign.net/restapi";
+const DOCUSIGN_BASE_URL = "https://na4.docusign.net/restapi";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
