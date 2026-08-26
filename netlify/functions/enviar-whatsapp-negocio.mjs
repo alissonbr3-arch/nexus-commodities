@@ -93,7 +93,7 @@ export default async (req) => {
   const config = cfgRows[0] || {};
   const { precoLiquido, informado } = precoLiquidoNegocio(negocio, comprador, config);
 
-  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc\nComprador: ${comprador ? comprador.nome : "—"}\nPreço Bruto: ${fmtMoney(negocio.preco)}/sc (${negocio.modalidade || "FOB"})\nPreço Líquido${informado ? "" : " (estimado)"}: ${fmtMoney(precoLiquido)}/sc\n\nQualquer dúvida, fale com seu corretor.`;
+  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc (${negocio.modalidade || "FOB"})\nComprador: ${comprador ? comprador.nome : "—"}\nPreço Líquido${informado ? "" : " (estimado)"}: ${fmtMoney(precoLiquido)}/sc\n\nQualquer dúvida, fale com seu corretor.`;
 
   const resultados = [];
   for (const telefone of telefones) {
