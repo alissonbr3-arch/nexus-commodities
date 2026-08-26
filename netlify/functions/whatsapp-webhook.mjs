@@ -189,7 +189,7 @@ export default async (req) => {
     data: new Date().toISOString().slice(0, 10),
     data_pagamento: dataPagamento,
     comissao_saca: comissaoSaca,
-    comissao: comissaoTotal,
+    comissao: comissaoTotal ?? 0,
     comissao_corretora: comissaoTotal != null ? comissaoTotal * pctCorretora / 100 : null,
     comissao_corretor: comissaoTotal != null ? comissaoTotal * pctCorretor / 100 : null,
     comissao_pagador: "Vendedor",
