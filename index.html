@@ -4021,7 +4021,7 @@ function renderEquipe() {
       </div>
       ${isMe ? `<div style="margin-top:10px;text-align:left">
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meu WhatsApp (pra criar negociação por mensagem)</label>
-        <input type="text" value="${e.telefone || ""}" placeholder="Ex: 67999990000" style="text-align:center" onchange="salvarTelefoneCorretor('${e.user_id}', this.value)">
+        <input type="text" value="${e.telefone || ""}" placeholder="Ex: 67999990000" autocomplete="off" style="text-align:center" onchange="salvarTelefoneCorretor('${e.user_id}', this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
       </div>` : ""}
     </div>`;
   }).join("");
@@ -4034,7 +4034,8 @@ async function salvarMetaCorretor(userId, valor) {
   renderDashCorretorRanking();
 }
 async function salvarTelefoneCorretor(userId, valor) {
-  await sb.from("nexus_equipe").update({ telefone: valor.trim() }).eq("user_id", userId);
+  const { error } = await sb.from("nexus_equipe").update({ telefone: valor.trim() }).eq("user_id", userId);
+  if (error) { alert("Não consegui salvar o telefone: " + error.message); console.error(error); }
   await loadEquipe();
   renderEquipe();
 }
