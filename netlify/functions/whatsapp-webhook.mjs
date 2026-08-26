@@ -111,6 +111,7 @@ async function enviarWhatsapp({ instanceId, token, clientToken, telefone, mensag
 
 function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDate(iso) { if (!iso) return "—"; const [y, m, d] = iso.split("-"); return `${d}/${m}/${y}`; }
 
 // Mesma conta de preço líquido usada no resto do app.
 function aplicaFundersulFundems(comprador) {
@@ -133,13 +134,109 @@ function precoLiquidoNegocio(n, comprador, config) {
 // "/extrato": qualquer produtor com esse telefone (principal ou extra) cadastrado recebe
 // de volta a lista dos negócios dele. Não passa pelo filtro de corretor — é o próprio
 // produtor consultando os dados dele mesmo, sem acesso a nada de outra pessoa.
-async function responderExtrato(payload, adminHeaders, zapi) {
+async function acharMeusProdutores(payload, adminHeaders) {
   const remetente = ultimosDigitos(payload.phone);
-
   const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?tipo=eq.Produtor&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
   const produtores = await cadResp.json();
-  const meusProdutores = produtores.filter(p => [p.telefone, ...(p.telefones_extra || [])].some(t => t && ultimosDigitos(t) === remetente));
+  return produtores.filter(p => [p.telefone, ...(p.telefones_extra || [])].some(t => t && ultimosDigitos(t) === remetente));
+}
 
+const MENSAGEM_NAO_ENCONTRADO = "Não encontrei nenhum cadastro de produtor com esse número de telefone. Fale com seu corretor pra verificar.";
+
+const MENSAGEM_AJUDA = `🤖 *Comandos disponíveis*\n\n` +
+  `/extrato — lista suas negociações com a Nexus\n` +
+  `/confirmacao [nº do contrato] — link da Confirmação de Negócio completa, pronta pra salvar como PDF\n` +
+  `/pagamento — seus próximos pagamentos em aberto\n` +
+  `/embarque — suas janelas de embarque/entrega pendentes\n` +
+  `/cotacao — cotação do dia de soja e milho\n` +
+  `/ajuda — mostra esta lista`;
+
+async function responderConfirmacao(payload, adminHeaders, zapi, argumento) {
+  const meusProdutores = await acharMeusProdutores(payload, adminHeaders);
+  if (meusProdutores.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: MENSAGEM_NAO_ENCONTRADO });
+    return;
+  }
+  const idsProdutores = meusProdutores.map(p => p.id);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&cliente_id=not.is.null&select=id,numero_contrato,data&order=data.desc`, { headers: adminHeaders });
+  const negocios = await negResp.json();
+  if (!Array.isArray(negocios) || negocios.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Ainda não encontrei nenhuma negociação com comprador definido no seu nome pra gerar a Confirmação." });
+    return;
+  }
+  let alvo;
+  if (argumento) {
+    const alvoNorm = normalizarTexto(argumento);
+    alvo = negocios.find(n => normalizarTexto(n.numero_contrato || "") === alvoNorm) || negocios.find(n => normalizarTexto(n.numero_contrato || "").includes(alvoNorm));
+    if (!alvo) {
+      await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `Não encontrei o contrato "${argumento}" no seu nome. Digite /extrato pra ver a lista dos seus contratos.` });
+      return;
+    }
+  } else {
+    alvo = negocios[0];
+  }
+  const link = `https://painel.nexuscommoditiesms.com.br/.netlify/functions/confirmacao-publica?id=${alvo.id}`;
+  const aviso = argumento ? "" : ` (a mais recente — pra outro contrato, digite /confirmacao seguido do número)`;
+  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `📄 Confirmação de Negócio ${alvo.numero_contrato || ""}${aviso}\n\nAbra o link pelo celular e use "Salvar/Imprimir como PDF":\n${link}` });
+}
+
+async function responderPagamento(payload, adminHeaders, zapi) {
+  const meusProdutores = await acharMeusProdutores(payload, adminHeaders);
+  if (meusProdutores.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: MENSAGEM_NAO_ENCONTRADO });
+    return;
+  }
+  const idsProdutores = meusProdutores.map(p => p.id);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&status=neq.Pago&data_pagamento=not.is.null&select=numero_contrato,grao,data_pagamento&order=data_pagamento.asc`, { headers: adminHeaders });
+  const negocios = await negResp.json();
+  if (!Array.isArray(negocios) || negocios.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Você não tem nenhum pagamento em aberto com data definida no momento." });
+    return;
+  }
+  const linhas = negocios.slice(0, 15).map(n => `• ${n.numero_contrato || "—"} — ${n.grao || ""} — ${fmtDate(n.data_pagamento)}`).join("\n");
+  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `💰 Pagamentos em aberto\n\n${linhas}` });
+}
+
+async function responderEmbarque(payload, adminHeaders, zapi) {
+  const meusProdutores = await acharMeusProdutores(payload, adminHeaders);
+  if (meusProdutores.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: MENSAGEM_NAO_ENCONTRADO });
+    return;
+  }
+  const idsProdutores = meusProdutores.map(p => p.id);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&status=neq.Pago&status=neq.Entregue&data_fim_embarque=not.is.null&select=numero_contrato,grao,modalidade,data_inicio_embarque,data_fim_embarque&order=data_fim_embarque.asc`, { headers: adminHeaders });
+  const negocios = await negResp.json();
+  if (!Array.isArray(negocios) || negocios.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Você não tem nenhuma janela de embarque/entrega pendente no momento." });
+    return;
+  }
+  const linhas = negocios.slice(0, 15).map(n => {
+    const rotulo = (n.modalidade || "FOB") === "CIF" ? "Entrega" : "Embarque";
+    return `• ${n.numero_contrato || "—"} — ${n.grao || ""} — ${rotulo}: ${fmtDate(n.data_inicio_embarque)} a ${fmtDate(n.data_fim_embarque)}`;
+  }).join("\n");
+  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `🚚 Embarques/entregas pendentes\n\n${linhas}` });
+}
+
+// "/cotacao" não depende de telefone cadastrado — é informação de mercado pública, não dado
+// de negociação de ninguém.
+async function responderCotacao(payload, adminHeaders, zapi) {
+  const cotResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?preco_saca_brl=gt.0&select=produto,mes,pct,preco_saca_brl,updated_at&order=produto.asc`, { headers: adminHeaders });
+  const cotacoes = await cotResp.json().catch(() => []);
+  if (!Array.isArray(cotacoes) || cotacoes.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Não encontrei cotação disponível no momento." });
+    return;
+  }
+  const dolarResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_dolar?id=eq.1&select=atual,ptax_auto,ptax`, { headers: adminHeaders });
+  const dolarRows = await dolarResp.json().catch(() => []);
+  const d = dolarRows[0] || {};
+  const dolar = Number(d.ptax_auto || d.atual || d.ptax || 0);
+  const linhas = cotacoes.map(c => `${c.produto}${c.mes ? " " + c.mes : ""}: ${fmtMoney(c.preco_saca_brl)}/sc (${Number(c.pct) >= 0 ? "+" : ""}${Number(c.pct).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`).join("\n");
+  const atualizadoEm = cotacoes[0]?.updated_at ? new Date(cotacoes[0].updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `📈 Cotações\n\n${linhas}${dolar ? `\n\nDólar: ${fmtMoney(dolar)}` : ""}${atualizadoEm ? `\nAtualizado em ${atualizadoEm}` : ""}` });
+}
+
+async function responderExtrato(payload, adminHeaders, zapi) {
+  const meusProdutores = await acharMeusProdutores(payload, adminHeaders);
   if (meusProdutores.length === 0) {
     await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Não encontrei nenhum cadastro de produtor com esse número de telefone. Fale com seu corretor pra verificar." });
     return;
@@ -211,12 +308,22 @@ export default async (req) => {
   const adminHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
   const zapi = { instanceId: ZAPI_INSTANCE_ID, token: ZAPI_TOKEN, clientToken: ZAPI_CLIENT_TOKEN };
 
-  if (normalizarTexto(texto) === "/extrato") {
-    await responderExtrato(payload, adminHeaders, zapi);
+  const primeiraLinhaOriginal = (texto.split("\n")[0] || "").trim();
+  const palavras = primeiraLinhaOriginal.split(/\s+/).filter(Boolean);
+  const comando = normalizarTexto(palavras[0] || "");
+  const argumento = palavras.slice(1).join(" ").trim();
+
+  if (comando === "/extrato") { await responderExtrato(payload, adminHeaders, zapi); return json({ ok: true }); }
+  if (comando === "/confirmacao") { await responderConfirmacao(payload, adminHeaders, zapi, argumento); return json({ ok: true }); }
+  if (comando === "/pagamento" || comando === "/pagamentos") { await responderPagamento(payload, adminHeaders, zapi); return json({ ok: true }); }
+  if (comando === "/embarque" || comando === "/embarques") { await responderEmbarque(payload, adminHeaders, zapi); return json({ ok: true }); }
+  if (comando === "/cotacao" || comando === "/cotacoes") { await responderCotacao(payload, adminHeaders, zapi); return json({ ok: true }); }
+  if (comando === "/ajuda" || comando === "/menu" || comando === "/help") {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: MENSAGEM_AJUDA });
     return json({ ok: true });
   }
 
-  const primeiraLinha = normalizarTexto((texto.split("\n")[0] || ""));
+  const primeiraLinha = normalizarTexto(primeiraLinhaOriginal);
   if (!primeiraLinha.startsWith("nova negociacao")) {
     console.log("DEBUG primeira linha não bateu com o gatilho:", JSON.stringify(primeiraLinha));
     return json({ ok: true, ignorado: true });

@@ -898,7 +898,7 @@
             <h3>Comunicações enviadas</h3>
             <div class="hint">E-mails e avisos de WhatsApp disparados pelo app (ou automaticamente), e quem disparou. Mostra os últimos 200 envios.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Negócio Fechado">WhatsApp Negócio Fechado</option><option value="WhatsApp Entrega Confirmada">WhatsApp Entrega Confirmada</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
               <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
             </div>
             <div id="emailLogList"></div>
@@ -2011,9 +2011,13 @@ async function saveNegocio(id) {
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
+  const statusAnterior = id ? data.negocios.find(x => x.id === id)?.status : null;
   let savedId = id;
   if (id) { await sb.from("nexus_negocios").update(payload).eq("id", id); }
   else { const { data: rows } = await sb.from("nexus_negocios").insert([payload]).select(); savedId = rows && rows[0] ? rows[0].id : null; }
+  if (id && savedId && payload.status !== statusAnterior && (payload.status === "Fechado" || payload.status === "Entregue") && payload.produtor_id && payload.cliente_id) {
+    avisarMudancaStatusWhatsapp(savedId, payload.status === "Fechado" ? "fechado" : "entregue");
+  }
   if (convertingIntencaoId && savedId) {
     await sb.from("nexus_intencoes").update({ status: "Convertido", negocio_id: savedId }).eq("id", convertingIntencaoId);
     convertingIntencaoId = null;
@@ -2344,6 +2348,22 @@ async function enviarParaAssinatura(negocioId) {
     alert(j.resultado.docusign?.ok ? "✓ Envelope DocuSign criado" : "✗ DocuSign: " + j.resultado.docusign?.erro);
   } catch (e) {
     alert("Erro ao enviar: " + e.message);
+  }
+}
+// Aviso automático (silencioso) quando o corretor muda o status pra Fechado/Entregue no
+// modal de edição — não interrompe o fluxo de salvar caso o produtor não tenha telefone
+// cadastrado ou o envio falhe, só não avisa (diferente do botão manual, que é explícito).
+async function avisarMudancaStatusWhatsapp(negocioId, evento) {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+    await fetch("/.netlify/functions/enviar-whatsapp-negocio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, evento }),
+    });
+  } catch (e) {
+    console.warn("Aviso automático de WhatsApp falhou:", e);
   }
 }
 async function enviarWhatsappNegocio(negocioId) {
