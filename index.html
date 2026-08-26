@@ -217,6 +217,7 @@
   .badge.compra { background: var(--blue-soft); color: var(--blue); }
   .badge.venda { background: var(--green-soft); color: var(--green); }
   .badge.negociacao { background: var(--gold-soft); color: var(--gold); }
+  .badge.rascunho { background: var(--card-alt); color: var(--ink-soft); border: 1px dashed var(--border); }
   .badge.fechado { background: var(--blue-soft); color: var(--blue); }
   .badge.entregue { background: var(--green-soft); color: var(--green); }
   .badge.pago { background: var(--green-soft); color: var(--green); }
@@ -582,7 +583,7 @@
           <div class="actions-left">
             <input type="text" class="search-input" id="negSearch" placeholder="Buscar contrato, vendedor, comprador ou grão...">
             <select class="filter" id="negFilterStatus">
-              <option value="">Todos os status</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
+              <option value="">Todos os status</option><option>Rascunho</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
             </select>
             <button class="btn-ghost" id="lixeiraNegociosBtn">Lixeira</button>
             <button class="btn-primary" id="addNegocioBtn">+ Nova negociação</button>
@@ -1973,7 +1974,7 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Modalidade</label><select id="f_modalidade" onchange="onModalidadeChange()"><option ${(!item.modalidade||item.modalidade==="FOB")?"selected":""}>FOB</option><option ${item.modalidade==="CIF"?"selected":""}>CIF</option></select></div><div class="field"><label id="f_localOrigemLabel">Local de retirada</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
-    <div class="field"><label>Status</label><select id="f_status">${["Negociação","Fechado","Entregue","Pago"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+    <div class="field"><label>Status</label><select id="f_status">${["Rascunho","Negociação","Fechado","Entregue","Pago"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_obs" rows="2">${item.obs || ""}</textarea></div>
     <div class="field"><label>Anexos (nota fiscal, comprovante, contrato assinado...)</label>
       ${id ? `<input type="file" id="anexoFileInput" style="display:none" multiple onchange="uploadAnexosSelecionados('${id}', this.files)">
@@ -4018,6 +4019,10 @@ function renderEquipe() {
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meta mensal (sc)</label>
         <input type="number" step="1" min="0" value="${e.meta_mensal_sacas || ""}" placeholder="Sem meta" style="text-align:center" onchange="salvarMetaCorretor('${e.user_id}', this.value)">
       </div>
+      ${isMe ? `<div style="margin-top:10px;text-align:left">
+        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meu WhatsApp (pra criar negociação por mensagem)</label>
+        <input type="text" value="${e.telefone || ""}" placeholder="Ex: 67999990000" style="text-align:center" onchange="salvarTelefoneCorretor('${e.user_id}', this.value)">
+      </div>` : ""}
     </div>`;
   }).join("");
 }
@@ -4027,6 +4032,11 @@ async function salvarMetaCorretor(userId, valor) {
   await loadEquipe();
   renderEquipe();
   renderDashCorretorRanking();
+}
+async function salvarTelefoneCorretor(userId, valor) {
+  await sb.from("nexus_equipe").update({ telefone: valor.trim() }).eq("user_id", userId);
+  await loadEquipe();
+  renderEquipe();
 }
 async function uploadAvatarFor(userId, file) {
   if (!file) return;
