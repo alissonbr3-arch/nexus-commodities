@@ -58,39 +58,44 @@ export default async (req) => {
   const negocio = negRows[0];
   if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const vendedor = cads.find(c => c.id === negocio.produtor_id);
   const comprador = cads.find(c => c.id === negocio.cliente_id);
   if (!vendedor) return json({ ok: false, erro: "Negócio precisa de um produtor cadastrado." }, 400);
 
-  const telefone = formatarTelefoneWhats(vendedor.telefone);
-  if (!telefone) return json({ ok: false, erro: `Cadastre o telefone de ${vendedor.nome} antes de enviar.` }, 400);
+  const telefones = [...new Set([vendedor.telefone, ...(vendedor.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+  if (telefones.length === 0) return json({ ok: false, erro: `Cadastre o telefone de ${vendedor.nome} antes de enviar.` }, 400);
 
   const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc\nComprador: ${comprador ? comprador.nome : "—"}\nPreço: ${fmtMoney(negocio.preco)}/sc (${negocio.modalidade || "FOB"})\n\nQualquer dúvida, fale com seu corretor.`;
 
-  let sucesso = false, erro = null;
-  try {
-    const resp = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
-      body: JSON.stringify({ phone: telefone, message: mensagem }),
-    });
-    const respData = await resp.json().catch(() => ({}));
-    if (!resp.ok || respData.error) throw new Error(respData.error || respData.message || `Z-API retornou ${resp.status}`);
-    sucesso = true;
-  } catch (e) {
-    erro = String(e.message || e);
+  const resultados = [];
+  for (const telefone of telefones) {
+    let sucesso = false, erro = null;
+    try {
+      const resp = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
+        body: JSON.stringify({ phone: telefone, message: mensagem }),
+      });
+      const respData = await resp.json().catch(() => ({}));
+      if (!resp.ok || respData.error) throw new Error(respData.error || respData.message || `Z-API retornou ${resp.status}`);
+      sucesso = true;
+    } catch (e) {
+      erro = String(e.message || e);
+    }
+    resultados.push({ telefone, sucesso, erro });
   }
 
+  const sucesso = resultados.some(r => r.sucesso);
   await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: "WhatsApp Nova Negociação", destinatarios: telefone,
-      enviado_por: caller.id, sucesso, erro,
+      negocio_id, tipo: "WhatsApp Nova Negociação", destinatarios: telefones.join(", "),
+      enviado_por: caller.id, sucesso, erro: resultados.filter(r => !r.sucesso).map(r => `${r.telefone}: ${r.erro}`).join("; ") || null,
     }),
   }).catch(() => {});
 
-  return sucesso ? json({ ok: true }, 200) : json({ ok: false, erro }, 500);
+  return sucesso ? json({ ok: true, resultados }, 200) : json({ ok: false, erro: "Falha em todos os envios.", resultados }, 500);
 };

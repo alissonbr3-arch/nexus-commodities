@@ -61,6 +61,12 @@ async function obterAccessTokenDocusign(jwt) {
 
 async function criarEnvelopeDocusign({ accessToken, accountId, html, numeroContrato, vendedor, comprador }) {
   const htmlBase64 = Buffer.from(html, "utf-8").toString("base64");
+  const extrasVendedor = (vendedor.emails_extra || []).filter(Boolean);
+  const extrasComprador = (comprador.emails_extra || []).filter(Boolean);
+  const carbonCopies = [...extrasVendedor, ...extrasComprador].map((email, i) => ({
+    email, name: email, recipientId: String(10 + i), routingOrder: "1",
+  }));
+
   const body = {
     emailSubject: `Confirmação de Negócio ${numeroContrato || ""} — Nexus Commodities`,
     documents: [{ documentBase64: htmlBase64, name: `Confirmacao_${numeroContrato || "negocio"}`, fileExtension: "html", documentId: "1" }],
@@ -75,6 +81,7 @@ async function criarEnvelopeDocusign({ accessToken, accountId, html, numeroContr
           tabs: { signHereTabs: [{ anchorString: "[[ASSINA_COMPRADOR]]", anchorUnits: "pixels", anchorYOffset: "-10", anchorXOffset: "0" }] },
         },
       ],
+      carbonCopies,
     },
     status: "sent",
   };
@@ -126,7 +133,7 @@ export default async (req) => {
   const negocio = negRows[0];
   if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,email`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,email,emails_extra`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const vendedor = cads.find(c => c.id === negocio.produtor_id);
   const comprador = cads.find(c => c.id === negocio.cliente_id);
@@ -157,7 +164,7 @@ export default async (req) => {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: "Confirmação (DocuSign)", destinatarios: [vendedor.email, comprador.email].join(", "),
+      negocio_id, tipo: "Confirmação (DocuSign)", destinatarios: [vendedor.email, ...(vendedor.emails_extra||[]), comprador.email, ...(comprador.emails_extra||[])].filter(Boolean).join(", "),
       enviado_por: caller.id, sucesso: !!resultado.docusign.ok, erro: resultado.docusign.ok ? null : resultado.docusign.erro,
     }),
   }).catch(() => {});

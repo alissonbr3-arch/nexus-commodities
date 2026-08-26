@@ -47,19 +47,23 @@ async function marcarEnviado(adminHeaders, negocioId, campo) {
 async function processarLote({ negocios, cadastrosPorId, campoData, campoFlag, tipoLog, montarMensagem, zapi, adminHeaders }) {
   for (const n of negocios) {
     const produtor = cadastrosPorId.get(n.produtor_id);
-    const telefone = formatarTelefoneWhats(produtor?.telefone);
-    if (!telefone) {
+    const telefones = [...new Set([produtor?.telefone, ...(produtor?.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+    if (telefones.length === 0) {
       await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: produtor?.telefone || "(sem telefone)", sucesso: false, erro: "Produtor sem telefone cadastrado." });
       continue;
     }
-    try {
-      await enviarWhatsapp({ ...zapi, telefone, mensagem: montarMensagem(n, produtor) });
-      await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: telefone, sucesso: true, erro: null });
-    } catch (e) {
-      await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: telefone, sucesso: false, erro: String(e.message || e) });
-      continue;
+    let algumSucesso = false;
+    const erros = [];
+    for (const telefone of telefones) {
+      try {
+        await enviarWhatsapp({ ...zapi, telefone, mensagem: montarMensagem(n, produtor) });
+        algumSucesso = true;
+      } catch (e) {
+        erros.push(`${telefone}: ${e.message || e}`);
+      }
     }
-    await marcarEnviado(adminHeaders, n.id, campoFlag);
+    await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: telefones.join(", "), sucesso: algumSucesso, erro: erros.join("; ") || null });
+    if (algumSucesso) await marcarEnviado(adminHeaders, n.id, campoFlag);
   }
 }
 
@@ -92,7 +96,7 @@ export default async () => {
   const idsProdutores = [...new Set([...negociosPagamento, ...negociosEmbarque].map(n => n.produtor_id).filter(Boolean))];
   const cadastrosPorId = new Map();
   if (idsProdutores.length) {
-    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone`, { headers: adminHeaders });
+    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
     const cads = await cadResp.json();
     for (const c of cads) cadastrosPorId.set(c.id, c);
   }
