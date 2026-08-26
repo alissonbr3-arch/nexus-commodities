@@ -4,10 +4,15 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-// Compara só os últimos 11 dígitos (DDD + número), ignorando código do país (55)
-// e diferenças de formatação — assim "67999990000" e "5567999990000" batem igual.
-function ultimosDigitos(tel, n = 11) {
-  return String(tel || "").replace(/\D/g, "").slice(-n);
+// Chave de comparação de telefone BR: DDD + 8 dígitos locais, sem código do país e sem
+// o "9" extra do celular — a Z-API/WhatsApp às vezes manda o número sem esse "9" (formato
+// antigo), então comparar só "os últimos 11 dígitos" desalinha tudo e nunca bate. Normalizando
+// os dois lados pro mesmo formato (DDD+8) resolve nos dois sentidos.
+function ultimosDigitos(tel) {
+  let d = String(tel || "").replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  if (d.length === 11) d = d.slice(0, 2) + d.slice(3);
+  return d.slice(-10);
 }
 
 function normalizarTexto(s) {
