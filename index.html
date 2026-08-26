@@ -116,8 +116,8 @@
   .page-sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 16px; }
 
   .subtabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-  .subtab-btn, .con-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
-  .subtab-btn.active, .con-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
+  .subtab-btn, .con-tab-btn, .cfg-subtab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
+  .subtab-btn.active, .con-tab-btn.active, .cfg-subtab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .emb-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
   .emb-tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
   .fin-tab-btn { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-weight: 500; padding: 8px 2px 12px; cursor: pointer; border-bottom: 2px solid transparent; position: relative; top: 1px; }
@@ -907,46 +907,58 @@
 
       <!-- CONFIGURAÇÕES -->
       <div class="page" id="page-configuracoes">
-        <div class="panel-head"><h2>Configurações gerais</h2></div>
-        <div class="ws-card" style="max-width:420px">
-          <div class="ws-name" style="margin-bottom:4px">Divisão de comissão por negócio</div>
-          <div class="ws-sub" style="margin-bottom:16px">Ao fechar um negócio, a comissão total é dividida automaticamente entre a corretora e o corretor responsável, usando os percentuais abaixo.</div>
-          <div class="field-row">
-            <div class="field"><label>Corretora (%)</label><input type="number" step="0.1" id="f_cfgPctCorretora" oninput="onCfgPctChange('corretora')"></div>
-            <div class="field"><label>Corretor responsável (%)</label><input type="number" step="0.1" id="f_cfgPctCorretor" oninput="onCfgPctChange('corretor')"></div>
+        <div class="panel-head"><h2>Configurações</h2></div>
+        <div class="subtabs">
+          <button class="cfg-subtab-btn active" data-cfgsubtab="geral">Geral</button>
+          <button class="cfg-subtab-btn" data-cfgsubtab="whatsapp">WhatsApp</button>
+          <button class="cfg-subtab-btn" data-cfgsubtab="conta">Minha conta</button>
+        </div>
+
+        <div class="cfg-subpage" id="cfgsub-geral" style="display:block">
+          <div class="ws-card" style="max-width:420px">
+            <div class="ws-name" style="margin-bottom:4px">Divisão de comissão por negócio</div>
+            <div class="ws-sub" style="margin-bottom:16px">Ao fechar um negócio, a comissão total é dividida automaticamente entre a corretora e o corretor responsável, usando os percentuais abaixo.</div>
+            <div class="field-row">
+              <div class="field"><label>Corretora (%)</label><input type="number" step="0.1" id="f_cfgPctCorretora" oninput="onCfgPctChange('corretora')"></div>
+              <div class="field"><label>Corretor responsável (%)</label><input type="number" step="0.1" id="f_cfgPctCorretor" oninput="onCfgPctChange('corretor')"></div>
+            </div>
+            <button class="btn-primary" onclick="saveConfiguracoes()">Salvar</button>
+            <div id="cfgSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
           </div>
-          <button class="btn-primary" onclick="saveConfiguracoes()">Salvar</button>
-          <div id="cfgSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
-        </div>
 
-        <div class="ws-card" style="max-width:420px;margin-top:16px">
-          <div class="ws-name" style="margin-bottom:4px">Descontos padrão (Confirmação de Negócio)</div>
-          <div class="ws-sub" style="margin-bottom:16px">Usados para calcular o Total Líquido que aparece na Confirmação de Negócio, junto do Bruto. O Senar (0,2%) é fixo por lei e não precisa ser configurado.</div>
-          <div class="field-row">
-            <div class="field"><label>Fundersul (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundersul"></div>
-            <div class="field"><label>Fundems (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundems"></div>
+          <div class="ws-card" style="max-width:420px;margin-top:16px">
+            <div class="ws-name" style="margin-bottom:4px">Descontos padrão (Confirmação de Negócio)</div>
+            <div class="ws-sub" style="margin-bottom:16px">Usados para calcular o Total Líquido que aparece na Confirmação de Negócio, junto do Bruto. O Senar (0,2%) é fixo por lei e não precisa ser configurado.</div>
+            <div class="field-row">
+              <div class="field"><label>Fundersul (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundersul"></div>
+              <div class="field"><label>Fundems (R$/saca)</label><input type="number" step="0.01" id="f_cfgFundems"></div>
+            </div>
+            <div class="field"><label>Funrural sobre a comercialização (%)</label><input type="number" step="0.01" id="f_cfgFunruralPct"></div>
+            <button class="btn-primary" onclick="salvarDescontosPadrao()">Salvar</button>
+            <div id="cfgDescontosSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
           </div>
-          <div class="field"><label>Funrural sobre a comercialização (%)</label><input type="number" step="0.01" id="f_cfgFunruralPct"></div>
-          <button class="btn-primary" onclick="salvarDescontosPadrao()">Salvar</button>
-          <div id="cfgDescontosSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
         </div>
 
-        <div class="ws-card" style="max-width:420px;margin-top:16px">
-          <div class="ws-name" style="margin-bottom:4px">Mensagens automáticas (WhatsApp)</div>
-          <div class="ws-sub" style="margin-bottom:16px">Texto enviado automaticamente ao produtor no dia do pagamento e no dia de início do embarque. Use <code>{{NOME}}</code>, <code>{{CONTRATO}}</code>, <code>{{GRAO}}</code>, <code>{{SAFRA}}</code> e <code>{{QUANTIDADE}}</code> onde quiser que o sistema preencha automaticamente.</div>
-          <div class="field"><label>Aviso de pagamento</label><textarea id="f_cfgMsgPagamento" rows="4"></textarea></div>
-          <div class="field"><label>Aviso de embarque</label><textarea id="f_cfgMsgEmbarque" rows="4"></textarea></div>
-          <button class="btn-primary" onclick="salvarMensagensWhatsapp()">Salvar</button>
-          <div id="cfgMsgSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
+        <div class="cfg-subpage" id="cfgsub-whatsapp" style="display:none">
+          <div class="ws-card" style="max-width:420px">
+            <div class="ws-name" style="margin-bottom:4px">Mensagens automáticas (WhatsApp)</div>
+            <div class="ws-sub" style="margin-bottom:16px">Texto enviado automaticamente ao produtor no dia do pagamento e no dia de início do embarque. Use <code>{{NOME}}</code>, <code>{{CONTRATO}}</code>, <code>{{GRAO}}</code>, <code>{{SAFRA}}</code> e <code>{{QUANTIDADE}}</code> onde quiser que o sistema preencha automaticamente.</div>
+            <div class="field"><label>Aviso de pagamento</label><textarea id="f_cfgMsgPagamento" rows="4"></textarea></div>
+            <div class="field"><label>Aviso de embarque</label><textarea id="f_cfgMsgEmbarque" rows="4"></textarea></div>
+            <button class="btn-primary" onclick="salvarMensagensWhatsapp()">Salvar</button>
+            <div id="cfgMsgSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
+          </div>
         </div>
 
-        <div class="ws-card" style="max-width:420px;margin-top:16px">
-          <div class="ws-name" style="margin-bottom:4px">Minha conta</div>
-          <div class="ws-sub" style="margin-bottom:16px">Troque a senha de acesso ao painel (vale só pra sua conta).</div>
-          <div class="field"><label>Nova senha</label><input type="password" id="f_novaSenha" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
-          <div class="field"><label>Confirmar nova senha</label><input type="password" id="f_confirmarSenha" autocomplete="new-password"></div>
-          <button class="btn-primary" onclick="trocarSenha()">Trocar senha</button>
-          <div id="trocarSenhaMsg" style="font-size:12px;margin-top:8px;display:none"></div>
+        <div class="cfg-subpage" id="cfgsub-conta" style="display:none">
+          <div class="ws-card" style="max-width:420px">
+            <div class="ws-name" style="margin-bottom:4px">Minha conta</div>
+            <div class="ws-sub" style="margin-bottom:16px">Troque a senha de acesso ao painel (vale só pra sua conta).</div>
+            <div class="field"><label>Nova senha</label><input type="password" id="f_novaSenha" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
+            <div class="field"><label>Confirmar nova senha</label><input type="password" id="f_confirmarSenha" autocomplete="new-password"></div>
+            <button class="btn-primary" onclick="trocarSenha()">Trocar senha</button>
+            <div id="trocarSenhaMsg" style="font-size:12px;margin-top:8px;display:none"></div>
+          </div>
         </div>
       </div>
 
@@ -3059,6 +3071,16 @@ function gerarReciboRepasseCorretor(negocioId) {
   if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
+
+// ---------------- CONFIGURAÇÕES (submenu) ----------------
+document.querySelectorAll(".cfg-subtab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".cfg-subtab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".cfg-subpage").forEach(p => p.style.display = "none");
+    btn.classList.add("active");
+    document.getElementById("cfgsub-" + btn.dataset.cfgsubtab).style.display = "block";
+  });
+});
 
 // ---------------- RELATÓRIOS ----------------
 document.querySelectorAll(".rel-subtab-btn").forEach(btn => {
