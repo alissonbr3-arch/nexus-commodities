@@ -104,9 +104,85 @@ async function enviarWhatsapp({ instanceId, token, clientToken, telefone, mensag
   }).catch(() => {});
 }
 
-// Recebe o webhook "ao receber mensagem" da Z-API. Se a mensagem vier de um corretor
-// conhecido (telefone cadastrado em nexus_equipe) e começar com "NOVA NEGOCIAÇÃO",
-// cria um rascunho de negócio a partir dos campos "Chave: valor" das linhas seguintes.
+function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
+function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+// Mesma conta de preço líquido usada no resto do app.
+function aplicaFundersulFundems(comprador) {
+  return !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
+}
+function precoLiquidoNegocio(n, comprador, config) {
+  const sacas = Number(n.quantidade || 0);
+  const total = Number(n.preco || 0) * sacas;
+  const senar = total * 0.002;
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const fundersulTotal = comFundersulFundems ? Number(config.fundersul_saca || 0) * sacas : 0;
+  const fundemsTotal = comFundersulFundems ? Number(config.fundems_saca || 0) * sacas : 0;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const funrural = funruralForma === "Comercialização" ? total * Number(config.funrural_pct || 0) / 100 : 0;
+  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const informado = n.preco_liquido != null && n.preco_liquido !== "";
+  return informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
+}
+
+// "/extrato": qualquer produtor com esse telefone (principal ou extra) cadastrado recebe
+// de volta a lista dos negócios dele. Não passa pelo filtro de corretor — é o próprio
+// produtor consultando os dados dele mesmo, sem acesso a nada de outra pessoa.
+async function responderExtrato(payload, adminHeaders, zapi) {
+  const remetente = ultimosDigitos(payload.phone);
+
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?tipo=eq.Produtor&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
+  const produtores = await cadResp.json();
+  const meusProdutores = produtores.filter(p => [p.telefone, ...(p.telefones_extra || [])].some(t => t && ultimosDigitos(t) === remetente));
+
+  if (meusProdutores.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Não encontrei nenhum cadastro de produtor com esse número de telefone. Fale com seu corretor pra verificar." });
+    return;
+  }
+
+  const idsProdutores = meusProdutores.map(p => p.id);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&select=*&order=data.desc`, { headers: adminHeaders });
+  const negocios = await negResp.json();
+
+  if (!Array.isArray(negocios) || negocios.length === 0) {
+    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `Olá, ${meusProdutores[0].nome}! Ainda não encontrei nenhuma negociação registrada em seu nome.` });
+    return;
+  }
+
+  const idsCompradores = [...new Set(negocios.map(n => n.cliente_id).filter(Boolean))];
+  let compradores = [];
+  if (idsCompradores.length) {
+    const compResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCompradores.join(",")})&select=id,nome,categoria_comprador`, { headers: adminHeaders });
+    compradores = await compResp.json();
+  }
+  const cfgResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders });
+  const cfgRows = await cfgResp.json().catch(() => []);
+  const config = cfgRows[0] || {};
+
+  const MAX_ITENS = 15;
+  const listados = negocios.slice(0, MAX_ITENS);
+  const nomesProdutores = meusProdutores.map(p => p.nome).join(", ");
+
+  const linhas = listados.map(n => {
+    const comprador = compradores.find(c => c.id === n.cliente_id);
+    const precoLiquido = precoLiquidoNegocio(n, comprador, config);
+    const nomeComprador = comprador ? comprador.nome : (n.contraparte || "—");
+    return `• ${n.numero_contrato || "—"} — ${n.grao || ""}${n.safra ? " " + n.safra : ""} — ${fmtNum(n.quantidade)} sc — ${n.status || "—"}\n   ${nomeComprador} · Líquido: ${fmtMoney(precoLiquido)}/sc`;
+  }).join("\n\n");
+
+  const totalSacas = negocios.reduce((s, n) => s + Number(n.quantidade || 0), 0);
+  const rodape = negocios.length > MAX_ITENS ? `\n\n(mostrando os ${MAX_ITENS} mais recentes de ${negocios.length} negócios)` : "";
+
+  const mensagem = `📋 Extrato — ${nomesProdutores}\n\n${linhas}\n\n— — —\nTotal: ${negocios.length} negócio${negocios.length === 1 ? "" : "s"} · ${fmtNum(totalSacas)} sc${rodape}`;
+  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem });
+}
+
+// Recebe o webhook "ao receber mensagem" da Z-API. Dois comandos:
+// - "/extrato": qualquer produtor com telefone cadastrado recebe de volta a lista dos
+//   próprios negócios (sem depender de ser corretor).
+// - "NOVA NEGOCIAÇÃO" (na primeira linha), vindo de um corretor conhecido (telefone
+//   cadastrado em nexus_equipe): cria um rascunho de negócio a partir dos campos
+//   "Chave: valor" das linhas seguintes.
 // Protegido por um secret na querystring — sem ele, ignora a chamada.
 export default async (req) => {
   const url = new URL(req.url);
@@ -127,14 +203,19 @@ export default async (req) => {
   }
 
   const texto = payload.text.message;
+  const adminHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
+  const zapi = { instanceId: ZAPI_INSTANCE_ID, token: ZAPI_TOKEN, clientToken: ZAPI_CLIENT_TOKEN };
+
+  if (normalizarTexto(texto) === "/extrato") {
+    await responderExtrato(payload, adminHeaders, zapi);
+    return json({ ok: true });
+  }
+
   const primeiraLinha = normalizarTexto((texto.split("\n")[0] || ""));
   if (!primeiraLinha.startsWith("nova negociacao")) {
     console.log("DEBUG primeira linha não bateu com o gatilho:", JSON.stringify(primeiraLinha));
     return json({ ok: true, ignorado: true });
   }
-
-  const adminHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
-  const zapi = { instanceId: ZAPI_INSTANCE_ID, token: ZAPI_TOKEN, clientToken: ZAPI_CLIENT_TOKEN };
 
   const equipeResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=user_id,nome,telefone`, { headers: adminHeaders });
   const equipe = await equipeResp.json();
