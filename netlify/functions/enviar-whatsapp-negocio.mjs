@@ -16,6 +16,27 @@ function formatarTelefoneWhats(telefone) {
 function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Mesma conta do preço líquido usada no painel (Negociações / Confirmação): desconta
+// comissão, 0,2% Senar, Fundersul/Fundems (se o comprador não for Cooperativa/Cerealista)
+// e Funrural — ou usa o valor líquido informado manualmente no negócio, se houver.
+function aplicaFundersulFundems(comprador) {
+  return !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
+}
+function precoLiquidoNegocio(n, comprador, config) {
+  const sacas = Number(n.quantidade || 0);
+  const total = Number(n.preco || 0) * sacas;
+  const senar = total * 0.002;
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const fundersulTotal = comFundersulFundems ? Number(config.fundersul_saca || 0) * sacas : 0;
+  const fundemsTotal = comFundersulFundems ? Number(config.fundems_saca || 0) * sacas : 0;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const funrural = funruralForma === "Comercialização" ? total * Number(config.funrural_pct || 0) / 100 : 0;
+  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const informado = n.preco_liquido != null && n.preco_liquido !== "";
+  const precoLiquido = informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
+  return { precoLiquido, informado };
+}
+
 // Avisa o produtor por WhatsApp que uma negociação foi registrada em nome dele, com os
 // dados do negócio. Botão manual na lista de Negociações — só corretores da equipe Nexus
 // podem chamar.
@@ -58,7 +79,7 @@ export default async (req) => {
   const negocio = negRows[0];
   if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone,telefones_extra,categoria_comprador`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const vendedor = cads.find(c => c.id === negocio.produtor_id);
   const comprador = cads.find(c => c.id === negocio.cliente_id);
@@ -67,7 +88,12 @@ export default async (req) => {
   const telefones = [...new Set([vendedor.telefone, ...(vendedor.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
   if (telefones.length === 0) return json({ ok: false, erro: `Cadastre o telefone de ${vendedor.nome} antes de enviar.` }, 400);
 
-  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc\nComprador: ${comprador ? comprador.nome : "—"}\nPreço: ${fmtMoney(negocio.preco)}/sc (${negocio.modalidade || "FOB"})\n\nQualquer dúvida, fale com seu corretor.`;
+  const cfgResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders });
+  const cfgRows = await cfgResp.json().catch(() => []);
+  const config = cfgRows[0] || {};
+  const { precoLiquido, informado } = precoLiquidoNegocio(negocio, comprador, config);
+
+  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc\nComprador: ${comprador ? comprador.nome : "—"}\nPreço Bruto: ${fmtMoney(negocio.preco)}/sc (${negocio.modalidade || "FOB"})\nPreço Líquido${informado ? "" : " (estimado)"}: ${fmtMoney(precoLiquido)}/sc\n\nQualquer dúvida, fale com seu corretor.`;
 
   const resultados = [];
   for (const telefone of telefones) {
