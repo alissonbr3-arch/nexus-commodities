@@ -898,7 +898,7 @@
             <h3>Comunicações enviadas</h3>
             <div class="hint">E-mails e avisos de WhatsApp disparados pelo app (ou automaticamente), e quem disparou. Mostra os últimos 200 envios.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
               <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
             </div>
             <div id="emailLogList"></div>
@@ -1835,7 +1835,7 @@ function renderNegocios() {
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button><button class="btn-edit-text" title="Avisar produtor no WhatsApp" onclick="enviarWhatsappNegocio('${n.id}')">&#128242;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -2334,6 +2334,32 @@ async function enviarParaAssinatura(negocioId) {
     const j = await resp.json();
     if (!j.ok) { alert("Erro: " + j.erro); return; }
     alert(j.resultado.docusign?.ok ? "✓ Envelope DocuSign criado" : "✗ DocuSign: " + j.resultado.docusign?.erro);
+  } catch (e) {
+    alert("Erro ao enviar: " + e.message);
+  }
+}
+async function enviarWhatsappNegocio(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  if (!vendedor) { alert("Este negócio precisa de um produtor cadastrado."); return; }
+  if (!vendedor.telefone) { alert(`Cadastre o telefone de ${vendedor.nome} antes de enviar (aba Cadastros).`); return; }
+
+  const confirmar = confirm(`Avisar ${vendedor.nome} no WhatsApp (${vendedor.telefone}) sobre o negócio ${n.numero_contrato || ""}?`);
+  if (!confirmar) return;
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+
+  try {
+    const resp = await fetch("/.netlify/functions/enviar-whatsapp-negocio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    alert("✓ Mensagem enviada no WhatsApp");
   } catch (e) {
     alert("Erro ao enviar: " + e.message);
   }
