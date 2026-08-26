@@ -1367,6 +1367,7 @@ function dashCorretorDataRef() {
   if (dashCorretorPeriodo === "mes") return new Date(now.getFullYear(), now.getMonth() + dashCorretorOffset, 1);
   if (dashCorretorPeriodo === "ano") return new Date(now.getFullYear() + dashCorretorOffset, now.getMonth(), 1);
   if (dashCorretorPeriodo === "semana") return new Date(now.getFullYear(), now.getMonth(), now.getDate() + dashCorretorOffset * 7);
+  if (dashCorretorPeriodo === "dia") return new Date(now.getFullYear(), now.getMonth(), now.getDate() + dashCorretorOffset);
   return now;
 }
 function limitesSemana(ref) {
@@ -1382,6 +1383,7 @@ function negociosPorPeriodoCorretor(p) {
   const ref = dashCorretorDataRef();
   if (p === "ano") { const y = String(ref.getFullYear()); return data.negocios.filter(n => n.data && n.data.slice(0,4) === y); }
   if (p === "semana") { const { inicio, fim } = limitesSemana(ref); return data.negocios.filter(n => n.data && n.data >= inicio && n.data <= fim); }
+  if (p === "dia") { const key = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}-${String(ref.getDate()).padStart(2,"0")}`; return data.negocios.filter(n => n.data === key); }
   const key = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}`;
   return data.negocios.filter(n => n.data && n.data.slice(0,7) === key);
 }
@@ -1402,11 +1404,12 @@ function dashCorretorPeriodoLabel() {
   if (dashCorretorPeriodo === "mes") return `${MESES_PT[ref.getMonth()]}/${ref.getFullYear()}`;
   if (dashCorretorPeriodo === "ano") return `${ref.getFullYear()}`;
   if (dashCorretorPeriodo === "semana") { const lim = limitesSemana(ref); return `${fmtDate(lim.inicio)} – ${fmtDate(lim.fim)}`; }
+  if (dashCorretorPeriodo === "dia") { const iso = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}-${String(ref.getDate()).padStart(2,"0")}`; return fmtDate(iso); }
   return "";
 }
 function renderDashCorretorRanking() {
-  document.getElementById("dashCorretorRankingHint").innerHTML = ["semana","mes","ano","total"].map(p =>
-    `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="semana"?"semana":p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
+  document.getElementById("dashCorretorRankingHint").innerHTML = ["dia","semana","mes","ano","total"].map(p =>
+    `<span class="unit-toggle ${dashCorretorPeriodo===p?"active":""}" onclick="setDashCorretorPeriodo('${p}')">${p==="dia"?"dia":p==="semana"?"semana":p==="mes"?"mês":p==="ano"?"ano":"total"}</span>`).join(" · ");
   const navEl = document.getElementById("dashCorretorPeriodoNav");
   if (dashCorretorPeriodo === "total") {
     navEl.innerHTML = "";
