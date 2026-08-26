@@ -47,7 +47,7 @@ export default async (req) => {
   } catch {
     return json({ ok: false, erro: "Corpo da requisição inválido." }, 400);
   }
-  const { negocio_id, access_token, evento } = payload || {};
+  const { negocio_id, access_token } = payload || {};
   if (!negocio_id || !access_token) {
     return json({ ok: false, erro: "Dados incompletos (negocio_id e access_token são obrigatórios)." }, 400);
   }
@@ -93,15 +93,7 @@ export default async (req) => {
   const config = cfgRows[0] || {};
   const { precoLiquido, informado } = precoLiquidoNegocio(negocio, comprador, config);
 
-  const resumoNegocio = `Contrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc (${negocio.modalidade || "FOB"})\nComprador: ${comprador ? comprador.nome : "—"}\nPreço Líquido${informado ? "" : " (estimado)"}: ${fmtMoney(precoLiquido)}/sc`;
-
-  const EVENTOS = {
-    nova: { tipoLog: "WhatsApp Nova Negociação", abertura: "Uma nova negociação foi registrada em seu nome:" },
-    fechado: { tipoLog: "WhatsApp Negócio Fechado", abertura: "Seu negócio foi fechado! Resumo:" },
-    entregue: { tipoLog: "WhatsApp Entrega Confirmada", abertura: "A entrega da sua mercadoria foi confirmada! Resumo:" },
-  };
-  const ev = EVENTOS[evento] || EVENTOS.nova;
-  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\n${ev.abertura}\n${resumoNegocio}\n\nQualquer dúvida, fale com seu corretor.`;
+  const mensagem = `Olá, ${vendedor.nome}! Aqui é da Nexus Commodities.\n\nUma nova negociação foi registrada em seu nome:\nContrato: ${negocio.numero_contrato || "—"}\n${negocio.grao || ""}${negocio.safra ? " " + negocio.safra : ""} — ${fmtNum(negocio.quantidade)} sc (${negocio.modalidade || "FOB"})\nComprador: ${comprador ? comprador.nome : "—"}\nPreço Líquido${informado ? "" : " (estimado)"}: ${fmtMoney(precoLiquido)}/sc\n\nQualquer dúvida, fale com seu corretor.`;
 
   const resultados = [];
   for (const telefone of telefones) {
@@ -126,7 +118,7 @@ export default async (req) => {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: ev.tipoLog, destinatarios: telefones.join(", "),
+      negocio_id, tipo: "WhatsApp Nova Negociação", destinatarios: telefones.join(", "),
       enviado_por: caller.id, sucesso, erro: resultados.filter(r => !r.sucesso).map(r => `${r.telefone}: ${r.erro}`).join("; ") || null,
     }),
   }).catch(() => {});
