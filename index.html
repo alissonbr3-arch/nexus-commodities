@@ -719,6 +719,7 @@
                 </select>
                 <select class="filter" id="comissoesFilterMes"><option value="">Todos os meses</option></select>
               </div>
+              <button class="btn-primary" onclick="gerarRelatorioComissoes()">Gerar relatório</button>
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador. O filtro de mês considera o vencimento.</div>
             <div class="hint" id="comissoesTotalReceber" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
@@ -2988,6 +2989,7 @@ function popularFiltroMes(selectId, mesesDisponiveis) {
   sel.innerHTML = `<option value="">Todos os meses</option>` + meses.map(m => `<option value="${m}" ${m===atual?"selected":""}>${mesAnoLabel(m)}</option>`).join("");
   if (meses.includes(atual)) sel.value = atual;
 }
+let comissoesListAtual = [];
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
   if (!body) return;
@@ -3009,6 +3011,7 @@ function renderComissoesPage() {
     .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
+  comissoesListAtual = list;
   const totalReceberEl = document.getElementById("comissoesTotalReceber");
   if (totalReceberEl) totalReceberEl.textContent = list.length === 0 ? "" : `Total nesta lista: ${fmtMoney(list.reduce((s,c) => s + c.valor, 0))} (${list.length} lançamento${list.length === 1 ? "" : "s"})`;
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
@@ -3063,6 +3066,69 @@ function renderComissoesPage() {
     }).join("");
 }
 
+// Relatório impresso das comissões a receber, respeitando os filtros ativos na tela (busca por
+// cliente, status, vencimento, mês) — é assim que fica "filtrado por comprador/vendedor": basta
+// buscar o nome do cliente antes de gerar.
+function gerarRelatorioComissoes() {
+  const list = comissoesListAtual;
+  if (!list || list.length === 0) { alert("Nenhuma comissão na lista atual pra gerar relatório."); return; }
+
+  const clienteFiltro = (document.getElementById("comissoesFilterCliente").value || "").trim();
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const totalValor = list.reduce((s, c) => s + c.valor, 0);
+  const recebidas = list.filter(c => c.status === "Pago").length;
+  const hojeISO = todayISO();
+
+  const linhas = list.map(c => {
+    const pago = c.status === "Pago";
+    const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
+    const statusLabel = pago ? "RECEBIDO" : vencido ? "VENCIDO" : "A RECEBER";
+    const statusCor = pago ? "#2f7d32" : vencido ? "#b3261e" : "#a6741a";
+    return `<tr>
+      <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td>
+      <td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td><td>${c.pagador}</td>
+      <td><span style="font-size:9.5px;font-weight:bold;color:${statusCor}">${statusLabel}</span></td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Comissões${clienteFiltro ? " — " + clienteFiltro : ""}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0 4px; }
+    .sub { text-align: center; font-size: 12px; color: #555; margin-bottom: 18px; }
+    table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
+    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
+    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; }
+    .resumo .item b { display: block; font-size: 15px; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } @page { size: A4 landscape; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>RELATÓRIO DE COMISSÕES</h1>
+  <div class="sub">${clienteFiltro ? clienteFiltro : "Todos os clientes"} — emitido em ${hoje}</div>
+  <table class="linhas">
+    <thead><tr><th>Data pagamento</th><th>Vencimento</th><th>Vendedor</th><th>Comprador</th><th>Valor (R$)</th><th>Volume (sc)</th><th>Pago por</th><th>Status</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <div class="resumo">
+    <div class="item"><span>Lançamentos</span><b>${list.length}</b></div>
+    <div class="item"><span>Valor total</span><b>${fmtMoney(totalValor)}</b></div>
+    <div class="item"><span>Recebidas</span><b>${recebidas} de ${list.length}</b></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 async function gerarBoletoComissao(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
