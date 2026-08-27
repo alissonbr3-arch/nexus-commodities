@@ -77,7 +77,8 @@ export default async (req) => {
     erro = "RESEND_API_KEY não configurada.";
   } else {
     try {
-      const nomeArquivo = `Confirmacao_${negocio.numero_contrato || "negocio"}.pdf`;
+      // Mesmo padrão de nome já usado no PDF impresso manualmente (gerarConfirmacao, no painel).
+      const nomeArquivo = `${negocio.numero_contrato || "negocio"} - ${vendedor.nome} x ${comprador.nome}.pdf`.replace(/[\\/]/g, "-");
       const resp = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
