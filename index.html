@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -899,7 +900,7 @@
             <h3>Comunicações enviadas</h3>
             <div class="hint">E-mails e avisos de WhatsApp disparados pelo app (ou automaticamente), e quem disparou. Mostra os últimos 200 envios.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option><option value="Boleto Comissão (Asaas)">Boleto Comissão (Asaas)</option></select>
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Confirmação (PDF por e-mail)">Confirmação (PDF por e-mail)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option><option value="Boleto Comissão (Asaas)">Boleto Comissão (Asaas)</option></select>
               <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
             </div>
             <div id="emailLogList"></div>
@@ -1841,7 +1842,7 @@ function renderNegocios() {
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
     list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
-      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button><button class="btn-edit-text" title="Avisar produtor no WhatsApp" onclick="enviarWhatsappNegocio('${n.id}')">&#128242;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
+      <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar por e-mail e DocuSign" onclick="enviarParaAssinatura('${n.id}')">&#128231;</button><button class="btn-edit-text" title="Enviar PDF por e-mail (sem DocuSign)" onclick="enviarConfirmacaoPdfEmail('${n.id}')">&#128196;</button><button class="btn-edit-text" title="Avisar produtor no WhatsApp" onclick="enviarWhatsappNegocio('${n.id}')">&#128242;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
@@ -2346,6 +2347,74 @@ async function enviarParaAssinatura(negocioId) {
     alert(j.resultado.docusign?.ok ? "✓ Envelope DocuSign criado" : "✗ DocuSign: " + j.resultado.docusign?.erro);
   } catch (e) {
     alert("Erro ao enviar: " + e.message);
+  }
+}
+function blobParaBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+// Gera o PDF da Confirmação no próprio navegador (html2pdf.js) e manda por e-mail já anexado,
+// via Resend — alternativa ao DocuSign pra quando a assinatura digital não for necessária ou
+// estiver com problema. Renderiza a mesma via de impressão dentro de um iframe escondido (sem
+// o script de auto-print) e converte esse conteúdo em PDF.
+async function enviarConfirmacaoPdfEmail(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados."); return; }
+  if (!vendedor.email || !comprador.email) {
+    const faltando = [!vendedor.email ? vendedor.nome : null, !comprador.email ? comprador.nome : null].filter(Boolean).join(" e ");
+    alert(`Cadastre o e-mail de contato de ${faltando} antes de enviar (aba Cadastros).`);
+    return;
+  }
+  const ccVendedor = vendedor.emails_extra || [];
+  const ccComprador = comprador.emails_extra || [];
+  const linhaCc = (ccVendedor.length || ccComprador.length) ? `\nCom cópia: ${[...ccVendedor, ...ccComprador].join(", ")}` : "";
+  const confirmar = confirm(`Enviar a Confirmação ${n.numero_contrato || ""} em PDF por e-mail (sem DocuSign) pra:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})${linhaCc}\n\nConfirmar envio?`);
+  if (!confirmar) return;
+
+  const r = montarConfirmacaoHtml(negocioId);
+  if (!r) return;
+  const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:800px;height:1px;border:0";
+  document.body.appendChild(iframe);
+  try {
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(htmlSemScript);
+    iframe.contentDocument.close();
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    const pdfBlob = await html2pdf().from(iframe.contentDocument.body).set({
+      margin: 0,
+      filename: `Confirmacao_${n.numero_contrato || "negocio"}.pdf`,
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css"] },
+    }).outputPdf("blob");
+
+    const pdfBase64 = await blobParaBase64(pdfBlob);
+    const resp = await fetch("/.netlify/functions/enviar-confirmacao-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, pdf_base64: pdfBase64 }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    alert("✓ PDF enviado por e-mail");
+  } catch (e) {
+    alert("Erro ao gerar/enviar PDF: " + e.message);
+  } finally {
+    document.body.removeChild(iframe);
   }
 }
 async function enviarWhatsappNegocio(negocioId) {
