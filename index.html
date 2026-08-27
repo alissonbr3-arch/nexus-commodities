@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -2357,10 +2357,229 @@ function blobParaBase64(blob) {
     reader.readAsDataURL(blob);
   });
 }
-// Gera o PDF da Confirmação no próprio navegador (html2pdf.js) e manda por e-mail já anexado,
-// via Resend — alternativa ao DocuSign pra quando a assinatura digital não for necessária ou
-// estiver com problema. Renderiza a mesma via de impressão dentro de um iframe escondido (sem
-// o script de auto-print) e converte esse conteúdo em PDF.
+// Mesma lógica de textoClausula, mas sem o escapeHtml — pro PDF nativo (jsPDF) o texto vai
+// direto pra API de desenho de texto, não passa por HTML, então entidades como &amp; ficariam
+// erradas se viessem escapadas.
+function textoClausulaPlano(comprador, chave, n) {
+  const def = CLAUSULAS_CONTRATO[chave];
+  const padrao = (def.defaultMilho && n.grao === "Milho") ? def.defaultMilho
+    : (def.defaultSorgo && n.grao === "Sorgo") ? def.defaultSorgo
+    : def.default;
+  const bruto = (comprador[def.campo] || "").trim() || padrao;
+  return bruto
+    .replace(/\{\{VENDEDOR\}\}/g, data.cadastros.find(c => c.id === n.produtor_id)?.nome || "")
+    .replace(/\{\{COMPRADOR\}\}/g, comprador.nome)
+    .replace(/\{\{COMISSAO_SACA\}\}/g, fmtMoney(n.comissao_saca || 0))
+    .replace(/\{\{COMISSAO_PAGADOR\}\}/g, (n.comissao_pagador || "Vendedor").toUpperCase());
+}
+// NEXUS_LOGO é um PNG 500x500 (~170KB em base64) — embutir isso do jeito que está num PDF de
+// jsPDF infla o arquivo pra quase 1MB (o jsPDF reamostra a imagem sem aproveitar a compressão
+// original). Como no PDF o logo só aparece pequeno (44x44pt), redesenhamos ele num canvas
+// menor (160x160px, já bem mais que suficiente pra nitidez nesse tamanho) uma única vez e
+// reaproveitamos o resultado.
+let logoPdfCache = null;
+async function logoParaPdf() {
+  if (logoPdfCache) return logoPdfCache;
+  const img = new Image();
+  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = NEXUS_LOGO; });
+  const canvas = document.createElement("canvas");
+  canvas.width = 160; canvas.height = 160;
+  canvas.getContext("2d").drawImage(img, 0, 0, 160, 160);
+  logoPdfCache = canvas.toDataURL("image/png");
+  return logoPdfCache;
+}
+// Gera a Confirmação de Negócio como PDF nativo (texto vetorial de verdade, selecionável e
+// pesquisável — não é uma captura de tela) usando jsPDF, com o mesmo conteúdo/ordem do
+// montarConfirmacaoHtml (a via de impressão). Duplicado de propósito, seguindo o mesmo padrão
+// de "documento gerado" já usado no resto do app — se mudar o texto/layout da Confirmação lá,
+// replicar aqui.
+async function gerarConfirmacaoPdfNativo(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return null;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a confirmação."); return null; }
+  const fazenda = n.fazenda_id ? data.fazendas.find(f => f.id === n.fazenda_id) : null;
+  const propriedadeNome = fazenda ? fazenda.nome : (vendedor.propriedade || "—");
+  const propriedadeMunicipioUf = fazenda ? (fazenda.municipio_uf || vendedor.cidade || "—") : (vendedor.cidade || "—");
+  const propriedadeIE = fazenda ? (fazenda.inscricao_estadual || "—") : (vendedor.inscricao_estadual || "—");
+  const sacas = Number(n.quantidade || 0);
+  const kg = sacas * 60;
+  const preco = Number(n.preco || 0);
+  const total = preco * sacas;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const modalidade = n.modalidade || "FOB";
+  const logo = await logoParaPdf();
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = 595.28, pageH = 841.89, margem = 42;
+  const larguraUtil = pageW - margem * 2;
+  let y = margem;
+
+  function novaPagina() { doc.addPage(); y = margem; }
+  function garanteEspaco(altura) { if (y + altura > pageH - margem) novaPagina(); }
+
+  function paragrafo(texto, opts = {}) {
+    const tamanho = opts.tamanho || 10;
+    const entreLinhas = opts.entreLinhas || tamanho * 1.32;
+    doc.setFontSize(tamanho);
+    doc.setFont("helvetica", opts.negrito ? "bold" : "normal");
+    for (const linhaOriginal of String(texto).split("\n")) {
+      if (linhaOriginal.trim() === "") { y += entreLinhas * 0.5; continue; }
+      for (const linha of doc.splitTextToSize(linhaOriginal, larguraUtil)) {
+        garanteEspaco(entreLinhas);
+        doc.text(linha, margem, y);
+        y += entreLinhas;
+      }
+    }
+  }
+  function linhaRotuloValor(rotulo, valor, opts = {}) {
+    const tamanho = opts.tamanho || 10;
+    const entreLinhas = tamanho * 1.32;
+    doc.setFontSize(tamanho);
+    doc.setFont("helvetica", "bold");
+    const rotuloTexto = rotulo + " ";
+    const larguraRotulo = doc.getTextWidth(rotuloTexto);
+    doc.setFont("helvetica", "normal");
+    const linhas = doc.splitTextToSize(String(valor), larguraUtil - larguraRotulo);
+    garanteEspaco(entreLinhas);
+    doc.setFont("helvetica", "bold");
+    doc.text(rotuloTexto, margem, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(linhas[0] || "", margem + larguraRotulo, y);
+    y += entreLinhas;
+    for (let i = 1; i < linhas.length; i++) {
+      garanteEspaco(entreLinhas);
+      doc.text(linhas[i], margem, y);
+      y += entreLinhas;
+    }
+  }
+  function titulo3(texto) {
+    garanteEspaco(26);
+    y += 10;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11.5);
+    doc.text(texto, margem, y);
+    y += 15;
+  }
+  function tabela(linhas) {
+    const larguraLabel = 165, padding = 6;
+    doc.setFontSize(9.5);
+    for (const [label, valor] of linhas) {
+      doc.setFont("helvetica", "normal");
+      const linhasValor = doc.splitTextToSize(String(valor), larguraUtil - larguraLabel - padding * 2);
+      const altura = Math.max(20, linhasValor.length * 12 + 8);
+      garanteEspaco(altura);
+      doc.setDrawColor(153);
+      doc.setFillColor(242, 242, 242);
+      doc.rect(margem, y, larguraLabel, altura, "FD");
+      doc.rect(margem + larguraLabel, y, larguraUtil - larguraLabel, altura, "S");
+      doc.setFont("helvetica", "bold");
+      doc.text(label, margem + padding, y + 13);
+      doc.setFont("helvetica", "normal");
+      linhasValor.forEach((l, i) => doc.text(l, margem + larguraLabel + padding, y + 13 + i * 12));
+      y += altura;
+    }
+    y += 12;
+  }
+  function assinatura(nome, documento) {
+    garanteEspaco(50);
+    const largura = 240, cx = pageW / 2;
+    doc.setDrawColor(51); doc.setLineWidth(0.8);
+    doc.line(cx - largura / 2, y, cx + largura / 2, y);
+    y += 12;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    doc.text(nome.toUpperCase(), cx, y, { align: "center" });
+    y += 12;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    doc.text(documento || "", cx, y, { align: "center" });
+    y += 34;
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+  doc.text(NEXUS_EMPRESA.nome, margem, y);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(NEXUS_EMPRESA.endereco, margem, y + 13);
+  doc.text(`${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}`, margem, y + 24);
+  doc.addImage(logo, "PNG", pageW - margem - 44, y - 10, 44, 44, undefined, "MEDIUM");
+  y += 36;
+  doc.setDrawColor(184, 134, 11); doc.setLineWidth(1.3);
+  doc.line(margem, y, pageW - margem, y);
+  y += 22;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13.5);
+  doc.text(`CONFIRMAÇÃO DE COMPRA E VENDA DE GRÃOS Nº ${n.numero_contrato || "—"}`, pageW / 2, y, { align: "center" });
+  y += 22;
+
+  tabela([
+    ["VENDEDOR", vendedor.nome], ["CPF", vendedor.cpf || "—"], ["INSCRIÇÃO ESTADUAL", propriedadeIE],
+    ["PROPRIEDADE", propriedadeNome], ["MUNICÍPIO/UF", propriedadeMunicipioUf],
+    ["DADOS BANCÁRIOS", (n.conta_bancaria === "Secundária" && vendedor.dados_bancarios_secundaria) ? vendedor.dados_bancarios_secundaria : (vendedor.dados_bancarios || "—")],
+  ]);
+  tabela([
+    ["COMPRADOR", comprador.nome], ["CNPJ", comprador.cnpj || "—"],
+    ["INSCRIÇÃO ESTADUAL", comprador.inscricao_estadual || "—"], ["MUNICÍPIO/UF", comprador.cidade || "—"],
+  ]);
+  tabela([
+    ["PRODUTO", `${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}`],
+    ["MODALIDADE", modalidade],
+    [modalidade === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA", n.local_origem || "—"],
+    ["DATA DE PAGAMENTO", fmtDate(n.data_pagamento)],
+    [modalidade === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE", fmtDate(n.data_inicio_embarque)],
+    [modalidade === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE", fmtDate(n.data_fim_embarque)],
+    ["QUANTIDADE", `${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)`],
+  ]);
+
+  linhaRotuloValor("RECOLHIMENTO DO FUNRURAL:", `recolhido na ${funruralForma}.`);
+  linhaRotuloValor("PREÇO BRUTO:", `${fmtMoney(preco)} por saca de 60kg, sobre ${fmtNum(sacas)} sacas.`);
+  linhaRotuloValor(`PREÇO LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:`, `${fmtMoney(precoLiquido)} por saca de 60kg${precoLiquidoInformado ? "" : ", após Comissão, 0,2% Senar" + (comFundersulFundems ? ", Fundersul, Fundems" : "") + (funruralForma === "Comercialização" ? " e Funrural" : "")}.`);
+  linhaRotuloValor("TOTAL BRUTO:", `${fmtMoney(total)} (${valorPorExtenso(total)}).`);
+  paragrafo(`Descontos a serem realizados: 0,2% Senar${comFundersulFundems ? " + Fundersul valor vigente + Fundems valor vigente" : ""} + (Funrural caso o vendedor seja optante pela comercialização). ICMS: Não incidente em se tratando de produtor rural.`);
+  linhaRotuloValor(`TOTAL LÍQUIDO${precoLiquidoInformado ? "" : " (estimado)"}:`, `${fmtMoney(liquido)} (${valorPorExtenso(liquido)}).`);
+  y += 4;
+  if (modalidade === "CIF") paragrafo("Obs.: O produto será entregue direto da lavoura, livre de taxa de recebimento. Os descontos serão aplicados nos itens umidade, impureza e avariado seguindo a tabela do comprador.");
+  if (textoObsDescarga && modalidade === "CIF") linhaRotuloValor("Obs.: DESCARGA:", textoObsDescarga);
+
+  titulo3("QUALIDADE");
+  paragrafo(textoClausulaPlano(comprador, "qualidade", n));
+  titulo3("CONTAMINANTES");
+  paragrafo(textoClausulaPlano(comprador, "contaminantes", n));
+  titulo3("CONDIÇÕES GERAIS");
+  paragrafo(textoClausulaPlano(comprador, "condicoesGerais", n));
+  titulo3("COMISSÃO");
+  paragrafo(textoClausulaPlano(comprador, "comissao", n), { negrito: true });
+
+  y += 20;
+  garanteEspaco(20);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  doc.text(`SÃO GABRIEL DO OESTE, MS, ${hoje}`, pageW / 2, y, { align: "center" });
+  y += 60;
+
+  assinatura(vendedor.nome, vendedor.cpf || "");
+  assinatura(comprador.nome, comprador.cnpj || "");
+  garanteEspaco(50);
+  const cx = pageW / 2, largura = 240;
+  doc.setFont("times", "italic"); doc.setFontSize(16);
+  doc.text(NEXUS_EMPRESA.nome, cx, y, { align: "center" });
+  y += 6;
+  doc.setDrawColor(51); doc.setLineWidth(0.8);
+  doc.line(cx - largura / 2, y, cx + largura / 2, y);
+  y += 12;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+  doc.text(NEXUS_EMPRESA.nome.toUpperCase(), cx, y, { align: "center" });
+  y += 12;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+  doc.text(NEXUS_EMPRESA.cnpj, cx, y, { align: "center" });
+
+  return doc;
+}
+// Manda a Confirmação em PDF (nativo, texto de verdade) por e-mail já anexado, via Resend —
+// alternativa ao DocuSign pra quando a assinatura digital não for necessária ou estiver com
+// problema.
 async function enviarConfirmacaoPdfEmail(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
@@ -2378,51 +2597,13 @@ async function enviarConfirmacaoPdfEmail(negocioId) {
   const confirmar = confirm(`Enviar a Confirmação ${n.numero_contrato || ""} em PDF por e-mail (sem DocuSign) pra:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})${linhaCc}\n\nConfirmar envio?`);
   if (!confirmar) return;
 
-  const r = montarConfirmacaoHtml(negocioId);
-  if (!r) return;
-  const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
-
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { alert("Sessão expirada, faça login novamente."); return; }
 
-  // O html2canvas lê estilo computado a partir da window em que ele roda — se o elemento
-  // estiver só "escondido" dentro da página do painel (mesmo em iframe via document.write),
-  // ele ainda enxerga o CSS do tema escuro do app e a captura sai toda errada (fundo preto,
-  // texto sem contraste). Por isso o iframe carrega como documento de verdade (via blob URL,
-  // navegação real) com o html2pdf.js embutido nele mesmo, e quem gera o PDF é o
-  // iframe.contentWindow.html2pdf — não o html2pdf do painel — garantindo que só o CSS do
-  // próprio documento da Confirmação seja considerado. A marca d'água (position:fixed) some
-  // porque o html2canvas não reproduz posicionamento fixo direito em conteúdo com várias
-  // páginas — funciona certinho na impressão normal do navegador, então não mexe no template.
-  const htmlParaPdf = htmlSemScript
-    .replace("<head>", '<head><script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"><\/script>')
-    .replace("</head>", "<style>.watermark{display:none !important}</style></head>");
-
-  const blobHtml = new Blob([htmlParaPdf], { type: "text/html" });
-  const blobUrl = URL.createObjectURL(blobHtml);
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;top:0;left:0;width:800px;height:100px;border:0;opacity:0;pointer-events:none";
-  const carregado = new Promise(resolve => { iframe.onload = resolve; });
-  document.body.appendChild(iframe);
-  iframe.src = blobUrl;
-
   try {
-    await carregado;
-    let tentativas = 0;
-    while (typeof iframe.contentWindow.html2pdf !== "function" && tentativas < 50) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      tentativas++;
-    }
-    if (typeof iframe.contentWindow.html2pdf !== "function") throw new Error("Não consegui carregar o gerador de PDF (html2pdf.js). Verifique sua conexão.");
-
-    const pdfBlob = await iframe.contentWindow.html2pdf().from(iframe.contentDocument.body).set({
-      margin: 0,
-      filename: `Confirmacao_${n.numero_contrato || "negocio"}.pdf`,
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css"] },
-    }).outputPdf("blob");
-
+    const doc = await gerarConfirmacaoPdfNativo(negocioId);
+    if (!doc) return;
+    const pdfBlob = doc.output("blob");
     const pdfBase64 = await blobParaBase64(pdfBlob);
     const resp = await fetch("/.netlify/functions/enviar-confirmacao-pdf", {
       method: "POST",
@@ -2434,9 +2615,6 @@ async function enviarConfirmacaoPdfEmail(negocioId) {
     alert("✓ PDF enviado por e-mail");
   } catch (e) {
     alert("Erro ao gerar/enviar PDF: " + e.message);
-  } finally {
-    iframe.remove();
-    URL.revokeObjectURL(blobUrl);
   }
 }
 async function enviarWhatsappNegocio(negocioId) {
