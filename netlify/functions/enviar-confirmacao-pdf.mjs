@@ -3,6 +3,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // Remetente dos e-mails via Resend — precisa ser um domínio verificado lá (nexuscommoditiesms.com.br).
 const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
+// Cópia oculta pra Nexus em toda Confirmação enviada, pra ficar registrado na caixa da empresa.
+const BCC_NEXUS = "nexuscommodities@terra.com.br";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -69,6 +71,7 @@ export default async (req) => {
         body: JSON.stringify({
           from: FROM_EMAIL,
           to: destinatarios,
+          bcc: BCC_NEXUS,
           subject: `Confirmação de Negócio ${negocio.numero_contrato || ""} — Nexus Commodities`,
           html: `<p>Olá,</p><p>Segue em anexo a Confirmação de Negócio ${negocio.numero_contrato || ""}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " safra " + negocio.safra : ""} entre ${vendedor.nome} e ${comprador.nome}.</p><p>Qualquer dúvida, fale com seu corretor.</p><p>Nexus Commodities</p>`,
           attachments: [{ filename: nomeArquivo, content: pdf_base64 }],
@@ -86,7 +89,7 @@ export default async (req) => {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: "Confirmação (PDF por e-mail)", destinatarios: destinatarios.join(", "),
+      negocio_id, tipo: "Confirmação (PDF por e-mail)", destinatarios: [...destinatarios, `${BCC_NEXUS} (cópia)`].join(", "),
       enviado_por: caller.id, sucesso, erro,
     }),
   }).catch(() => {});
