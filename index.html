@@ -3982,7 +3982,9 @@ function agendaTodosItens() {
 function agendaItemChipHtml(it) {
   const done = it.campo ? !!it.neg[it.campo] : false;
   const cls = AGENDA_TIPO_CLASSE[it.tipo] || "";
-  const contraparte = (it.tipo === "Pagamento" || it.tipo === "Comissão") ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
+  // Pagamento é o produtor recebendo do comprador, então mostra o produtor (recebedor);
+  // Comissão é a Nexus recebendo do comprador, então mostra o comprador (quem paga).
+  const contraparte = it.tipo === "Comissão" ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
   const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
   const iconeHtml = it.campo
     ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:14px" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${icone}</span>`
