@@ -898,7 +898,7 @@
             <h3>Comunicações enviadas</h3>
             <div class="hint">E-mails e avisos de WhatsApp disparados pelo app (ou automaticamente), e quem disparou. Mostra os últimos 200 envios.</div>
             <div class="filters-row" style="justify-content:flex-start;margin-bottom:12px">
-              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option></select>
+              <select class="filter" id="emailLogFilterTipo" onchange="renderEmailLog()"><option value="">Todos os tipos</option><option value="Confirmação (DocuSign)">Confirmação (DocuSign)</option><option value="Liberação de Embarque">Liberação de Embarque</option><option value="WhatsApp Nova Negociação">WhatsApp Nova Negociação</option><option value="WhatsApp Aviso de Pagamento">WhatsApp Aviso de Pagamento</option><option value="WhatsApp Aviso de Embarque">WhatsApp Aviso de Embarque</option><option value="Boleto Comissão (Asaas)">Boleto Comissão (Asaas)</option></select>
               <button class="btn-ghost" onclick="loadEmailLogEAtualizar()">Atualizar</button>
             </div>
             <div id="emailLogList"></div>
@@ -3022,6 +3022,7 @@ function renderComissoesPage() {
         <td><span class="badge ${statusClasse}">${statusLabel}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
+          ${c.negocio.boleto_comissao_url ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
         </td>
       </tr>`;
@@ -3061,6 +3062,34 @@ function renderComissoesPage() {
     }).join("");
 }
 
+async function gerarBoletoComissao(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  if (!(Number(n.comissao) > 0)) { alert("Este negócio não tem valor de comissão definido."); return; }
+  const pagadorId = n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id;
+  const pagador = data.cadastros.find(c => c.id === pagadorId);
+  if (!pagador) { alert("Não encontrei o cadastro de quem paga a comissão neste negócio."); return; }
+  if (!confirm(`Gerar boleto de ${fmtMoney(n.comissao)} pra ${pagador.nome} e mandar por WhatsApp?`)) return;
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+
+  try {
+    const resp = await fetch("/.netlify/functions/gerar-boleto-comissao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    const avisoWhats = j.whatsapp?.sucesso ? " e enviado por WhatsApp" : j.whatsapp?.tentado ? " — mas o envio por WhatsApp falhou, copie o link direto na lista" : "";
+    alert(`✓ Boleto gerado (vencimento ${fmtDate(j.dueDate)})${avisoWhats}.`);
+    await loadNegocios();
+    renderComissoesPage();
+  } catch (e) {
+    alert("Erro ao gerar boleto: " + e.message);
+  }
+}
 async function toggleComissaoPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
