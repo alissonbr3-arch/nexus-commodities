@@ -724,8 +724,13 @@
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador. O filtro de mês considera o vencimento.</div>
             <div class="hint" id="comissoesTotalReceber" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
+            <div class="hint" id="comissoesBarraSelecao" style="display:none;margin-bottom:10px;padding:8px 12px;border:1px solid var(--gold);border-radius:8px;align-items:center;justify-content:space-between;gap:10px">
+              <span id="comissoesSelecaoTexto"></span>
+              <button class="btn-primary" onclick="gerarBoletoComissaoAgrupado()">Gerar boleto agrupado</button>
+            </div>
             <table>
               <thead><tr>
+                <th style="width:24px"></th>
                 <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
                 <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th data-sort="pagador">Pago por</th><th>Status</th><th></th>
               </tr></thead>
@@ -3259,6 +3264,21 @@ function popularFiltroMes(selectId, mesesDisponiveis) {
   if (meses.includes(atual)) sel.value = atual;
 }
 let comissoesListAtual = [];
+let comissoesSelecionados = new Set();
+function toggleComissaoSelecionado(id, checked) {
+  if (checked) comissoesSelecionados.add(id); else comissoesSelecionados.delete(id);
+  renderComissoesBarraSelecao(comissoesListAtual);
+}
+function renderComissoesBarraSelecao(list) {
+  const barra = document.getElementById("comissoesBarraSelecao");
+  const texto = document.getElementById("comissoesSelecaoTexto");
+  if (!barra || !texto) return;
+  if (comissoesSelecionados.size < 2) { barra.style.display = "none"; return; }
+  const selecionados = list.filter(c => comissoesSelecionados.has(c.id));
+  const total = selecionados.reduce((s, c) => s + c.valor, 0);
+  texto.textContent = `${selecionados.length} selecionados · Total: ${fmtMoney(total)}`;
+  barra.style.display = "flex";
+}
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
   if (!body) return;
@@ -3283,23 +3303,29 @@ function renderComissoesPage() {
   comissoesListAtual = list;
   const totalReceberEl = document.getElementById("comissoesTotalReceber");
   if (totalReceberEl) totalReceberEl.textContent = list.length === 0 ? "" : `Total nesta lista: ${fmtMoney(list.reduce((s,c) => s + c.valor, 0))} (${list.length} lançamento${list.length === 1 ? "" : "s"})`;
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhuma comissão encontrada.</td></tr>` :
+  // Remove da seleção qualquer id que não esteja mais na lista atual (filtro mudou, negócio pago, etc.)
+  for (const id of [...comissoesSelecionados]) if (!list.some(c => c.id === id)) comissoesSelecionados.delete(id);
+
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.status === "Pago";
       const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
       const statusLabel = pago ? "Recebido" : vencido ? "Vencido" : "A receber";
       const statusClasse = pago ? "pago" : vencido ? "atrasado" : "agendado";
+      const temBoleto = !!c.negocio.boleto_comissao_url;
       return `<tr>
+        <td>${temBoleto ? "" : `<input type="checkbox" onchange="toggleComissaoSelecionado('${c.id}', this.checked)" ${comissoesSelecionados.has(c.id) ? "checked" : ""}>`}</td>
         <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
         <td>${c.pagador}</td>
         <td><span class="badge ${statusClasse}">${statusLabel}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
-          ${c.negocio.boleto_comissao_url ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
+          ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
         </td>
       </tr>`;
     }).join("");
+  renderComissoesBarraSelecao(list);
 
   const bodyC = document.getElementById("comissoesCorretorBody");
   if (!bodyC) return;
@@ -3398,6 +3424,26 @@ function gerarRelatorioComissoes() {
   if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
+async function chamarGerarBoleto(negocioIds) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+  try {
+    const resp = await fetch("/.netlify/functions/gerar-boleto-comissao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_ids: negocioIds, access_token: session.access_token }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    const avisoWhats = j.whatsapp?.sucesso ? " e enviado por WhatsApp" : j.whatsapp?.tentado ? " — mas o envio por WhatsApp falhou, copie o link direto na lista" : "";
+    alert(`✓ Boleto de ${fmtMoney(j.valorTotal)} gerado (vencimento ${fmtDate(j.dueDate)})${avisoWhats}.`);
+    comissoesSelecionados.clear();
+    await loadNegocios();
+    renderComissoesPage();
+  } catch (e) {
+    alert("Erro ao gerar boleto: " + e.message);
+  }
+}
 async function gerarBoletoComissao(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
@@ -3406,25 +3452,20 @@ async function gerarBoletoComissao(negocioId) {
   const pagador = data.cadastros.find(c => c.id === pagadorId);
   if (!pagador) { alert("Não encontrei o cadastro de quem paga a comissão neste negócio."); return; }
   if (!confirm(`Gerar boleto de ${fmtMoney(n.comissao)} pra ${pagador.nome} e mandar por WhatsApp?`)) return;
-
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
-
-  try {
-    const resp = await fetch("/.netlify/functions/gerar-boleto-comissao", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token }),
-    });
-    const j = await resp.json();
-    if (!j.ok) { alert("Erro: " + j.erro); return; }
-    const avisoWhats = j.whatsapp?.sucesso ? " e enviado por WhatsApp" : j.whatsapp?.tentado ? " — mas o envio por WhatsApp falhou, copie o link direto na lista" : "";
-    alert(`✓ Boleto gerado (vencimento ${fmtDate(j.dueDate)})${avisoWhats}.`);
-    await loadNegocios();
-    renderComissoesPage();
-  } catch (e) {
-    alert("Erro ao gerar boleto: " + e.message);
-  }
+  await chamarGerarBoleto([negocioId]);
+}
+async function gerarBoletoComissaoAgrupado() {
+  const ids = [...comissoesSelecionados];
+  if (ids.length < 2) return;
+  const negocios = ids.map(id => data.negocios.find(n => n.id === id)).filter(Boolean);
+  const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
+  if (pagadorIds.size > 1) { alert("Os negócios selecionados têm pagadores diferentes — só dá pra agrupar num boleto só quando é a mesma pessoa/empresa pagando."); return; }
+  const pagador = data.cadastros.find(c => c.id === [...pagadorIds][0]);
+  if (!pagador) { alert("Não encontrei o cadastro de quem paga a comissão."); return; }
+  const total = negocios.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
+  if (!confirm(`Gerar um boleto único de ${fmtMoney(total)} pra ${pagador.nome}, agrupando os contratos ${contratos}, e mandar por WhatsApp?`)) return;
+  await chamarGerarBoleto(ids);
 }
 async function toggleComissaoPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);

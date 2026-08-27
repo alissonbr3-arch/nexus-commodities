@@ -18,9 +18,10 @@ function formatarTelefoneWhats(telefone) {
 
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
-// Gera (ou reaproveita) um boleto no Asaas cobrando a comissão de intermediação de um negócio
-// de quem for o pagador (Vendedor ou Comprador, conforme cadastrado no negócio). Cria o cliente
-// no Asaas na primeira vez (guarda o id em nexus_cadastros.asaas_customer_id pra reaproveitar
+// Gera (ou reaproveita) um boleto no Asaas cobrando a comissão de intermediação de um ou mais
+// negócios de uma vez (todos precisam ter o mesmo pagador — mesma pessoa/empresa) de quem for
+// o pagador (Vendedor ou Comprador, conforme cadastrado em cada negócio). Cria o cliente no
+// Asaas na primeira vez (guarda o id em nexus_cadastros.asaas_customer_id pra reaproveitar
 // depois) e manda o link do boleto pro WhatsApp do pagador. Só corretores da equipe Nexus
 // podem chamar.
 export default async (req) => {
@@ -30,9 +31,9 @@ export default async (req) => {
   } catch {
     return json({ ok: false, erro: "Corpo da requisição inválido." }, 400);
   }
-  const { negocio_id, access_token, vencimento } = payload || {};
-  if (!negocio_id || !access_token) {
-    return json({ ok: false, erro: "Dados incompletos (negocio_id e access_token são obrigatórios)." }, 400);
+  const { negocio_ids, access_token, vencimento } = payload || {};
+  if (!Array.isArray(negocio_ids) || negocio_ids.length === 0 || !access_token) {
+    return json({ ok: false, erro: "Dados incompletos (negocio_ids e access_token são obrigatórios)." }, 400);
   }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -55,18 +56,30 @@ export default async (req) => {
     return json({ ok: false, erro: "Apenas corretores da equipe Nexus podem gerar boletos." }, 403);
   }
 
-  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${negocio_id}&select=*`, { headers: adminHeaders });
-  const negRows = await negResp.json();
-  const negocio = negRows[0];
-  if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
-  if (!(Number(negocio.comissao) > 0)) return json({ ok: false, erro: "Este negócio não tem valor de comissão definido." }, 400);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=in.(${negocio_ids.join(",")})&select=*`, { headers: adminHeaders });
+  const negocios = await negResp.json();
+  if (!Array.isArray(negocios) || negocios.length !== negocio_ids.length) {
+    return json({ ok: false, erro: "Não encontrei um ou mais negócios selecionados." }, 404);
+  }
+  if (negocios.some(n => !(Number(n.comissao) > 0))) {
+    return json({ ok: false, erro: "Um dos negócios selecionados não tem valor de comissão definido." }, 400);
+  }
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,cpf,cnpj,email,telefone,telefones_extra,asaas_customer_id`, { headers: adminHeaders });
+  const idsCadastros = [...new Set(negocios.flatMap(n => [n.produtor_id, n.cliente_id]))].filter(Boolean);
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCadastros.join(",")})&select=id,nome,cpf,cnpj,email,telefone,telefones_extra,asaas_customer_id`, { headers: adminHeaders });
   const cads = await cadResp.json();
-  const vendedor = cads.find(c => c.id === negocio.produtor_id);
-  const comprador = cads.find(c => c.id === negocio.cliente_id);
-  const pagador = (negocio.comissao_pagador === "Comprador") ? comprador : vendedor;
-  if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão neste negócio." }, 400);
+
+  const pagadorIds = new Set();
+  for (const n of negocios) {
+    const pagadorId = n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id;
+    if (!pagadorId) return json({ ok: false, erro: `O negócio ${n.numero_contrato || n.id} não tem quem paga a comissão definido.` }, 400);
+    pagadorIds.add(pagadorId);
+  }
+  if (pagadorIds.size > 1) {
+    return json({ ok: false, erro: "Os negócios selecionados têm pagadores diferentes — só dá pra agrupar num boleto só quando é a mesma pessoa/empresa pagando." }, 400);
+  }
+  const pagador = cads.find(c => c.id === [...pagadorIds][0]);
+  if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
 
   const cpfCnpj = somenteDigitos(pagador.cpf || pagador.cnpj);
   if (!cpfCnpj) return json({ ok: false, erro: `Cadastre o CPF/CNPJ de ${pagador.nome} antes de gerar o boleto.` }, 400);
@@ -97,17 +110,22 @@ export default async (req) => {
     });
   }
 
+  const valorTotal = negocios.reduce((s, n) => s + Number(n.comissao), 0);
+  const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
   const dueDate = vencimento || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const descricao = negocios.length === 1
+    ? `Comissão de intermediação — Confirmação de Negócio nº ${contratos} — Nexus Commodities`
+    : `Comissão de intermediação — Confirmações de Negócio nº ${contratos} — Nexus Commodities`;
   const payResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
     method: "POST",
     headers: asaasHeaders,
     body: JSON.stringify({
       customer: customerId,
       billingType: "BOLETO",
-      value: Number(negocio.comissao),
+      value: valorTotal,
       dueDate,
-      description: `Comissão de intermediação — Confirmação de Negócio nº ${negocio.numero_contrato || "—"} — Nexus Commodities`,
-      externalReference: negocio.id,
+      description: descricao,
+      externalReference: negocio_ids.join(","),
     }),
   });
   const payData = await payResp.json().catch(() => ({}));
@@ -116,7 +134,7 @@ export default async (req) => {
     return json({ ok: false, erro: `Erro ao gerar o boleto: ${msg}` }, 500);
   }
 
-  await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${negocio_id}`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=in.(${negocio_ids.join(",")})`, {
     method: "PATCH",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
@@ -131,7 +149,9 @@ export default async (req) => {
   const telefones = [...new Set([pagador.telefone, ...(pagador.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
   if (telefones.length && ZAPI_INSTANCE_ID && ZAPI_TOKEN && ZAPI_CLIENT_TOKEN) {
     whatsapp.tentado = true;
-    const mensagem = `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto da comissão de intermediação referente à Confirmação de Negócio nº ${negocio.numero_contrato || "—"}:\nValor: ${fmtMoney(negocio.comissao)}\nVencimento: ${dueDate.split("-").reverse().join("/")}\n\n${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`;
+    const mensagem = negocios.length === 1
+      ? `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto da comissão de intermediação referente à Confirmação de Negócio nº ${contratos}:\nValor: ${fmtMoney(valorTotal)}\nVencimento: ${dueDate.split("-").reverse().join("/")}\n\n${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`
+      : `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto agrupado da comissão de intermediação referente às Confirmações de Negócio nº ${contratos}:\nValor total: ${fmtMoney(valorTotal)}\nVencimento: ${dueDate.split("-").reverse().join("/")}\n\n${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`;
     for (const telefone of telefones) {
       try {
         const resp = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
@@ -148,10 +168,11 @@ export default async (req) => {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: "Boleto Comissão (Asaas)", destinatarios: telefones.join(", ") || pagador.email || pagador.nome,
+      negocio_id: negocio_ids[0], tipo: "Boleto Comissão (Asaas)",
+      destinatarios: `${telefones.join(", ") || pagador.email || pagador.nome} — contratos: ${contratos}`,
       enviado_por: caller.id, sucesso: true, erro: null,
     }),
   }).catch(() => {});
 
-  return json({ ok: true, url: payData.invoiceUrl, status: payData.status, dueDate, whatsapp }, 200);
+  return json({ ok: true, url: payData.invoiceUrl, status: payData.status, dueDate, valorTotal, whatsapp }, 200);
 };

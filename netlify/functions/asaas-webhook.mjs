@@ -24,10 +24,12 @@ export default async (req) => {
   const pagamento = evento.payment;
   if (!pagamento?.id) return json({ ok: true, ignorado: true });
 
-  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}&select=id,status`, { headers: adminHeaders });
+  // Um boleto pode ter sido gerado agrupando vários negócios (mesmo pagador) — todos eles têm
+  // o mesmo boleto_comissao_id, então o pagamento precisa atualizar todos de uma vez, não só
+  // o primeiro que aparecer.
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}&select=id`, { headers: adminHeaders });
   const negRows = await negResp.json().catch(() => []);
-  const negocio = negRows[0];
-  if (!negocio) return json({ ok: true, ignorado: true });
+  if (!Array.isArray(negRows) || negRows.length === 0) return json({ ok: true, ignorado: true });
 
   const patch = { boleto_comissao_status: pagamento.status };
   if (tipo === "PAYMENT_RECEIVED" || tipo === "PAYMENT_CONFIRMED") {
@@ -35,7 +37,7 @@ export default async (req) => {
     patch.comissao_recebida_em = pagamento.paymentDate || pagamento.clientPaymentDate || new Date().toISOString().slice(0, 10);
   }
 
-  await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${negocio.id}`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}`, {
     method: "PATCH",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify(patch),
