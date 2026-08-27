@@ -3981,12 +3981,12 @@ function addDiasISO(dataISO, dias) {
 const AGENDA_TIPO_ICONE = {
   "Confirmação": "&#128077;", "Contrato": "&#9997;&#65039;", "Nota Fiscal": "&#129534;", "Contra Nota": "&#128209;",
   "Liberação de Embarque": "&#128666;", "Início embarque": "&#128666;", "Fim embarque": "&#128230;",
-  "Pagamento": "&#128181;", "Comissão": "&#128176;",
+  "Pagamento": "&#128181;",
 };
 const AGENDA_TIPO_CLASSE = {
   "Confirmação": "tipo-confirmacao", "Contrato": "tipo-contrato", "Nota Fiscal": "tipo-notafiscal", "Contra Nota": "tipo-contranota",
   "Liberação de Embarque": "tipo-liberacao", "Início embarque": "tipo-inicioembarque", "Fim embarque": "tipo-fimembarque",
-  "Pagamento": "tipo-pagamento", "Comissão": "tipo-comissao",
+  "Pagamento": "tipo-pagamento",
 };
 let agendaFilterCorretorId = "";
 function renderAgendaFilterSelect() {
@@ -4015,7 +4015,6 @@ function agendaTodosItens() {
     if (neg.data_fim_embarque) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg, campo: "check_embarque_entrega" });
     if (neg.data_pagamento) {
       itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg, campo: "check_pagamento" });
-      itens.push({ data: neg.data_pagamento, tipo: "Comissão", neg, campo: "check_comissao" });
     }
   });
   return itens;
@@ -4023,9 +4022,7 @@ function agendaTodosItens() {
 function agendaItemChipHtml(it) {
   const done = it.campo ? !!it.neg[it.campo] : false;
   const cls = AGENDA_TIPO_CLASSE[it.tipo] || "";
-  // Pagamento é o produtor recebendo do comprador, então mostra o produtor (recebedor);
-  // Comissão é a Nexus recebendo do comprador, então mostra o comprador (quem paga).
-  const contraparte = it.tipo === "Comissão" ? (nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte) : nomeCadastro(it.neg.produtor_id);
+  const contraparte = nomeCadastro(it.neg.produtor_id);
   const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
   const iconeHtml = it.campo
     ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:14px" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${icone}</span>`
