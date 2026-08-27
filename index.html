@@ -2385,19 +2385,40 @@ async function enviarConfirmacaoPdfEmail(negocioId) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { alert("Sessão expirada, faça login novamente."); return; }
 
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:800px;height:1px;border:0";
-  document.body.appendChild(iframe);
-  try {
-    iframe.contentDocument.open();
-    iframe.contentDocument.write(htmlSemScript);
-    iframe.contentDocument.close();
-    await new Promise(resolve => setTimeout(resolve, 400));
+  // O html2canvas lê estilo computado a partir da window em que ele roda — se o elemento
+  // estiver só "escondido" dentro da página do painel (mesmo em iframe via document.write),
+  // ele ainda enxerga o CSS do tema escuro do app e a captura sai toda errada (fundo preto,
+  // texto sem contraste). Por isso o iframe carrega como documento de verdade (via blob URL,
+  // navegação real) com o html2pdf.js embutido nele mesmo, e quem gera o PDF é o
+  // iframe.contentWindow.html2pdf — não o html2pdf do painel — garantindo que só o CSS do
+  // próprio documento da Confirmação seja considerado. A marca d'água (position:fixed) some
+  // porque o html2canvas não reproduz posicionamento fixo direito em conteúdo com várias
+  // páginas — funciona certinho na impressão normal do navegador, então não mexe no template.
+  const htmlParaPdf = htmlSemScript
+    .replace("<head>", '<head><script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"><\/script>')
+    .replace("</head>", "<style>.watermark{display:none !important}</style></head>");
 
-    const pdfBlob = await html2pdf().from(iframe.contentDocument.body).set({
+  const blobHtml = new Blob([htmlParaPdf], { type: "text/html" });
+  const blobUrl = URL.createObjectURL(blobHtml);
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:0;left:0;width:800px;height:100px;border:0;opacity:0;pointer-events:none";
+  const carregado = new Promise(resolve => { iframe.onload = resolve; });
+  document.body.appendChild(iframe);
+  iframe.src = blobUrl;
+
+  try {
+    await carregado;
+    let tentativas = 0;
+    while (typeof iframe.contentWindow.html2pdf !== "function" && tentativas < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      tentativas++;
+    }
+    if (typeof iframe.contentWindow.html2pdf !== "function") throw new Error("Não consegui carregar o gerador de PDF (html2pdf.js). Verifique sua conexão.");
+
+    const pdfBlob = await iframe.contentWindow.html2pdf().from(iframe.contentDocument.body).set({
       margin: 0,
       filename: `Confirmacao_${n.numero_contrato || "negocio"}.pdf`,
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
       jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css"] },
     }).outputPdf("blob");
@@ -2414,7 +2435,8 @@ async function enviarConfirmacaoPdfEmail(negocioId) {
   } catch (e) {
     alert("Erro ao gerar/enviar PDF: " + e.message);
   } finally {
-    document.body.removeChild(iframe);
+    iframe.remove();
+    URL.revokeObjectURL(blobUrl);
   }
 }
 async function enviarWhatsappNegocio(negocioId) {
