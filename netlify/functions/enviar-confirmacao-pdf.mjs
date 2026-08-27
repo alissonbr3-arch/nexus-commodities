@@ -5,6 +5,19 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
 // Cópia oculta pra Nexus em toda Confirmação enviada, pra ficar registrado na caixa da empresa.
 const BCC_NEXUS = "nexuscommodities@terra.com.br";
+// Assinatura padrão (logo + contato) anexada no rodapé de todo e-mail enviado pelo app.
+// Precisa ser uma URL pública (não base64) pra funcionar nos clientes de e-mail.
+const ASSINATURA_EMAIL_HTML = `
+  <table style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd;font-family:Arial,Helvetica,sans-serif">
+    <tr>
+      <td style="padding-right:12px"><img src="https://painel.nexuscommoditiesms.com.br/logo-nexus.png" alt="Nexus Commodities" width="48" height="48" style="display:block"></td>
+      <td style="font-size:12px;color:#555;line-height:1.5">
+        <strong style="color:#111;font-size:13px">Nexus Commodities</strong><br>
+        (67) 99130-9516<br>
+        São Gabriel do Oeste - MS
+      </td>
+    </tr>
+  </table>`;
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -73,7 +86,7 @@ export default async (req) => {
           to: destinatarios,
           bcc: BCC_NEXUS,
           subject: `Confirmação de Negócio ${negocio.numero_contrato || ""} — Nexus Commodities`,
-          html: `<p>Olá,</p><p>Segue em anexo a Confirmação de Negócio ${negocio.numero_contrato || ""}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " safra " + negocio.safra : ""} entre ${vendedor.nome} e ${comprador.nome}.</p><p>Qualquer dúvida, fale com seu corretor.</p><p>Nexus Commodities</p>`,
+          html: `<p>Olá,</p><p>Segue em anexo a Confirmação de Negócio ${negocio.numero_contrato || ""}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " safra " + negocio.safra : ""} entre ${vendedor.nome} e ${comprador.nome}.</p><p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
           attachments: [{ filename: nomeArquivo, content: pdf_base64 }],
         }),
       });
