@@ -1832,7 +1832,10 @@ function precoLiquidoNegocio(n) {
   const fundemsTotal = comFundersulFundems ? Number(data.config.fundems_saca || 0) * sacas : 0;
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(data.config.funrural_pct || 0) / 100 : 0;
-  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  // Quando o Cerealista (ou quem for) paga a comissão em vez do vendedor, ela não sai do
+  // líquido do vendedor — só quando é ele mesmo quem arca com o custo.
+  const comissaoDoVendedor = n.comissao_pagador === "Comprador" ? 0 : Number(n.comissao || 0);
+  const liquidoEstimado = total - comissaoDoVendedor - senar - fundersulTotal - fundemsTotal - funrural;
   const informado = n.preco_liquido != null && n.preco_liquido !== "";
   const precoLiquido = informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
   const liquidoTotal = informado ? precoLiquido * sacas : liquidoEstimado;

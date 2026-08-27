@@ -31,7 +31,8 @@ function precoLiquidoNegocio(n, comprador, config) {
   const fundemsTotal = comFundersulFundems ? Number(config.fundems_saca || 0) * sacas : 0;
   const funruralForma = n.funrural_forma || "Comercialização";
   const funrural = funruralForma === "Comercialização" ? total * Number(config.funrural_pct || 0) / 100 : 0;
-  const liquidoEstimado = total - Number(n.comissao || 0) - senar - fundersulTotal - fundemsTotal - funrural;
+  const comissaoDoVendedor = n.comissao_pagador === "Comprador" ? 0 : Number(n.comissao || 0);
+  const liquidoEstimado = total - comissaoDoVendedor - senar - fundersulTotal - fundemsTotal - funrural;
   const informado = n.preco_liquido != null && n.preco_liquido !== "";
   const precoLiquido = informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
   return { precoLiquido, informado };
