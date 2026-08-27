@@ -87,7 +87,7 @@ export default async (req) => {
           to: destinatarios,
           bcc: BCC_NEXUS,
           subject: `Confirmação de Negócio ${negocio.numero_contrato || ""} — Nexus Commodities`,
-          html: `<p>Olá,</p><p>Segue em anexo a Confirmação de Negócio ${negocio.numero_contrato || ""}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " safra " + negocio.safra : ""} entre ${vendedor.nome} e ${comprador.nome}.</p><p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
+          html: `<p>Olá,</p><p>Segue em anexo a Confirmação de Negócio ${negocio.numero_contrato || ""} - ${vendedor.nome} x ${comprador.nome}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " Safra " + negocio.safra : ""}.</p><p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
           attachments: [{ filename: nomeArquivo, content: pdf_base64 }],
         }),
       });
