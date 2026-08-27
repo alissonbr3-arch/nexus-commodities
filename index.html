@@ -1885,6 +1885,7 @@ function onClienteSelectChange() {
   if (comprador && !n("f_comissaoSaca")) {
     if (comprador.comissao_saca_padrao) { document.getElementById("f_comissaoSaca").value = comprador.comissao_saca_padrao; atualizarComissaoTotal(); }
     if (comprador.comissao_pagador_padrao) document.getElementById("f_comissaoPagador").value = comprador.comissao_pagador_padrao;
+    else if (comprador.categoria_comprador === "Cerealista") document.getElementById("f_comissaoPagador").value = "Comprador";
   }
   onModalidadeChange();
 }
