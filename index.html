@@ -586,6 +586,9 @@
             <select class="filter" id="negFilterStatus">
               <option value="">Todos os status</option><option>Rascunho</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
             </select>
+            <select class="filter" id="negFilterCorretor">
+              <option value="">Todos os corretores</option><option value="eu">Meus negócios</option>
+            </select>
             <button class="btn-ghost" id="lixeiraNegociosBtn">Lixeira</button>
             <button class="btn-primary" id="addNegocioBtn">+ Nova negociação</button>
           </div>
@@ -1843,8 +1846,9 @@ function precoLiquidoNegocio(n) {
 }
 function renderNegocios() {
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
+  const filterCorretor = document.getElementById("negFilterCorretor").value;
   let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"), precoLiquido: precoLiquidoNegocio(n).precoLiquido }))
-    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus));
+    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus) && (filterCorretor !== "eu" || n.corretor_id === currentUserId));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
@@ -1855,6 +1859,7 @@ function renderNegocios() {
 }
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
 document.getElementById("negFilterStatus").addEventListener("change", renderNegocios);
+document.getElementById("negFilterCorretor").addEventListener("change", renderNegocios);
 document.querySelectorAll('#page-negociacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("negocios", th.dataset.sort, renderNegocios)));
 
 // ---------------- LIXEIRA DE NEGOCIAÇÕES ----------------
