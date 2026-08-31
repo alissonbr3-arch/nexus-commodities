@@ -221,6 +221,7 @@
   .badge.rascunho { background: var(--card-alt); color: var(--ink-soft); border: 1px dashed var(--border); }
   .badge.fechado { background: var(--blue-soft); color: var(--blue); }
   .badge.entregue { background: var(--green-soft); color: var(--green); }
+  .badge.finalizado { background: var(--green-soft); color: var(--green); }
   .badge.pago { background: var(--green-soft); color: var(--green); }
   .badge.agendado { background: var(--gold-soft); color: var(--gold); }
   .badge.emtransito { background: var(--blue-soft); color: var(--blue); }
@@ -584,7 +585,7 @@
           <div class="actions-left">
             <input type="text" class="search-input" id="negSearch" placeholder="Buscar contrato, vendedor, comprador ou grão...">
             <select class="filter" id="negFilterStatus">
-              <option value="">Todos os status</option><option>Rascunho</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
+              <option value="">Todos os status</option><option>Negociação</option><option>Fechado</option><option>Finalizado</option>
             </select>
             <select class="filter" id="negFilterCorretor">
               <option value="">Todos os negócios</option><option value="eu">Meus negócios</option>
@@ -1111,7 +1112,7 @@ function calcularNotificacoes() {
     const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
     alerts.push({ nivel: "red", titulo: `Embarque atrasado — ${n.grao || "—"} · ${comprador}`, detalhe: `Previsto até ${fmtDate(n.data_fim_embarque)}`, negocioId: n.id });
   });
-  data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento).forEach(n => {
+  data.negocios.filter(n => !n.comissao_recebida_em && n.data_pagamento).forEach(n => {
     const venc = dia10MesSeguinte(n.data_pagamento);
     if (!venc) return;
     const dias = Math.round((new Date(venc) - new Date(hoje)) / 86400000);
@@ -1318,7 +1319,7 @@ function setDashVolumeUnit(u) { dashVolumeUnit = u; renderDashboard(); }
 function renderDashboard() {
   const list = periodFilteredNegocios();
   const emAndamento = list.filter(n => n.status === "Negociação" || n.status === "Fechado").length;
-  const concluidos = list.filter(n => n.status === "Entregue" || n.status === "Pago").length;
+  const concluidos = list.filter(n => n.status === "Finalizado").length;
   const volumeTotalSc = list.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const volumeValue = dashVolumeUnit === "ton" ? fmtNum(volumeTotalSc * TON_POR_SACA) + " ton" : fmtNum(volumeTotalSc) + " sc";
   const volumeFoot = `<span class="unit-toggle ${dashVolumeUnit==='sc'?'active':''}" onclick="setDashVolumeUnit('sc')">sacas</span> · <span class="unit-toggle ${dashVolumeUnit==='ton'?'active':''}" onclick="setDashVolumeUnit('ton')">toneladas</span>`;
@@ -1812,10 +1813,17 @@ async function toggleNegocioCheck(id, campo) {
   const n = data.negocios.find(x => x.id === id);
   if (!n) return;
   const novo = !n[campo];
-  await sb.from("nexus_negocios").update({ [campo]: novo }).eq("id", id);
+  const payload = { [campo]: novo };
+  // O checklist "Embarque/Entrega" e o status em Embarques ficam sincronizados nos dois sentidos.
+  if (campo === "check_embarque_entrega") {
+    payload.embarque_finalizado = novo;
+    payload.embarque_finalizado_em = novo ? new Date().toISOString() : null;
+  }
+  await sb.from("nexus_negocios").update(payload).eq("id", id);
   await loadNegocios();
   renderNegocios();
   renderAgendaSemana();
+  renderEmbarquesPage();
 }
 // Fundersul e Fundems só se aplicam quando o comprador é Trading (ou sem categoria definida).
 // Cooperativas e Cerealistas não têm esses dois descontos.
@@ -2009,7 +2017,7 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Modalidade</label><select id="f_modalidade" onchange="onModalidadeChange()"><option ${(!item.modalidade||item.modalidade==="FOB")?"selected":""}>FOB</option><option ${item.modalidade==="CIF"?"selected":""}>CIF</option></select></div><div class="field"><label id="f_localOrigemLabel">Local de retirada</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
-    <div class="field"><label>Status</label><select id="f_status">${["Rascunho","Negociação","Fechado","Entregue","Pago"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+    <div class="field"><label>Status</label><select id="f_status">${["Negociação","Fechado","Finalizado"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_obs" rows="2">${item.obs || ""}</textarea></div>
     <div class="field"><label>Anexos (nota fiscal, comprovante, contrato assinado...)</label>
       ${id ? `<input type="file" id="anexoFileInput" style="display:none" multiple onchange="uploadAnexosSelecionados('${id}', this.files)">
@@ -2041,6 +2049,14 @@ async function saveNegocio(id) {
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
+  // "Finalizado" dá baixa em tudo do checklist, menos a comissão — essa é fechada
+  // à parte, na tela de Financeiro (via comissao_recebida_em).
+  if (payload.status === "Finalizado") {
+    const existing = id ? data.negocios.find(x => x.id === id) : null;
+    NEGOCIO_CHECKLIST_ITENS.forEach(it => { if (it.campo !== "check_comissao") payload[it.campo] = true; });
+    payload.embarque_finalizado = true;
+    payload.embarque_finalizado_em = existing?.embarque_finalizado_em || new Date().toISOString();
+  }
   let savedId = id;
   if (id) { await sb.from("nexus_negocios").update(payload).eq("id", id); }
   else { const { data: rows } = await sb.from("nexus_negocios").insert([payload]).select(); savedId = rows && rows[0] ? rows[0].id : null; }
@@ -2049,7 +2065,7 @@ async function saveNegocio(id) {
     convertingIntencaoId = null;
     await loadIntencoes(); renderFunil();
   }
-  await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace();
+  await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace(); renderEmbarquesPage();
 }
 document.getElementById("addNegocioBtn").addEventListener("click", () => openNegocioModal(null));
 
@@ -2715,8 +2731,9 @@ document.getElementById("embSearch").addEventListener("input", renderEmbarquesPa
 async function finalizarEmbarque(id) {
   const ok = await askConfirm("O embarque sai da lista de previstos e vai para Finalizados. Você pode continuar consultando os dados por lá.", "Finalizar embarque", "Finalizar", "btn-primary");
   if (!ok) return;
-  await sb.from("nexus_negocios").update({ embarque_finalizado: true, embarque_finalizado_em: new Date().toISOString() }).eq("id", id);
-  await loadNegocios(); renderEmbarquesPage(); renderDashboard();
+  // Sincroniza com o checklist da negociação — marca "Embarque/Entrega" como feito também.
+  await sb.from("nexus_negocios").update({ embarque_finalizado: true, embarque_finalizado_em: new Date().toISOString(), check_embarque_entrega: true }).eq("id", id);
+  await loadNegocios(); renderEmbarquesPage(); renderDashboard(); renderNegocios();
 }
 function editEmbarquePeriodo(id) {
   const el = document.getElementById(`embPeriodo-${id}`);
@@ -3174,17 +3191,17 @@ function renderFinanceiro() {
   const total = data.negocios.reduce((s,n) => s + Number(n.comissao||0), 0);
   const totalCorretora = data.negocios.reduce((s,n) => s + Number(n.comissao_corretora||0), 0);
   const totalCorretor = data.negocios.reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
-  const pago = data.negocios.filter(n => n.status === "Pago").reduce((s,n) => s + Number(n.comissao||0), 0);
+  const pago = data.negocios.filter(n => n.comissao_recebida_em).reduce((s,n) => s + Number(n.comissao||0), 0);
   const aReceber = total - pago;
   const hoje = todayISO();
-  const inadimplencia = data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento && n.data_pagamento < hoje).reduce((s,n) => s + Number(n.comissao||0), 0);
+  const inadimplencia = data.negocios.filter(n => !n.comissao_recebida_em && n.data_pagamento && n.data_pagamento < hoje).reduce((s,n) => s + Number(n.comissao||0), 0);
   const media = data.negocios.length > 0 ? total / data.negocios.length : 0;
 
   const finCardsEl = document.getElementById("finCards");
   if (finCardsEl) finCardsEl.innerHTML = [
-    { label: "Comissões recebidas", value: fmtMoney(pago), foot: `${data.negocios.filter(n=>n.status==="Pago").length} lançamento(s) pago(s)`, ic: "&#10003;", bg: "var(--green-soft)", color: "var(--green)" },
-    { label: "Comissões pendentes", value: fmtMoney(aReceber), foot: `${data.negocios.filter(n=>n.status!=="Pago").length} a receber`, ic: "&#128337;", bg: "var(--gold-soft)", color: "var(--gold)" },
-    { label: "Inadimplência", value: fmtMoney(inadimplencia), foot: `${data.negocios.filter(n=>n.status!=="Pago"&&n.data_pagamento&&n.data_pagamento<hoje).length} lançamento(s) vencido(s)`, ic: "&#9888;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Comissões recebidas", value: fmtMoney(pago), foot: `${data.negocios.filter(n=>n.comissao_recebida_em).length} lançamento(s) pago(s)`, ic: "&#10003;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Comissões pendentes", value: fmtMoney(aReceber), foot: `${data.negocios.filter(n=>!n.comissao_recebida_em).length} a receber`, ic: "&#128337;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Inadimplência", value: fmtMoney(inadimplencia), foot: `${data.negocios.filter(n=>!n.comissao_recebida_em&&n.data_pagamento&&n.data_pagamento<hoje).length} lançamento(s) vencido(s)`, ic: "&#9888;", bg: "var(--red-soft)", color: "var(--red)" },
     { label: "Comissão média", value: fmtMoney(media), foot: "por negociação", ic: "&#128200;", bg: "var(--blue-soft)", color: "var(--blue)" },
   ].map(dashCardHtml).join("");
 
@@ -3220,7 +3237,7 @@ function renderFinanceiro() {
   if (vencEl) {
     const em7dias = new Date(); em7dias.setDate(em7dias.getDate() + 7);
     const em7ISO = toISODate(em7dias);
-    const proximos = data.negocios.filter(n => n.status !== "Pago" && n.data_pagamento && n.data_pagamento >= hoje && n.data_pagamento <= em7ISO)
+    const proximos = data.negocios.filter(n => !n.comissao_recebida_em && n.data_pagamento && n.data_pagamento >= hoje && n.data_pagamento <= em7ISO)
       .sort((a,b) => a.data_pagamento.localeCompare(b.data_pagamento));
     vencEl.innerHTML = proximos.length === 0 ? `<div class="placeholder-box">Nenhum vencimento nos próximos 7 dias.</div>` :
       proximos.map(n => {
@@ -3310,7 +3327,7 @@ function renderComissoesPage() {
   const todasLinhas = data.negocios.map(n => ({
     id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
     vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
-    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", status: n.status, negocio: n,
+    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, negocio: n,
   }));
   popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltro = document.getElementById("comissoesFilterMes").value;
@@ -3318,7 +3335,7 @@ function renderComissoesPage() {
   const vencimentoFiltro = document.getElementById("comissoesFilterVencimento").value;
   const hojeISO = todayISO();
   let list = todasLinhas
-    .filter(n => filtro === "todas" || (filtro === "pago" ? n.status === "Pago" : n.status !== "Pago"))
+    .filter(n => filtro === "todas" || (filtro === "pago" ? n.recebida : !n.recebida))
     .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro)
     .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro))
     .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO));
@@ -3332,7 +3349,7 @@ function renderComissoesPage() {
 
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
-      const pago = c.status === "Pago";
+      const pago = c.recebida;
       const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
       const statusLabel = pago ? "Recebido" : vencido ? "Vencido" : "A receber";
       const statusClasse = pago ? "pago" : vencido ? "atrasado" : "agendado";
@@ -3395,11 +3412,11 @@ function gerarRelatorioComissoes() {
   const clienteFiltro = (document.getElementById("comissoesFilterCliente").value || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const totalValor = list.reduce((s, c) => s + c.valor, 0);
-  const recebidas = list.filter(c => c.status === "Pago").length;
+  const recebidas = list.filter(c => c.recebida).length;
   const hojeISO = todayISO();
 
   const linhas = list.map(c => {
-    const pago = c.status === "Pago";
+    const pago = c.recebida;
     const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
     const statusLabel = pago ? "RECEBIDO" : vencido ? "VENCIDO" : "A RECEBER";
     const statusCor = pago ? "#2f7d32" : vencido ? "#b3261e" : "#a6741a";
@@ -3494,8 +3511,8 @@ async function gerarBoletoComissaoAgrupado() {
 async function toggleComissaoPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
-  const pago = n.status !== "Pago";
-  const payload = pago ? { status: "Pago", comissao_recebida_em: todayISO() } : { status: "Fechado", comissao_recebida_em: null };
+  const pago = !n.comissao_recebida_em;
+  const payload = { comissao_recebida_em: pago ? todayISO() : null };
   await sb.from("nexus_negocios").update(payload).eq("id", negocioId);
   await loadNegocios();
   renderFinanceiro(); renderNegocios(); renderDashboard();
@@ -3799,7 +3816,7 @@ function gerarRelatorioProdutor() {
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const totalValor = negocios.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
-  const recebidos = negocios.filter(n => n.status === "Pago").length;
+  const recebidos = negocios.filter(n => n.comissao_recebida_em).length;
   const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const grupo = produtores.length > 1;
@@ -3808,7 +3825,7 @@ function gerarRelatorioProdutor() {
   const linhas = negocios.map(n => {
     const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
     const valor = Number(n.quantidade||0) * Number(n.preco||0);
-    const recebido = n.status === "Pago";
+    const recebido = !!n.comissao_recebida_em;
     const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
     const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
     const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
