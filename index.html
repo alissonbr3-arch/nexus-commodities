@@ -1014,6 +1014,11 @@ function fmtDataPorExtenso(iso) {
   return `${String(d).padStart(2,"0")} de ${meses[m-1]} de ${y}`;
 }
 function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
+// Negócios raros com mais de uma data de pagamento: linhas extras pra completar a
+// DATA DE PAGAMENTO na Confirmação (uma linha por pagamento adicional).
+function linhasPagamentosExtra(n) {
+  return (n.pagamentos_extra || []).map(p => `+ ${fmtDate(p.data)} — ${p.unidade === "sc" ? fmtNum(p.valor) + " sc" : fmtMoney(p.valor)}`);
+}
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
@@ -1955,11 +1960,16 @@ function onClienteSelectChange() {
 function onModalidadeChange() {
   const cif = v("f_modalidade") === "CIF";
   document.getElementById("f_localOrigemLabel").textContent = cif ? "Local de entrega" : "Local de retirada";
+  // No CIF, o local de entrega sempre é o comprador — preenche automaticamente com o
+  // nome + cidade dele, mas só se o campo ainda estiver vazio (continua editável).
   if (cif && !v("f_localOrigem")) {
     const sel = v("f_clienteSelect");
     const comprador = data.cadastros.find(c => c.id === sel);
     const nomeComprador = comprador ? comprador.nome : (sel === "__outro__" ? v("f_contraparte") : "");
-    if (nomeComprador) document.getElementById("f_localOrigem").value = nomeComprador;
+    if (nomeComprador) {
+      const cidade = comprador?.cidade ? ` — ${comprador.cidade}` : "";
+      document.getElementById("f_localOrigem").value = `${nomeComprador}${cidade}`;
+    }
   }
 }
 function sugerirNumeroContrato() {
@@ -2003,8 +2013,35 @@ function atualizarComissaoTotal() {
   const pctCorretora = data.config.comissao_pct_corretora, pctCorretor = data.config.comissao_pct_corretor;
   document.getElementById("f_comissaoSplitDisplay").textContent = `${fmtMoney(total * pctCorretora/100)} corretora (${pctCorretora}%) · ${fmtMoney(total * pctCorretor/100)} corretor (${pctCorretor}%)`;
 }
+let negocioPagamentosExtra = [];
+function renderPagamentosExtraModal() {
+  const wrap = document.getElementById("f_pagamentosExtraList");
+  if (!wrap) return;
+  wrap.innerHTML = negocioPagamentosExtra.map((p, i) => `
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="date" value="${p.data||""}" onchange="atualizarPagamentoExtra(${i},'data',this.value)" style="flex:1.2">
+      <input type="number" step="0.01" placeholder="Valor" value="${p.valor||""}" onchange="atualizarPagamentoExtra(${i},'valor',this.value)" style="flex:1">
+      <select onchange="atualizarPagamentoExtra(${i},'unidade',this.value)" style="width:64px">
+        <option value="R$" ${p.unidade!=="sc"?"selected":""}>R$</option>
+        <option value="sc" ${p.unidade==="sc"?"selected":""}>sc</option>
+      </select>
+      <button type="button" class="btn-danger-text" onclick="removerPagamentoExtra(${i})">&times;</button>
+    </div>`).join("");
+}
+function adicionarPagamentoExtra() {
+  negocioPagamentosExtra.push({ data: "", valor: "", unidade: "R$" });
+  renderPagamentosExtraModal();
+}
+function removerPagamentoExtra(i) {
+  negocioPagamentosExtra.splice(i, 1);
+  renderPagamentosExtraModal();
+}
+function atualizarPagamentoExtra(i, campo, valor) {
+  negocioPagamentosExtra[i][campo] = valor;
+}
 function openNegocioModal(id) {
   const item = id ? data.negocios.find(n => n.id === id) : { grao: "", contraparte: "", cliente_id: "", produtor_id: "", fazenda_id: "", corretor_id: currentUserId, quantidade: "", preco: "", comissao: "", comissao_saca: "", data: "", status: "Negociação", obs: "", numero_contrato: sugerirNumeroContrato(), safra: "", modalidade: "FOB", local_origem: "", data_inicio_embarque: "", data_fim_embarque: "", data_pagamento: "" };
+  negocioPagamentosExtra = item.pagamentos_extra ? item.pagamentos_extra.map(p => ({ ...p })) : [];
   const isOutro = !item.cliente_id && !!item.contraparte;
   const compradorOptions = data.cadastros.filter(c => c.tipo === "Comprador").map(c => `<option value="${c.id}" ${item.cliente_id===c.id?"selected":""}>${c.nome}</option>`).join("");
   const produtorOptions = data.cadastros.filter(c => c.tipo === "Produtor").map(c => `<option value="${c.id}" ${item.produtor_id===c.id?"selected":""}>${c.nome}</option>`).join("");
@@ -2048,6 +2085,11 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Modalidade</label><select id="f_modalidade" onchange="onModalidadeChange()"><option ${(!item.modalidade||item.modalidade==="FOB")?"selected":""}>FOB</option><option ${item.modalidade==="CIF"?"selected":""}>CIF</option></select></div><div class="field"><label id="f_localOrigemLabel">Local de retirada</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
+    <div class="field">
+      <label>Pagamentos adicionais <span style="font-weight:400;color:var(--ink-soft)">(negócios raros com mais de uma data de pagamento)</span></label>
+      <div id="f_pagamentosExtraList"></div>
+      <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:11px" onclick="adicionarPagamentoExtra()">+ Adicionar pagamento</button>
+    </div>
     <div class="field"><label>Status</label><select id="f_status">${["Negociação","Fechado","Finalizado"].map(s => `<option ${item.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
     <div class="field"><label>Observações</label><textarea id="f_obs" rows="2">${item.obs || ""}</textarea></div>
     <div class="field"><label>Anexos (nota fiscal, comprovante, contrato assinado...)</label>
@@ -2062,6 +2104,7 @@ function openNegocioModal(id) {
   if (id) renderAnexosNegocio(id);
   onModalidadeChange();
   atualizarContaBancariaWrap();
+  renderPagamentosExtraModal();
   showModal();
 }
 async function saveNegocio(id) {
@@ -2079,6 +2122,7 @@ async function saveNegocio(id) {
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
+    pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$" })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
   // "Finalizado" dá baixa em tudo do checklist, menos a comissão — essa é fechada
   // à parte, na tela de Financeiro (via comissao_recebida_em).
@@ -2358,7 +2402,7 @@ function montarConfirmacaoHtml(negocioId) {
     <tr><td class="label">PRODUTO</td><td>${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
     <tr><td class="label">MODALIDADE</td><td>${n.modalidade || "FOB"}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA"}</td><td>${n.local_origem || "—"}</td></tr>
-    <tr><td class="label">DATA DE PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
+    <tr><td class="label">DATA DE PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}${linhasPagamentosExtra(n).map(l => "<br>" + l).join("")}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE"}</td><td>${fmtDate(n.data_inicio_embarque)}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE"}</td><td>${fmtDate(n.data_fim_embarque)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
@@ -2613,7 +2657,7 @@ async function gerarConfirmacaoPdfNativo(negocioId) {
     ["PRODUTO", `${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}`],
     ["MODALIDADE", modalidade],
     [modalidade === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA", n.local_origem || "—"],
-    ["DATA DE PAGAMENTO", fmtDate(n.data_pagamento)],
+    ["DATA DE PAGAMENTO", [fmtDate(n.data_pagamento), ...linhasPagamentosExtra(n)].join("\n")],
     [modalidade === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE", fmtDate(n.data_inicio_embarque)],
     [modalidade === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE", fmtDate(n.data_fim_embarque)],
     ["QUANTIDADE", `${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)`],
