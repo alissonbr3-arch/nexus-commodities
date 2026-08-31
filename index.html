@@ -1181,6 +1181,12 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
     document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
+    // Toda vez que entra em Negociações, volta o filtro pros próprios negócios do corretor —
+    // quem quiser ver de todo mundo escolhe "Todos os corretores" de novo no filtro.
+    if (btn.dataset.page === "negociacoes") {
+      document.getElementById("negFilterCorretor").value = "eu";
+      renderNegocios();
+    }
   });
 });
 document.querySelectorAll(".nav-item").forEach(btn => {
