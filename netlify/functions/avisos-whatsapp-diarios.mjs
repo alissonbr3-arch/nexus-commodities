@@ -68,7 +68,10 @@ async function processarLote({ negocios, cadastrosPorId, campoData, campoFlag, t
 }
 
 // Roda todo dia de manhã: avisa produtores por WhatsApp (Z-API) no dia do pagamento
-// e no dia de início do embarque dos negócios em aberto. Idempotente via flags em nexus_negocios.
+// dos negócios em aberto. Idempotente via flag em nexus_negocios.
+// (O aviso automático de embarque foi desativado a pedido — o aviso de novo
+// negócio continua existindo, mas é manual, disparado pelo botão 📲 na lista
+// de Negociações via enviar-whatsapp-negocio.mjs, não por aqui.)
 export default async () => {
   const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN, SUPABASE_SERVICE_ROLE_KEY } = process.env;
   if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -82,18 +85,15 @@ export default async () => {
 
   const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" });
 
-  const [pagResp, embResp, cfgResp] = await Promise.all([
+  const [pagResp, cfgResp] = await Promise.all([
     fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?data_pagamento=eq.${hoje}&whatsapp_aviso_pagamento_enviado=eq.false&select=*`, { headers: adminHeaders }),
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?data_inicio_embarque=eq.${hoje}&whatsapp_aviso_embarque_enviado=eq.false&select=*`, { headers: adminHeaders }),
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=whatsapp_msg_pagamento,whatsapp_msg_embarque`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=whatsapp_msg_pagamento`, { headers: adminHeaders }),
   ]);
   const negociosPagamento = await pagResp.json();
-  const negociosEmbarque = await embResp.json();
   const cfgRows = await cfgResp.json();
   const templatePagamento = cfgRows[0]?.whatsapp_msg_pagamento || "Olá, {{NOME}}! Aqui é da Nexus Commodities. Hoje é a data de pagamento do seu negócio nº {{CONTRATO}} ({{GRAO}} {{SAFRA}}, {{QUANTIDADE}} sc). Qualquer dúvida, fale com seu corretor.";
-  const templateEmbarque = cfgRows[0]?.whatsapp_msg_embarque || "Olá, {{NOME}}! Aqui é da Nexus Commodities. Hoje inicia o período de embarque do seu negócio nº {{CONTRATO}} ({{GRAO}} {{SAFRA}}). Por favor, providencie a nota fiscal e demais documentos necessários.";
 
-  const idsProdutores = [...new Set([...negociosPagamento, ...negociosEmbarque].map(n => n.produtor_id).filter(Boolean))];
+  const idsProdutores = [...new Set(negociosPagamento.map(n => n.produtor_id).filter(Boolean))];
   const cadastrosPorId = new Map();
   if (idsProdutores.length) {
     const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
@@ -106,12 +106,7 @@ export default async () => {
     montarMensagem: (n, p) => preencherTemplate(templatePagamento, n, p),
   });
 
-  await processarLote({
-    negocios: negociosEmbarque, cadastrosPorId, campoFlag: "whatsapp_aviso_embarque_enviado", tipoLog: "WhatsApp Aviso de Embarque", zapi, adminHeaders,
-    montarMensagem: (n, p) => preencherTemplate(templateEmbarque, n, p),
-  });
-
-  return new Response(JSON.stringify({ ok: true, pagamento: negociosPagamento.length, embarque: negociosEmbarque.length }), { status: 200 });
+  return new Response(JSON.stringify({ ok: true, pagamento: negociosPagamento.length }), { status: 200 });
 };
 
 export const config = { schedule: "0 11 * * *" };

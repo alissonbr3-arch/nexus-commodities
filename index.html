@@ -953,9 +953,8 @@
         <div class="cfg-subpage" id="cfgsub-whatsapp" style="display:none">
           <div class="ws-card" style="max-width:420px">
             <div class="ws-name" style="margin-bottom:4px">Mensagens automáticas (WhatsApp)</div>
-            <div class="ws-sub" style="margin-bottom:16px">Texto enviado automaticamente ao produtor no dia do pagamento e no dia de início do embarque. Use <code>{{NOME}}</code>, <code>{{CONTRATO}}</code>, <code>{{GRAO}}</code>, <code>{{SAFRA}}</code> e <code>{{QUANTIDADE}}</code> onde quiser que o sistema preencha automaticamente.</div>
+            <div class="ws-sub" style="margin-bottom:16px">Texto enviado automaticamente ao produtor no dia do pagamento. Use <code>{{NOME}}</code>, <code>{{CONTRATO}}</code>, <code>{{GRAO}}</code>, <code>{{SAFRA}}</code> e <code>{{QUANTIDADE}}</code> onde quiser que o sistema preencha automaticamente. (O aviso automático de embarque foi desativado — o aviso de novo negócio continua sendo manual, pelo botão 📲 na lista de Negociações.)</div>
             <div class="field"><label>Aviso de pagamento</label><textarea id="f_cfgMsgPagamento" rows="4"></textarea></div>
-            <div class="field"><label>Aviso de embarque</label><textarea id="f_cfgMsgEmbarque" rows="4"></textarea></div>
             <button class="btn-primary" onclick="salvarMensagensWhatsapp()">Salvar</button>
             <div id="cfgMsgSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
           </div>
@@ -4550,12 +4549,10 @@ function renderConfiguracoes() {
   document.getElementById("f_cfgFunruralPct").value = data.config.funrural_pct ?? 1.5;
 
   document.getElementById("f_cfgMsgPagamento").value = data.config.whatsapp_msg_pagamento || "";
-  document.getElementById("f_cfgMsgEmbarque").value = data.config.whatsapp_msg_embarque || "";
 }
 async function salvarMensagensWhatsapp() {
   const payload = {
     whatsapp_msg_pagamento: v("f_cfgMsgPagamento"),
-    whatsapp_msg_embarque: v("f_cfgMsgEmbarque"),
     updated_at: new Date().toISOString(),
   };
   await sb.from("nexus_config").update(payload).eq("id", 1);
