@@ -646,11 +646,11 @@
       <!-- CADASTROS -->
       <div class="page" id="page-cadastros">
         <div class="panel-head">
-          <h2>Cadastros — produtores, compradores e transportadoras</h2>
+          <h2>Cadastros — produtores, compradores, transportadoras e armazéns</h2>
           <div class="actions-left">
             <input type="text" class="search-input" id="conSearch" placeholder="Buscar nome ou cidade...">
             <select class="filter" id="conFilterTipo" style="display:none">
-              <option value="Produtor" selected>Produtor</option><option value="Comprador">Comprador</option><option value="Transportadora">Transportadora</option>
+              <option value="Produtor" selected>Produtor</option><option value="Comprador">Comprador</option><option value="Transportadora">Transportadora</option><option value="Armazém">Armazém</option>
             </select>
             <select class="filter" id="conFilterCategoriaComprador" style="display:none">
               <option value="">Todas as categorias</option><option value="Cooperativa">Cooperativa</option><option value="Trading">Trading</option><option value="Cerealista">Cerealista</option>
@@ -665,6 +665,7 @@
           <button class="con-tab-btn active" data-contipo="Produtor">Produtores</button>
           <button class="con-tab-btn" data-contipo="Comprador">Compradores</button>
           <button class="con-tab-btn" data-contipo="Transportadora">Transportadoras</button>
+          <button class="con-tab-btn" data-contipo="Armazém">Armazéns</button>
         </div>
         <table>
           <thead><tr><th></th><th data-sort="nome">Nome</th><th data-sort="tipo">Tipo</th><th data-sort="telefone">Telefone</th><th data-sort="cidade">Cidade/UF</th><th>Responsável</th><th></th></tr></thead>
@@ -2101,6 +2102,7 @@ function openNegocioModal(id) {
     <div class="field"><label>Quem paga a comissão</label><select id="f_comissaoPagador"><option ${(!item.comissao_pagador||item.comissao_pagador==="Vendedor")?"selected":""}>Vendedor</option><option ${item.comissao_pagador==="Comprador"?"selected":""}>Comprador</option></select></div>
     <div class="field"><label>Funrural (como o produtor recolhe)</label><select id="f_funruralForma" data-tinha-valor="${item.funrural_forma?"1":"0"}"><option ${(!item.funrural_forma||item.funrural_forma==="Comercialização")?"selected":""}>Comercialização</option><option ${item.funrural_forma==="Folha de Pagamento"?"selected":""}>Folha de Pagamento</option></select></div>
     <div class="field-row"><div class="field"><label>Modalidade</label><select id="f_modalidade" onchange="onModalidadeChange()"><option ${(!item.modalidade||item.modalidade==="FOB")?"selected":""}>FOB</option><option ${item.modalidade==="CIF"?"selected":""}>CIF</option></select></div><div class="field"><label id="f_localOrigemLabel">Local de retirada</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
+    <div class="field"><label>Armazém (opcional — pra mandar a Liberação de Embarque também pro e-mail dele)</label><select id="f_armazemSelect"><option value="">— Nenhum —</option>${data.cadastros.filter(c => c.tipo === "Armazém").map(c => `<option value="${c.id}" ${item.armazem_id===c.id?"selected":""}>${c.nome}</option>`).join("")}</select></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" value="${item.data_fim_embarque||""}"></div></div>
     <div class="field-row"><div class="field"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
     <div class="field">
@@ -2138,7 +2140,7 @@ async function saveNegocio(id) {
     quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), preco_liquido: n("f_precoLiquido") || null, comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
-    numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"),
+    numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"), armazem_id: v("f_armazemSelect") || null,
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$" })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
@@ -2870,7 +2872,8 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
   if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return null; }
   const sacas = Number(n.quantidade || 0);
   const kg = sacas * 60;
-  const destinatario = n.local_origem || "—";
+  const armazem = n.armazem_id ? data.cadastros.find(c => c.id === n.armazem_id) : null;
+  const destinatario = armazem ? armazem.nome : (n.local_origem || "—");
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Liberação de Embarque ${n.numero_contrato || ""}</title>
@@ -2919,7 +2922,7 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
   <p style="text-align:center; margin-top:40px; font-size:11px; color:#555">${NEXUS_EMPRESA.nome}<br>${NEXUS_EMPRESA.endereco}<br>Fone / WhatsApp: ${NEXUS_EMPRESA.telefone}<br>E-mail: ${NEXUS_EMPRESA.email}</p>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  return { html, numeroContrato: n.numero_contrato, vendedor, comprador };
+  return { html, numeroContrato: n.numero_contrato, vendedor, comprador, armazem };
 }
 function gerarLiberacaoEmbarque(negocioId) {
   const r = montarLiberacaoEmbarqueHtml(negocioId);
@@ -2931,13 +2934,16 @@ function gerarLiberacaoEmbarque(negocioId) {
 async function enviarLiberacaoPorEmail(negocioId) {
   const r = montarLiberacaoEmbarqueHtml(negocioId);
   if (!r) return;
-  const { vendedor, comprador } = r;
+  const { vendedor, comprador, armazem } = r;
   if (!vendedor.email || !comprador.email) {
     const faltando = [!vendedor.email ? vendedor.nome : null, !comprador.email ? comprador.nome : null].filter(Boolean).join(" e ");
     alert(`Cadastre o e-mail de contato de ${faltando} antes de enviar (aba Cadastros).`);
     return;
   }
-  const confirmar = confirm(`Enviar a Liberação de Embarque ${r.numeroContrato || ""} por e-mail para:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})\n\nConfirmar envio?`);
+  const linhaArmazem = armazem
+    ? (armazem.email ? `\n- ${armazem.nome} (${armazem.email})` : `\n⚠️ ${armazem.nome} está selecionado como armazém, mas não tem e-mail cadastrado — não vai receber.`)
+    : "";
+  const confirmar = confirm(`Enviar a Liberação de Embarque ${r.numeroContrato || ""} por e-mail para:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})${linhaArmazem}\n\nConfirmar envio?`);
   if (!confirmar) return;
   const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
   const { data: { session } } = await sb.auth.getSession();
@@ -3007,7 +3013,7 @@ function exportCadastrosXlsx() {
   ws["!cols"] = Object.keys(linhas[0]).map(k => ({ wch: Math.max(12, k.length + 2) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Cadastros");
-  const nomesArquivo = { "Produtor": "produtores_nexus.xlsx", "Comprador": "compradores_nexus.xlsx", "Transportadora": "transportadoras_nexus.xlsx" };
+  const nomesArquivo = { "Produtor": "produtores_nexus.xlsx", "Comprador": "compradores_nexus.xlsx", "Transportadora": "transportadoras_nexus.xlsx", "Armazém": "armazens_nexus.xlsx" };
   const nomeArquivo = nomesArquivo[filterTipo] || "cadastros_nexus.xlsx";
   XLSX.writeFile(wb, nomeArquivo);
 }
@@ -3202,7 +3208,7 @@ function openContatoModal(id) {
         : `<div style="font-size:11.5px;color:var(--ink-soft)">Salve o cadastro para adicionar uma foto.</div>`}
     </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
-    <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
+    <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora","Armazém"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     ${extraContatoBlocoHtml("telefone", item.telefones_extra, "telefones")}
     ${cidadeUfFieldsHtml(item.cidade, !id)}
     <div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div>

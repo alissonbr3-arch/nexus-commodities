@@ -45,14 +45,20 @@ export default async (req) => {
   const negocio = negRows[0];
   if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,email,emails_extra`, { headers: adminHeaders });
+  const idsParaBuscar = [negocio.produtor_id, negocio.cliente_id, negocio.armazem_id].filter(Boolean);
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsParaBuscar.join(",")})&select=id,nome,email,emails_extra`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const vendedor = cads.find(c => c.id === negocio.produtor_id);
   const comprador = cads.find(c => c.id === negocio.cliente_id);
+  const armazem = negocio.armazem_id ? cads.find(c => c.id === negocio.armazem_id) : null;
   if (!vendedor?.email || !comprador?.email) {
     return json({ ok: false, erro: "Vendedor e comprador precisam ter e-mail de contato cadastrado antes de enviar." }, 400);
   }
-  const destinatarios = [...new Set([vendedor.email, ...(vendedor.emails_extra || []), comprador.email, ...(comprador.emails_extra || [])].filter(Boolean))];
+  const destinatarios = [...new Set([
+    vendedor.email, ...(vendedor.emails_extra || []),
+    comprador.email, ...(comprador.emails_extra || []),
+    armazem?.email, ...((armazem?.emails_extra) || []),
+  ].filter(Boolean))];
 
   const resendKey = process.env.RESEND_API_KEY;
   let sucesso = false, erro = null;
