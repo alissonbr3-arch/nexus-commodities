@@ -2354,13 +2354,9 @@ function montarConfirmacaoHtml(negocioId) {
   const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
   const comFundersulFundems = aplicaFundersulFundems(comprador);
   const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
-  // A data que sai no rodapé/assinatura é fixada na primeira vez que a confirmação é
-  // gerada — não muda mais depois, mesmo reabrindo/reimprimindo o documento outro dia.
-  if (!n.confirmacao_gerada_em) {
-    n.confirmacao_gerada_em = todayISO();
-    sb.from("nexus_negocios").update({ confirmacao_gerada_em: n.confirmacao_gerada_em }).eq("id", negocioId).then(() => {});
-  }
-  const hoje = fmtDataPorExtenso(n.confirmacao_gerada_em);
+  // A data que sai no rodapé/assinatura é a data do negócio (campo "Data" da negociação),
+  // não a data em que o documento é gerado/reimpresso.
+  const hoje = fmtDataPorExtenso(n.data) || new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const boilerplateHtml = `
   <h3>QUALIDADE</h3>
@@ -2553,12 +2549,8 @@ async function gerarConfirmacaoPdfNativo(negocioId) {
   const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
   const comFundersulFundems = aplicaFundersulFundems(comprador);
   const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
-  // Mesma regra do montarConfirmacaoHtml: a data fica fixada na primeira geração.
-  if (!n.confirmacao_gerada_em) {
-    n.confirmacao_gerada_em = todayISO();
-    await sb.from("nexus_negocios").update({ confirmacao_gerada_em: n.confirmacao_gerada_em }).eq("id", negocioId);
-  }
-  const hoje = fmtDataPorExtenso(n.confirmacao_gerada_em);
+  // Mesma regra do montarConfirmacaoHtml: a data do rodapé é a data do negócio.
+  const hoje = fmtDataPorExtenso(n.data) || new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const modalidade = n.modalidade || "FOB";
   const logo = await logoParaPdf();
 
