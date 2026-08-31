@@ -9,6 +9,21 @@ export const NEXUS_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH
 
 function fmtDate(iso) { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; }
 function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
+// Mesma lógica de index.html (linhasPagamento) — negócios com pagamento em 2+ parcelas viram
+// uma linha por pagamento na Confirmação, sem sinal de "+".
+function quantidadePrimeiraParcela(n) {
+  const somaSacasExtras = (n.pagamentos_extra || []).filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
+  return Math.max(0, Number(n.quantidade || 0) - somaSacasExtras);
+}
+function linhasPagamento(n) {
+  const extras = n.pagamentos_extra || [];
+  const linhas = [["DATA DE PAGAMENTO", fmtDate(n.data_pagamento) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
+  extras.forEach((p, i) => {
+    const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
+    linhas.push([`DATA DE PAGAMENTO (${i + 2}ª PARC)`, `${fmtDate(p.data)} — ${valor}`]);
+  });
+  return linhas;
+}
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 // Fundersul e Fundems só se aplicam quando o comprador é Trading (ou sem categoria definida).
@@ -226,7 +241,7 @@ export function montarConfirmacaoHtml(n, vendedor, comprador, fazenda, config) {
     <tr><td class="label">PRODUTO</td><td>${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
     <tr><td class="label">MODALIDADE</td><td>${n.modalidade || "FOB"}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA"}</td><td>${n.local_origem || "—"}</td></tr>
-    <tr><td class="label">DATA DE PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}</td></tr>
+    ${linhasPagamento(n).map(([label, valor]) => `<tr><td class="label">${label}</td><td>${valor}</td></tr>`).join("")}
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE"}</td><td>${fmtDate(n.data_inicio_embarque)}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE"}</td><td>${fmtDate(n.data_fim_embarque)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>

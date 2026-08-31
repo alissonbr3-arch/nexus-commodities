@@ -1014,10 +1014,22 @@ function fmtDataPorExtenso(iso) {
   return `${String(d).padStart(2,"0")} de ${meses[m-1]} de ${y}`;
 }
 function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
-// Negócios raros com mais de uma data de pagamento: linhas extras pra completar a
-// DATA DE PAGAMENTO na Confirmação (uma linha por pagamento adicional).
-function linhasPagamentosExtra(n) {
-  return (n.pagamentos_extra || []).map(p => `+ ${fmtDate(p.data)} — ${p.unidade === "sc" ? fmtNum(p.valor) + " sc" : fmtMoney(p.valor)}`);
+// Negócios com pagamento em 2 (ou mais) parcelas: cada pagamento vira sua própria linha na
+// Confirmação — "DATA DE PAGAMENTO" pra primeira, "DATA DE PAGAMENTO (Nª PARC)" pra cada
+// extra, sem sinal de "+". A quantidade da 1ª parcela só aparece quando existem parcelas
+// extras (senão fica igual a antes, uma parcela só, sem duplicar a linha QUANTIDADE).
+function quantidadePrimeiraParcela(n) {
+  const somaSacasExtras = (n.pagamentos_extra || []).filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
+  return Math.max(0, Number(n.quantidade || 0) - somaSacasExtras);
+}
+function linhasPagamento(n) {
+  const extras = n.pagamentos_extra || [];
+  const linhas = [["DATA DE PAGAMENTO", fmtDate(n.data_pagamento) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
+  extras.forEach((p, i) => {
+    const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
+    linhas.push([`DATA DE PAGAMENTO (${i + 2}ª PARC)`, `${fmtDate(p.data)} — ${valor}`]);
+  });
+  return linhas;
 }
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
@@ -2408,7 +2420,7 @@ function montarConfirmacaoHtml(negocioId) {
     <tr><td class="label">PRODUTO</td><td>${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}</td></tr>
     <tr><td class="label">MODALIDADE</td><td>${n.modalidade || "FOB"}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA"}</td><td>${n.local_origem || "—"}</td></tr>
-    <tr><td class="label">DATA DE PAGAMENTO</td><td>${fmtDate(n.data_pagamento)}${linhasPagamentosExtra(n).map(l => "<br>" + l).join("")}</td></tr>
+    ${linhasPagamento(n).map(([label, valor]) => `<tr><td class="label">${label}</td><td>${valor}</td></tr>`).join("")}
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE"}</td><td>${fmtDate(n.data_inicio_embarque)}</td></tr>
     <tr><td class="label">${(n.modalidade || "FOB") === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE"}</td><td>${fmtDate(n.data_fim_embarque)}</td></tr>
     <tr><td class="label">QUANTIDADE</td><td>${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)</td></tr>
@@ -2663,7 +2675,7 @@ async function gerarConfirmacaoPdfNativo(negocioId) {
     ["PRODUTO", `${(n.grao || "—").toUpperCase()} EM GRÃOS${n.safra ? " SAFRA " + n.safra : ""}`],
     ["MODALIDADE", modalidade],
     [modalidade === "CIF" ? "LOCAL DE ENTREGA" : "LOCAL DE RETIRADA", n.local_origem || "—"],
-    ["DATA DE PAGAMENTO", [fmtDate(n.data_pagamento), ...linhasPagamentosExtra(n)].join("\n")],
+    ...linhasPagamento(n),
     [modalidade === "CIF" ? "DATA INÍCIO DA ENTREGA" : "DATA INÍCIO DE EMBARQUE", fmtDate(n.data_inicio_embarque)],
     [modalidade === "CIF" ? "DATA FIM DA ENTREGA" : "DATA FIM DE EMBARQUE", fmtDate(n.data_fim_embarque)],
     ["QUANTIDADE", `${fmtNum(kg)} KG (${fmtNum(sacas)} SC/60KG)`],
