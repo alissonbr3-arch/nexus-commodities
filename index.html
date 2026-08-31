@@ -587,7 +587,7 @@
               <option value="">Todos os status</option><option>Rascunho</option><option>Negociação</option><option>Fechado</option><option>Entregue</option><option>Pago</option>
             </select>
             <select class="filter" id="negFilterCorretor">
-              <option value="">Todos os corretores</option><option value="eu">Meus negócios</option>
+              <option value="">Todos os negócios</option><option value="eu">Meus negócios</option>
             </select>
             <button class="btn-ghost" id="lixeiraNegociosBtn">Lixeira</button>
             <button class="btn-primary" id="addNegocioBtn">+ Nova negociação</button>
@@ -597,7 +597,7 @@
           <thead><tr>
             <th data-sort="grao">Produto/Safra</th><th data-sort="numero_contrato">Nº Contrato</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
             <th data-sort="quantidade">Qtd (sc)</th><th data-sort="precoLiquido">Preço Líquido (R$/sc)</th><th data-sort="comissao">Comissão (R$)</th>
-            <th data-sort="data">Data</th><th data-sort="status">Status</th><th>Checklist</th><th></th>
+            <th data-sort="data">Data</th><th data-sort="data_pagamento">Data Pgto</th><th data-sort="status">Status</th><th>Checklist</th><th></th>
           </tr></thead>
           <tbody id="negociosBody"></tbody>
         </table>
@@ -1843,15 +1843,25 @@ function precoLiquidoNegocio(n) {
   const liquidoTotal = informado ? precoLiquido * sacas : liquidoEstimado;
   return { precoLiquido, liquidoTotal, informado };
 }
+function renderNegFilterCorretorSelect() {
+  const sel = document.getElementById("negFilterCorretor");
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">Todos os negócios</option><option value="eu">Meus negócios</option>`
+    + data.equipe.map(e => `<option value="${e.user_id}">${e.nome}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === atual) ? atual : "";
+}
 function renderNegocios() {
+  renderNegFilterCorretorSelect();
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
   const filterCorretor = document.getElementById("negFilterCorretor").value;
+  const matchesCorretor = (n) => !filterCorretor || (filterCorretor === "eu" ? n.corretor_id === currentUserId : n.corretor_id === filterCorretor);
   let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"), precoLiquido: precoLiquidoNegocio(n).precoLiquido }))
-    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus) && (filterCorretor !== "eu" || n.corretor_id === currentUserId));
+    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus) && matchesCorretor(n));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="12">Nenhuma negociação encontrada.</td></tr>` :
+    list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td>${fmtDate(n.data_pagamento)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar PDF por e-mail" onclick="enviarConfirmacaoPdfEmail('${n.id}')">&#128196;</button><button class="btn-edit-text" title="Avisar produtor no WhatsApp" onclick="enviarWhatsappNegocio('${n.id}')">&#128242;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
