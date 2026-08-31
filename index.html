@@ -424,6 +424,12 @@
             </div>
           </div>
           <div class="panel-card">
+            <h3>Volume por corretor</h3>
+            <div class="hint">Porcentagem de cada corretor sobre o total do volume negociado</div>
+            <div class="chart-wrap"><canvas id="dashCorretorVolumeChart"></canvas></div>
+            <div class="legend-row" id="dashCorretorVolumeLegend"></div>
+          </div>
+          <div class="panel-card">
             <h3>Volume negociado por mês</h3>
             <div class="hint">Sacas negociadas nos últimos 6 meses</div>
             <div class="chart-wrap"><canvas id="comissaoChart"></canvas></div>
@@ -999,6 +1005,14 @@ const SAFRAS = gerarSafras();
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function fmtDate(iso) { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; }
+// "20 de agosto de 2026" — usa o mesmo formato que toLocaleDateString({month:"long"})
+// já gerava, mas a partir de uma data ISO (string), sem passar por Date/fuso-horário.
+function fmtDataPorExtenso(iso) {
+  if (!iso) return "";
+  const [y,m,d] = iso.split("-").map(Number);
+  const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  return `${String(d).padStart(2,"0")} de ${meses[m-1]} de ${y}`;
+}
 function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
@@ -1007,7 +1021,7 @@ function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : 
 let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "tudo";
-let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null;
+let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
 let compradorGraoChart = null, compradorVolumeMensalChart = null, produtorEstadoChart = null, produtorSafraChart = null, fluxoCaixaChart = null;
 let currentUserId = null;
 let wsOwnerId = null;
@@ -1335,11 +1349,28 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list);
+  renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
 }
 const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
 const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
 const PALETTE_CORRETOR = ["#6fa348", "#4d7a32", "#96c477", "#365821", "#b8dba0", "#82b85f"];
+// Paleta com tons bem diferentes entre si (não uma variação de uma cor só), pro
+// gráfico de pizza de volume por corretor — cada corretor precisa se distinguir
+// à primeira vista, sem depender de olhar a legenda.
+const PALETTE_CORRETOR_DISTINTA = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c", "#e91e63", "#795548", "#607d8b", "#ffc107", "#34495e", "#ff7043"];
+function renderDashCorretorVolumeChart(list) {
+  const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: list.filter(n => n.corretor_id === e.user_id).reduce((s,n) => s + Number(n.quantidade||0), 0) })).filter(p => p.valor > 0).sort((a,b) => b.valor - a.valor);
+  const totalVolume = porCorretor.reduce((s,p) => s + p.valor, 0);
+  const labels = porCorretor.map(p => p.nome);
+  const values = porCorretor.map(p => p.valor);
+  const ctx = document.getElementById("dashCorretorVolumeChart"); if (dashCorretorVolumeChart) dashCorretorVolumeChart.destroy();
+  dashCorretorVolumeChart = new Chart(ctx, { type: "pie", data: { labels, datasets: [{ data: values, backgroundColor: PALETTE_CORRETOR_DISTINTA, borderWidth: 1, borderColor: "var(--card)" }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => { const pct = totalVolume > 0 ? (ctx.parsed / totalVolume * 100) : 0; return `${ctx.label}: ${fmtNum(ctx.parsed)} sc (${pct.toFixed(1)}%)`; } } } } } });
+  document.getElementById("dashCorretorVolumeLegend").innerHTML = labels.length === 0 ? `<div class="legend-chip">Sem dados</div>` :
+    porCorretor.map((p,i) => {
+      const pct = totalVolume > 0 ? (p.valor / totalVolume * 100) : 0;
+      return `<div class="legend-chip"><span class="legend-dot" style="background:${PALETTE_CORRETOR_DISTINTA[i % PALETTE_CORRETOR_DISTINTA.length]}"></span>${p.nome} — ${pct.toFixed(1)}%</div>`;
+    }).join("");
+}
 function renderDashCompradorChart(list) {
   const totals = {};
   list.forEach(n => { const nome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"); totals[nome] = (totals[nome] || 0) + Number(n.quantidade || 0); });
@@ -2261,7 +2292,13 @@ function montarConfirmacaoHtml(negocioId) {
   const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
   const comFundersulFundems = aplicaFundersulFundems(comprador);
   const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  // A data que sai no rodapé/assinatura é fixada na primeira vez que a confirmação é
+  // gerada — não muda mais depois, mesmo reabrindo/reimprimindo o documento outro dia.
+  if (!n.confirmacao_gerada_em) {
+    n.confirmacao_gerada_em = todayISO();
+    sb.from("nexus_negocios").update({ confirmacao_gerada_em: n.confirmacao_gerada_em }).eq("id", negocioId).then(() => {});
+  }
+  const hoje = fmtDataPorExtenso(n.confirmacao_gerada_em);
 
   const boilerplateHtml = `
   <h3>QUALIDADE</h3>
@@ -2454,7 +2491,12 @@ async function gerarConfirmacaoPdfNativo(negocioId) {
   const { precoLiquido, liquidoTotal: liquido, informado: precoLiquidoInformado } = precoLiquidoNegocio(n);
   const comFundersulFundems = aplicaFundersulFundems(comprador);
   const textoObsDescarga = (comprador.clausula_obs_descarga || "").trim();
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  // Mesma regra do montarConfirmacaoHtml: a data fica fixada na primeira geração.
+  if (!n.confirmacao_gerada_em) {
+    n.confirmacao_gerada_em = todayISO();
+    await sb.from("nexus_negocios").update({ confirmacao_gerada_em: n.confirmacao_gerada_em }).eq("id", negocioId);
+  }
+  const hoje = fmtDataPorExtenso(n.confirmacao_gerada_em);
   const modalidade = n.modalidade || "FOB";
   const logo = await logoParaPdf();
 
