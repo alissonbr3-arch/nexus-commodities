@@ -15,6 +15,27 @@ function fmtDate(iso) { if (!iso) return "—"; const [y, m, d] = iso.split("-")
 function fmtNum(n) { return Number(n || 0).toLocaleString("pt-BR"); }
 function fmtMoney(n) { return "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Mesma conta de preço líquido usada no resto do app.
+function aplicaFundersulFundems(comprador) {
+  return !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
+}
+function precoLiquidoNegocio(n, comprador, config) {
+  const sacas = Number(n.quantidade || 0);
+  const total = Number(n.preco || 0) * sacas;
+  const senar = total * 0.002;
+  const comFundersulFundems = aplicaFundersulFundems(comprador);
+  const fundersulTotal = comFundersulFundems ? Number(config.fundersul_saca || 0) * sacas : 0;
+  const fundemsTotal = comFundersulFundems ? Number(config.fundems_saca || 0) * sacas : 0;
+  const funruralForma = n.funrural_forma || "Comercialização";
+  const funrural = funruralForma === "Comercialização" ? total * Number(config.funrural_pct || 0) / 100 : 0;
+  const comissaoDoVendedor = n.comissao_pagador === "Comprador" ? 0 : Number(n.comissao || 0);
+  const liquidoEstimado = total - comissaoDoVendedor - senar - fundersulTotal - fundemsTotal - funrural;
+  const informado = n.preco_liquido != null && n.preco_liquido !== "";
+  const precoLiquido = informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
+  const liquidoTotal = informado ? precoLiquido * sacas : liquidoEstimado;
+  return { precoLiquido, liquidoTotal };
+}
+
 // Mesmo template visual do "Relatório de Negócios" que já existe em Relatórios > Por Produtor
 // no painel (gerarRelatorioProdutor) — só que fixo nos negócios "em aberto" (Fechado/Entregue,
 // ainda não Pago) de UM produtor, pra mandar o link por WhatsApp todo início de mês.
@@ -32,8 +53,13 @@ export default async (req) => {
   const produtor = produtorRows[0];
   if (!produtor) return paginaErro("Não encontrei esse cadastro.");
 
-  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=eq.${produtorId}&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders });
+  const [negResp, cfgResp] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=eq.${produtorId}&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders }),
+  ]);
   const negocios = await negResp.json().catch(() => []);
+  const cfgRows = await cfgResp.json().catch(() => []);
+  const config = cfgRows[0] || {};
   if (!Array.isArray(negocios) || negocios.length === 0) {
     return paginaErro(`${produtor.nome}, você não tem nenhum negócio em aberto no momento.`);
   }
@@ -41,15 +67,14 @@ export default async (req) => {
   const idsCompradores = [...new Set(negocios.map(n => n.cliente_id).filter(Boolean))];
   let compradores = [];
   if (idsCompradores.length) {
-    const compResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCompradores.join(",")})&select=id,nome`, { headers: adminHeaders });
+    const compResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCompradores.join(",")})&select=id,nome,categoria_comprador`, { headers: adminHeaders });
     compradores = await compResp.json().catch(() => []);
   }
-  const nomeComprador = (n) => n.cliente_id ? (compradores.find(c => c.id === n.cliente_id)?.nome || "—") : (n.contraparte || "—");
+  const compradorDe = (n) => n.cliente_id ? compradores.find(c => c.id === n.cliente_id) : null;
+  const nomeComprador = (n) => compradorDe(n)?.nome || n.contraparte || "—";
 
-  const totalVolume = negocios.reduce((s, n) => s + Number(n.quantidade || 0), 0);
-  const totalValor = negocios.reduce((s, n) => s + Number(n.quantidade || 0) * Number(n.preco || 0), 0);
-  const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  let totalVolume = 0, totalValorLiquido = 0;
 
   // Divide o relatório por cultura + safra — um bloco de tabela pra cada combinação, com
   // subtotal próprio, em vez de uma lista só misturando tudo.
@@ -62,24 +87,24 @@ export default async (req) => {
   const gruposOrdenados = [...grupos.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
 
   const blocos = gruposOrdenados.map(grupo => {
+    let volumeGrupo = 0, valorGrupo = 0;
     const linhasGrupo = grupo.negocios.map(n => {
-      const valor = Number(n.quantidade || 0) * Number(n.preco || 0);
-      const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
-      const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
-      const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
+      const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n, compradorDe(n), config);
+      volumeGrupo += Number(n.quantidade || 0);
+      valorGrupo += liquidoTotal;
+      totalVolume += Number(n.quantidade || 0);
+      totalValorLiquido += liquidoTotal;
       return `<tr>
         <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${nomeComprador(n)}</td>
-        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
+        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
+        <td>${fmtDate(n.data_pagamento)}</td>
         <td><span style="font-size:9.5px;font-weight:bold;color:#a6741a">${(n.status || "—").toUpperCase()}</span></td>
-        <td>${embPeriodo}${embStatus ? `<br><span style="font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado ? "#2f7d32" : "#a6741a"}">${embStatus.toUpperCase()}</span>` : ""}</td>
       </tr>`;
     }).join("");
-    const volumeGrupo = grupo.negocios.reduce((s, n) => s + Number(n.quantidade || 0), 0);
-    const valorGrupo = grupo.negocios.reduce((s, n) => s + Number(n.quantidade || 0) * Number(n.preco || 0), 0);
     return `
-    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${grupo.grao.toUpperCase()}${grupo.safra ? " — SAFRA " + grupo.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${grupo.negocios.length} negócio${grupo.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)})</span></h3>
+    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${grupo.grao.toUpperCase()}${grupo.safra ? " — SAFRA " + grupo.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${grupo.negocios.length} negócio${grupo.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
     <table class="linhas">
-      <thead><tr><th>Contrato</th><th>Data</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Status</th><th>Embarque</th></tr></thead>
+      <thead><tr><th>Contrato</th><th>Data</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Status</th></tr></thead>
       <tbody>${linhasGrupo}</tbody>
     </table>`;
   }).join("");
@@ -112,8 +137,7 @@ export default async (req) => {
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios em aberto</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
-    <div class="item"><span>Valor total</span><b>${fmtMoney(totalValor)}</b></div>
-    <div class="item"><span>Embarques finalizados</span><b>${embarquesFinalizados} de ${negocios.length}</b></div>
+    <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValorLiquido)}</b></div>
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;

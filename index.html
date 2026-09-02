@@ -3917,9 +3917,8 @@ function gerarRelatorioProdutor() {
   if (negocios.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
-  const totalValor = negocios.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
+  const totalValor = negocios.reduce((s,n) => s + precoLiquidoNegocio(n).liquidoTotal, 0);
   const recebidos = negocios.filter(n => n.comissao_recebida_em).length;
-  const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const grupo = produtores.length > 1;
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
@@ -3935,27 +3934,25 @@ function gerarRelatorioProdutor() {
   const gruposCulturaOrdenados = [...gruposCultura.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
 
   const blocos = gruposCulturaOrdenados.map(g => {
+    let volumeGrupo = 0, valorGrupo = 0;
     const linhasGrupo = g.negocios.map(n => {
       const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
-      const valor = Number(n.quantidade||0) * Number(n.preco||0);
+      const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
+      volumeGrupo += Number(n.quantidade||0);
+      valorGrupo += liquidoTotal;
       const recebido = !!n.comissao_recebida_em;
-      const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
-      const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
-      const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
       const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
       return `<tr>
         <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${compradorNome}</td>
-        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
-        <td>${fmtDate(n.data_pagamento)}<br><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
-        <td>${embPeriodo}${embStatus ? `<br><span style=\"font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado?"#2f7d32":"#a6741a"}\">${embStatus.toUpperCase()}</span>` : ""}</td>
+        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
+        <td>${fmtDate(n.data_pagamento)}</td>
+        <td><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
       </tr>`;
     }).join("");
-    const volumeGrupo = g.negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
-    const valorGrupo = g.negocios.reduce((s,n) => s + Number(n.quantidade||0) * Number(n.preco||0), 0);
     return `
-    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${g.grao.toUpperCase()}${g.safra ? " — SAFRA " + g.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${g.negocios.length} negócio${g.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)})</span></h3>
+    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${g.grao.toUpperCase()}${g.safra ? " — SAFRA " + g.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${g.negocios.length} negócio${g.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
     <table class="linhas">
-      <thead><tr><th>Contrato</th><th>Data</th>${grupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Recebimento</th><th>Embarque</th></tr></thead>
+      <thead><tr><th>Contrato</th><th>Data</th>${grupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Recebimento</th></tr></thead>
       <tbody>${linhasGrupo}</tbody>
     </table>`;
   }).join("");
@@ -3995,9 +3992,8 @@ function gerarRelatorioProdutor() {
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios no período</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
-    <div class="item"><span>Valor total</span><b>${fmtMoney(totalValor)}</b></div>
+    <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValor)}</b></div>
     <div class="item"><span>Recebidos</span><b>${recebidos} de ${negocios.length}</b></div>
-    <div class="item"><span>Embarques finalizados</span><b>${embarquesFinalizados} de ${negocios.length}</b></div>
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
