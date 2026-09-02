@@ -1,4 +1,4 @@
-import { NEXUS_EMPRESA, NEXUS_LOGO } from "./_confirmacao-lib.mjs";
+import { NEXUS_EMPRESA, NEXUS_LOGO, tipoCpfCnpj } from "./_confirmacao-lib.mjs";
 
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 
@@ -123,7 +123,7 @@ export default async (req) => {
     </table>`;
   }).join("");
 
-  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? " — CPF " + p.cpf : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
+  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? ` — ${tipoCpfCnpj(p.cpf)} ${p.cpf}` : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios em Aberto — ${isGrupo ? "Grupo" : produtores[0].nome}</title>
   <style>

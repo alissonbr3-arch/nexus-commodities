@@ -1033,6 +1033,27 @@ function linhasPagamento(n) {
   return linhas;
 }
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// Diz se um documento é CPF (até 11 dígitos) ou CNPJ (mais de 11 dígitos) — alguns produtores
+// rurais são cadastrados como pessoa jurídica (CNPJ) em vez de CPF, então o rótulo na
+// Confirmação de Negócio precisa se ajustar sozinho em vez de dizer sempre "CPF".
+function tipoCpfCnpj(valor) {
+  const digitos = String(valor || "").replace(/\D/g, "");
+  if (!digitos) return "CPF";
+  return digitos.length <= 11 ? "CPF" : "CNPJ";
+}
+// Formata como CPF (000.000.000-00) até 11 dígitos, ou CNPJ (00.000.000/0000-00) a partir do
+// 12º dígito — pro campo único "CPF/CNPJ" do cadastro de produtor, sem precisar escolher o tipo.
+function formatCpfCnpj(valor) {
+  const digitos = String(valor || "").replace(/\D/g, "").slice(0, 14);
+  if (digitos.length <= 11) {
+    return digitos.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  }
+  return digitos.replace(/(\d{2})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1/$2").replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+}
+function onCpfCnpjInput(id) {
+  const el = document.getElementById(id);
+  el.value = formatCpfCnpj(el.value);
+}
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
@@ -2403,7 +2424,7 @@ function montarConfirmacaoHtml(negocioId) {
   <h1>CONFIRMAÇÃO DE COMPRA E VENDA DE GRÃOS Nº ${n.numero_contrato || "—"}</h1>
   <table class="dados">
     <tr><td class="label">VENDEDOR</td><td>${vendedor.nome}</td></tr>
-    <tr><td class="label">CPF</td><td>${vendedor.cpf || "—"}</td></tr>
+    <tr><td class="label">${tipoCpfCnpj(vendedor.cpf)}</td><td>${vendedor.cpf || "—"}</td></tr>
     <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${propriedadeIE}</td></tr>
     <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
     <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
@@ -2658,7 +2679,7 @@ async function gerarConfirmacaoPdfNativo(negocioId) {
   y += 22;
 
   tabela([
-    ["VENDEDOR", vendedor.nome], ["CPF", vendedor.cpf || "—"], ["INSCRIÇÃO ESTADUAL", propriedadeIE],
+    ["VENDEDOR", vendedor.nome], [tipoCpfCnpj(vendedor.cpf), vendedor.cpf || "—"], ["INSCRIÇÃO ESTADUAL", propriedadeIE],
     ["PROPRIEDADE", propriedadeNome], ["MUNICÍPIO/UF", propriedadeMunicipioUf],
     ["DADOS BANCÁRIOS", (n.conta_bancaria === "Secundária" && vendedor.dados_bancarios_secundaria) ? vendedor.dados_bancarios_secundaria : (vendedor.dados_bancarios || "—")],
   ]);
@@ -3243,7 +3264,7 @@ function openContatoModal(id) {
       </select>
     </div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
-      <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários (principal)</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
+      <div class="field-row"><div class="field"><label>CPF/CNPJ</label><input type="text" id="f_cpf" value="${item.cpf||""}" oninput="onCpfCnpjInput('f_cpf')" placeholder="000.000.000-00 ou 00.000.000/0000-00"></div><div class="field"><label>Dados bancários (principal)</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
       <div class="field"><label>Dados bancários (secundária) — opcional</label><input type="text" id="f_bancariosSecundaria" value="${item.dados_bancarios_secundaria||""}" placeholder="Preencha só se o produtor tiver uma segunda conta"></div>
       <div class="field"><label>Funrural padrão (como esse produtor recolhe)</label><select id="f_funruralFormaPadrao"><option value="">— Perguntar em cada negócio —</option><option ${item.funrural_forma_padrao==="Comercialização"?"selected":""}>Comercialização</option><option ${item.funrural_forma_padrao==="Folha de Pagamento"?"selected":""}>Folha de Pagamento</option></select></div>
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
@@ -3987,7 +4008,7 @@ function gerarRelatorioProdutor() {
     </table>`;
   }).join("");
 
-  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? " — CPF " + p.cpf : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
+  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? ` — ${tipoCpfCnpj(p.cpf)} ${p.cpf}` : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios — ${grupo ? "Grupo" : produtores[0].nome}</title>
   <style>

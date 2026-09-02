@@ -25,6 +25,14 @@ function linhasPagamento(n) {
   return linhas;
 }
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// Diz se um documento é CPF (até 11 dígitos) ou CNPJ (mais de 11 dígitos) — alguns produtores
+// rurais são cadastrados como pessoa jurídica (CNPJ) em vez de CPF, então o rótulo na
+// Confirmação de Negócio precisa se ajustar sozinho em vez de dizer sempre "CPF".
+export function tipoCpfCnpj(valor) {
+  const digitos = String(valor || "").replace(/\D/g, "");
+  if (!digitos) return "CPF";
+  return digitos.length <= 11 ? "CPF" : "CNPJ";
+}
 
 // Fundersul e Fundems só se aplicam quando o comprador é Trading (ou sem categoria definida).
 function aplicaFundersulFundems(comprador) {
@@ -225,7 +233,7 @@ export function montarConfirmacaoHtml(n, vendedor, comprador, fazenda, config) {
   <h1>CONFIRMAÇÃO DE COMPRA E VENDA DE GRÃOS Nº ${n.numero_contrato || "—"}</h1>
   <table class="dados">
     <tr><td class="label">VENDEDOR</td><td>${vendedor.nome}</td></tr>
-    <tr><td class="label">CPF</td><td>${vendedor.cpf || "—"}</td></tr>
+    <tr><td class="label">${tipoCpfCnpj(vendedor.cpf)}</td><td>${vendedor.cpf || "—"}</td></tr>
     <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${propriedadeIE}</td></tr>
     <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
     <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
