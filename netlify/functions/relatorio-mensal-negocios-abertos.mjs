@@ -65,22 +65,37 @@ export default async () => {
   const cads = await cadResp.json();
   const cadastrosPorId = new Map(cads.map(c => [c.id, c]));
 
-  const negociosPorProdutor = new Map();
+  // Agrupa por grupo_id quando o produtor faz parte de um grupo (ex: sócios da mesma
+  // propriedade) — pra mandar UMA mensagem só e UM relatório consolidado pro grupo todo, em
+  // vez de um relatório picado por pessoa. Sem grupo, a chave é o próprio produtor_id.
+  const bucketsPorChave = new Map();
   for (const n of negocios) {
     if (!n.produtor_id) continue;
-    if (!negociosPorProdutor.has(n.produtor_id)) negociosPorProdutor.set(n.produtor_id, []);
-    negociosPorProdutor.get(n.produtor_id).push(n);
+    const produtor = cadastrosPorId.get(n.produtor_id);
+    const chave = produtor?.grupo_id || n.produtor_id;
+    if (!bucketsPorChave.has(chave)) bucketsPorChave.set(chave, { grupoId: produtor?.grupo_id || null, negocios: [], produtorIds: new Set() });
+    const bucket = bucketsPorChave.get(chave);
+    bucket.negocios.push(n);
+    bucket.produtorIds.add(n.produtor_id);
   }
 
   let produtoresAvisados = 0;
-  for (const [produtorId, negs] of negociosPorProdutor) {
-    const produtor = cadastrosPorId.get(produtorId);
-    const telefones = await telefonesComGrupo(produtor, adminHeaders);
+  for (const bucket of bucketsPorChave.values()) {
+    const produtoresDoBucket = [...bucket.produtorIds].map(id => cadastrosPorId.get(id)).filter(Boolean);
+    const primeiroProdutor = produtoresDoBucket[0];
+    if (!primeiroProdutor) continue;
+    const telefones = await telefonesComGrupo(primeiroProdutor, adminHeaders);
     if (telefones.length === 0) continue;
 
-    const totalSacas = negs.reduce((s, n) => s + Number(n.quantidade || 0), 0);
-    const link = `https://painel.nexuscommoditiesms.com.br/.netlify/functions/relatorio-mensal-publico?id=${produtorId}`;
-    const mensagem = `📅 Relatório mensal — Negócios em aberto (${mesLabel})\n\nOlá, ${produtor.nome}! Você tem ${negs.length} negócio${negs.length === 1 ? "" : "s"} em aberto (${fmtNum(totalSacas)} sc), já fechado${negs.length === 1 ? "" : "s"} mas ainda não pago${negs.length === 1 ? "" : "s"}.\n\nConfira o relatório completo (dá pra salvar como PDF):\n${link}\n\nQualquer dúvida, fale com seu corretor.`;
+    const isGrupo = !!bucket.grupoId;
+    const nomes = produtoresDoBucket.map(p => p.nome).join(", ");
+    const totalSacas = bucket.negocios.reduce((s, n) => s + Number(n.quantidade || 0), 0);
+    const link = isGrupo
+      ? `https://painel.nexuscommoditiesms.com.br/.netlify/functions/relatorio-mensal-publico?grupo=${bucket.grupoId}`
+      : `https://painel.nexuscommoditiesms.com.br/.netlify/functions/relatorio-mensal-publico?id=${primeiroProdutor.id}`;
+    const saudacao = isGrupo ? `Olá, ${nomes}!` : `Olá, ${primeiroProdutor.nome}!`;
+    const pronome = isGrupo ? "vocês têm" : "você tem";
+    const mensagem = `📅 Relatório mensal — Negócios em aberto (${mesLabel})\n\n${saudacao} ${pronome} ${bucket.negocios.length} negócio${bucket.negocios.length === 1 ? "" : "s"} em aberto (${fmtNum(totalSacas)} sc), já fechado${bucket.negocios.length === 1 ? "" : "s"} mas ainda não pago${bucket.negocios.length === 1 ? "" : "s"}.\n\nConfira o relatório completo (dá pra salvar como PDF):\n${link}\n\nQualquer dúvida, fale com seu corretor.`;
 
     let algumSucesso = false;
     const erros = [];
@@ -92,12 +107,12 @@ export default async () => {
         erros.push(`${telefone}: ${e.message || e}`);
       }
     }
-    if (algumSucesso) produtoresAvisados++;
+    if (algumSucesso) produtoresAvisados += produtoresDoBucket.length;
     await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
       method: "POST",
       headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({
-        negocio_id: negs[0].id, tipo: "WhatsApp Relatório Mensal", destinatarios: `${telefones.join(", ")} — ${produtor.nome} (${negs.length} negócios)`,
+        negocio_id: bucket.negocios[0].id, tipo: "WhatsApp Relatório Mensal", destinatarios: `${telefones.join(", ")} — ${nomes} (${bucket.negocios.length} negócios)`,
         enviado_por: null, sucesso: algumSucesso, erro: erros.join("; ") || null,
       }),
     }).catch(() => {});

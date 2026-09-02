@@ -38,31 +38,44 @@ function precoLiquidoNegocio(n, comprador, config) {
 
 // Mesmo template visual do "Relatório de Negócios" que já existe em Relatórios > Por Produtor
 // no painel (gerarRelatorioProdutor) — só que fixo nos negócios "em aberto" (Fechado/Entregue,
-// ainda não Pago) de UM produtor, pra mandar o link por WhatsApp todo início de mês.
+// ainda não Pago), pra mandar o link por WhatsApp todo início de mês. Aceita ?id=<produtor_id>
+// (relatório de um produtor só) ou ?grupo=<grupo_id> (relatório consolidado de todo mundo do
+// mesmo grupo — ex: sócios da mesma propriedade — num único documento).
 export default async (req) => {
   const url = new URL(req.url);
   const produtorId = url.searchParams.get("id");
-  if (!produtorId) return paginaErro("Link inválido.");
+  const grupoId = url.searchParams.get("grupo");
+  if (!produtorId && !grupoId) return paginaErro("Link inválido.");
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return paginaErro("Serviço indisponível no momento. Tente de novo mais tarde.");
   const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
-  const produtorResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${encodeURIComponent(produtorId)}&select=id,nome,cpf,cidade`, { headers: adminHeaders });
-  const produtorRows = await produtorResp.json().catch(() => []);
-  const produtor = produtorRows[0];
-  if (!produtor) return paginaErro("Não encontrei esse cadastro.");
+  let produtores = [];
+  if (grupoId) {
+    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${encodeURIComponent(grupoId)}&select=id,nome,cpf,cidade`, { headers: adminHeaders });
+    produtores = await cadResp.json().catch(() => []);
+  } else {
+    const produtorResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${encodeURIComponent(produtorId)}&select=id,nome,cpf,cidade`, { headers: adminHeaders });
+    produtores = await produtorResp.json().catch(() => []);
+  }
+  if (!Array.isArray(produtores) || produtores.length === 0) return paginaErro("Não encontrei esse cadastro.");
+  const isGrupo = produtores.length > 1;
+  const idsProdutores = produtores.map(p => p.id);
+  const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
   const [negResp, cfgResp] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=eq.${produtorId}&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders }),
     fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders }),
   ]);
   const negocios = await negResp.json().catch(() => []);
   const cfgRows = await cfgResp.json().catch(() => []);
   const config = cfgRows[0] || {};
   if (!Array.isArray(negocios) || negocios.length === 0) {
-    return paginaErro(`${produtor.nome}, você não tem nenhum negócio em aberto no momento.`);
+    return paginaErro(`${tituloProdutores}, ${isGrupo ? "vocês não têm" : "você não tem"} nenhum negócio em aberto no momento.`);
   }
+
+  const nomeProdutor = (n) => produtores.find(p => p.id === n.produtor_id)?.nome || "—";
 
   const idsCompradores = [...new Set(negocios.map(n => n.cliente_id).filter(Boolean))];
   let compradores = [];
@@ -94,8 +107,9 @@ export default async (req) => {
       valorGrupo += liquidoTotal;
       totalVolume += Number(n.quantidade || 0);
       totalValorLiquido += liquidoTotal;
+      const produtorCol = isGrupo ? `<td>${nomeProdutor(n)}</td>` : "";
       return `<tr>
-        <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${nomeComprador(n)}</td>
+        <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${nomeComprador(n)}</td>
         <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
         <td>${fmtDate(n.data_pagamento)}</td>
         <td><span style="font-size:9.5px;font-weight:bold;color:#a6741a">${(n.status || "—").toUpperCase()}</span></td>
@@ -104,12 +118,14 @@ export default async (req) => {
     return `
     <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${grupo.grao.toUpperCase()}${grupo.safra ? " — SAFRA " + grupo.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${grupo.negocios.length} negócio${grupo.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
     <table class="linhas">
-      <thead><tr><th>Contrato</th><th>Data</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Status</th></tr></thead>
+      <thead><tr><th>Contrato</th><th>Data</th>${isGrupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Status</th></tr></thead>
       <tbody>${linhasGrupo}</tbody>
     </table>`;
   }).join("");
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios em Aberto — ${produtor.nome}</title>
+  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? " — CPF " + p.cpf : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios em Aberto — ${isGrupo ? "Grupo" : produtores[0].nome}</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
@@ -131,8 +147,11 @@ export default async (req) => {
     <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
     <img src="${NEXUS_LOGO}" style="height:54px">
   </div>
-  <h1>RELATÓRIO DE NEGÓCIOS EM ABERTO</h1>
-  <div class="sub">${produtor.nome}${produtor.cpf ? " — CPF " + produtor.cpf : ""}${produtor.cidade ? " — " + produtor.cidade : ""} — emitido em ${hoje}</div>
+  <h1>RELATÓRIO DE NEGÓCIOS EM ABERTO${isGrupo ? " — GRUPO" : ""}</h1>
+  <div class="sub">${tituloProdutores} — emitido em ${hoje}</div>
+  <table class="dados">
+    ${dadosProdutores}
+  </table>
   ${blocos}
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios em aberto</span><b>${negocios.length}</b></div>
