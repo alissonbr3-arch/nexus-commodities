@@ -44,10 +44,23 @@ async function marcarEnviado(adminHeaders, negocioId, campo) {
   });
 }
 
+// Telefones de um cadastro E de todos os outros cadastros do mesmo grupo dele (ex: sócios da
+// mesma propriedade) — sem duplicar. Sem grupo, é só o telefone do próprio cadastro mesmo.
+async function telefonesComGrupo(cadastro, adminHeaders) {
+  if (!cadastro) return [];
+  let membros = [cadastro];
+  if (cadastro.grupo_id) {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${cadastro.grupo_id}&select=telefone,telefones_extra`, { headers: adminHeaders });
+    const rows = await resp.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length) membros = rows;
+  }
+  return [...new Set(membros.flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).map(formatarTelefoneWhats).filter(Boolean))];
+}
+
 async function processarLote({ negocios, cadastrosPorId, campoData, campoFlag, tipoLog, montarMensagem, zapi, adminHeaders }) {
   for (const n of negocios) {
     const produtor = cadastrosPorId.get(n.produtor_id);
-    const telefones = [...new Set([produtor?.telefone, ...(produtor?.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+    const telefones = await telefonesComGrupo(produtor, adminHeaders);
     if (telefones.length === 0) {
       await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: produtor?.telefone || "(sem telefone)", sucesso: false, erro: "Produtor sem telefone cadastrado." });
       continue;
@@ -96,7 +109,7 @@ export default async () => {
   const idsProdutores = [...new Set(negociosPagamento.map(n => n.produtor_id).filter(Boolean))];
   const cadastrosPorId = new Map();
   if (idsProdutores.length) {
-    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
+    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra,grupo_id`, { headers: adminHeaders });
     const cads = await cadResp.json();
     for (const c of cads) cadastrosPorId.set(c.id, c);
   }

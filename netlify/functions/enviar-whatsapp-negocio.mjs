@@ -13,6 +13,18 @@ function formatarTelefoneWhats(telefone) {
   return digitos;
 }
 
+// Telefones de um cadastro E de todos os outros cadastros do mesmo grupo dele (ex: sócios da
+// mesma propriedade) — sem duplicar. Sem grupo, é só o telefone do próprio cadastro mesmo.
+async function telefonesComGrupo(cadastro, adminHeaders) {
+  let membros = [cadastro];
+  if (cadastro.grupo_id) {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${cadastro.grupo_id}&select=telefone,telefones_extra`, { headers: adminHeaders });
+    const rows = await resp.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length) membros = rows;
+  }
+  return [...new Set(membros.flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).map(formatarTelefoneWhats).filter(Boolean))];
+}
+
 function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -80,13 +92,13 @@ export default async (req) => {
   const negocio = negRows[0];
   if (!negocio) return json({ ok: false, erro: "Negócio não encontrado." }, 404);
 
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone,telefones_extra,categoria_comprador`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${negocio.produtor_id},${negocio.cliente_id})&select=id,nome,telefone,telefones_extra,categoria_comprador,grupo_id`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const vendedor = cads.find(c => c.id === negocio.produtor_id);
   const comprador = cads.find(c => c.id === negocio.cliente_id);
   if (!vendedor) return json({ ok: false, erro: "Negócio precisa de um produtor cadastrado." }, 400);
 
-  const telefones = [...new Set([vendedor.telefone, ...(vendedor.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+  const telefones = await telefonesComGrupo(vendedor, adminHeaders);
   if (telefones.length === 0) return json({ ok: false, erro: `Cadastre o telefone de ${vendedor.nome} antes de enviar.` }, 400);
 
   const cfgResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders });

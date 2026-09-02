@@ -18,6 +18,19 @@ function formatarTelefoneWhats(telefone) {
 
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Telefones de um cadastro E de todos os outros cadastros do mesmo grupo dele (ex: sócios da
+// mesma propriedade) — sem duplicar. Sem grupo, é só o telefone do próprio cadastro mesmo.
+async function telefonesComGrupo(cadastro, adminHeaders) {
+  if (!cadastro) return [];
+  let membros = [cadastro];
+  if (cadastro.grupo_id) {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${cadastro.grupo_id}&select=telefone,telefones_extra`, { headers: adminHeaders });
+    const rows = await resp.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length) membros = rows;
+  }
+  return [...new Set(membros.flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).map(formatarTelefoneWhats).filter(Boolean))];
+}
+
 // Gera (ou reaproveita) um boleto no Asaas cobrando a comissão de intermediação de um ou mais
 // negócios de uma vez (todos precisam ter o mesmo pagador — mesma pessoa/empresa) de quem for
 // o pagador (Vendedor ou Comprador, conforme cadastrado em cada negócio). Cria o cliente no
@@ -66,7 +79,7 @@ export default async (req) => {
   }
 
   const idsCadastros = [...new Set(negocios.flatMap(n => [n.produtor_id, n.cliente_id]))].filter(Boolean);
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCadastros.join(",")})&select=id,nome,cpf,cnpj,email,telefone,telefones_extra,asaas_customer_id`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCadastros.join(",")})&select=id,nome,cpf,cnpj,email,telefone,telefones_extra,asaas_customer_id,grupo_id`, { headers: adminHeaders });
   const cads = await cadResp.json();
 
   const pagadorIds = new Set();
@@ -146,7 +159,7 @@ export default async (req) => {
   });
 
   let whatsapp = { tentado: false, sucesso: false };
-  const telefones = [...new Set([pagador.telefone, ...(pagador.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+  const telefones = await telefonesComGrupo(pagador, adminHeaders);
   if (telefones.length && ZAPI_INSTANCE_ID && ZAPI_TOKEN && ZAPI_CLIENT_TOKEN) {
     whatsapp.tentado = true;
     const mensagem = negocios.length === 1

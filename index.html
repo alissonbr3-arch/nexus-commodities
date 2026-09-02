@@ -1036,7 +1036,7 @@ function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { min
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1087,7 +1087,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -1102,6 +1102,7 @@ async function loadNegocios() {
   if (!error) data.negocios = rows || [];
 }
 async function loadCadastros() { const { data: rows, error } = await sb.from("nexus_cadastros").select("*").order("nome"); if (!error) data.cadastros = rows || []; }
+async function loadGrupos() { const { data: rows, error } = await sb.from("nexus_grupos").select("*").order("nome"); if (!error) data.grupos = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
 async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000); if (!error) data.cotacoesHistorico = rows || []; }
@@ -2758,15 +2759,25 @@ async function enviarConfirmacaoPdfEmail(negocioId) {
     alert("Erro ao gerar/enviar PDF: " + e.message);
   }
 }
+// Cadastros com o mesmo grupo_id de "cadastro" (ele mesmo incluso) — usado pra saber quem mais
+// vai receber avisos por WhatsApp em nome dele.
+function membrosDoGrupo(cadastro) {
+  if (!cadastro?.grupo_id) return [cadastro];
+  return data.cadastros.filter(c => c.grupo_id === cadastro.grupo_id);
+}
+function telefonesComGrupo(cadastro) {
+  return [...new Set(membrosDoGrupo(cadastro).flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).filter(Boolean))];
+}
 async function enviarWhatsappNegocio(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
   const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
   if (!vendedor) { alert("Este negócio precisa de um produtor cadastrado."); return; }
-  const telefones = [vendedor.telefone, ...(vendedor.telefones_extra || [])].filter(Boolean);
+  const telefones = telefonesComGrupo(vendedor);
   if (telefones.length === 0) { alert(`Cadastre o telefone de ${vendedor.nome} antes de enviar (aba Cadastros).`); return; }
 
-  const confirmar = confirm(`Avisar ${vendedor.nome} no WhatsApp (${telefones.join(", ")}) sobre o negócio ${n.numero_contrato || ""}?`);
+  const grupoInfo = vendedor.grupo_id && membrosDoGrupo(vendedor).length > 1 ? ` (incluindo o grupo: ${membrosDoGrupo(vendedor).map(m=>m.nome).join(", ")})` : "";
+  const confirmar = confirm(`Avisar ${vendedor.nome} no WhatsApp (${telefones.join(", ")})${grupoInfo} sobre o negócio ${n.numero_contrato || ""}?`);
   if (!confirmar) return;
 
   const { data: { session } } = await sb.auth.getSession();
@@ -3077,6 +3088,17 @@ document.querySelectorAll(".con-tab-btn").forEach(btn => {
   });
 });
 document.querySelectorAll('#page-cadastros thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cadastros", th.dataset.sort, renderContatos)));
+async function onGrupoSelectChange() {
+  const sel = document.getElementById("f_grupoSelect");
+  if (sel.value !== "__novo__") return;
+  const nome = prompt("Nome do novo grupo (ex: Família Zanella):");
+  if (!nome || !nome.trim()) { sel.value = ""; return; }
+  const { data: rows, error } = await sb.from("nexus_grupos").insert([{ nome: nome.trim() }]).select();
+  if (error || !rows?.[0]) { alert("Erro ao criar grupo: " + (error?.message || "")); sel.value = ""; return; }
+  await loadGrupos();
+  const novoId = rows[0].id;
+  sel.innerHTML = `<option value="">— Nenhum —</option>${data.grupos.map(g => `<option value="${g.id}" ${g.id===novoId?"selected":""}>${g.nome}</option>`).join("")}<option value="__novo__">+ Criar novo grupo</option>`;
+}
 function onCadastroTipoChange() {
   const tipo = v("f_ctipo");
   document.getElementById("f_produtorFieldsWrap").style.display = tipo === "Produtor" ? "block" : "none";
@@ -3213,6 +3235,13 @@ function openContatoModal(id) {
     ${cidadeUfFieldsHtml(item.cidade, !id)}
     <div class="field"><label>E-mail de contato</label><input type="email" id="f_email" value="${item.email || ""}" placeholder="email@contato.com"></div>
     ${extraContatoBlocoHtml("email", item.emails_extra, "e-mails")}
+    <div class="field"><label>Grupo (opcional — negócios em nome de qualquer membro avisam todo mundo do grupo por WhatsApp)</label>
+      <select id="f_grupoSelect" onchange="onGrupoSelectChange()">
+        <option value="">— Nenhum —</option>
+        ${data.grupos.map(g => `<option value="${g.id}" ${item.grupo_id===g.id?"selected":""}>${g.nome}</option>`).join("")}
+        <option value="__novo__">+ Criar novo grupo</option>
+      </select>
+    </div>
     <div id="f_produtorFieldsWrap" style="${item.tipo==="Produtor"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="f_cpf" value="${item.cpf||""}"></div><div class="field"><label>Dados bancários (principal)</label><input type="text" id="f_bancarios" value="${item.dados_bancarios||""}" placeholder="Ex: Sicredi, AG: 0914, CC N. 46-9"></div></div>
       <div class="field"><label>Dados bancários (secundária) — opcional</label><input type="text" id="f_bancariosSecundaria" value="${item.dados_bancarios_secundaria||""}" placeholder="Preencha só se o produtor tiver uma segunda conta"></div>
@@ -3256,6 +3285,7 @@ function openContatoModal(id) {
 async function saveContato(id) {
   const tipo = v("f_ctipo");
   const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), telefones_extra: coletarExtras("telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, emails_extra: coletarExtras("email"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
+    grupo_id: (v("f_grupoSelect") && v("f_grupoSelect") !== "__novo__") ? v("f_grupoSelect") : null,
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
     inscricao_estadual: tipo === "Comprador" ? v("f_ie_comprador") : "",
     categoria_comprador: tipo === "Comprador" ? v("f_categoriaComprador") : "",

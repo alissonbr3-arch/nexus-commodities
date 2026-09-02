@@ -21,6 +21,19 @@ async function enviarWhatsapp({ instanceId, token, clientToken, telefone, mensag
 
 function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
 
+// Telefones de um cadastro E de todos os outros cadastros do mesmo grupo dele (ex: sócios da
+// mesma propriedade) — sem duplicar. Sem grupo, é só o telefone do próprio cadastro mesmo.
+async function telefonesComGrupo(cadastro, adminHeaders) {
+  if (!cadastro) return [];
+  let membros = [cadastro];
+  if (cadastro.grupo_id) {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${cadastro.grupo_id}&select=telefone,telefones_extra`, { headers: adminHeaders });
+    const rows = await resp.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length) membros = rows;
+  }
+  return [...new Set(membros.flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).map(formatarTelefoneWhats).filter(Boolean))];
+}
+
 const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
 // Roda todo dia 1º do mês: manda pra cada produtor (por WhatsApp) o link do Relatório de
@@ -48,7 +61,7 @@ export default async () => {
   }
 
   const idsProdutores = [...new Set(negocios.map(n => n.produtor_id).filter(Boolean))];
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra,grupo_id`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const cadastrosPorId = new Map(cads.map(c => [c.id, c]));
 
@@ -62,7 +75,7 @@ export default async () => {
   let produtoresAvisados = 0;
   for (const [produtorId, negs] of negociosPorProdutor) {
     const produtor = cadastrosPorId.get(produtorId);
-    const telefones = [...new Set([produtor?.telefone, ...(produtor?.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
+    const telefones = await telefonesComGrupo(produtor, adminHeaders);
     if (telefones.length === 0) continue;
 
     const totalSacas = negs.reduce((s, n) => s + Number(n.quantidade || 0), 0);
