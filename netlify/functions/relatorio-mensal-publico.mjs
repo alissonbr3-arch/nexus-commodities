@@ -51,17 +51,37 @@ export default async (req) => {
   const embarquesFinalizados = negocios.filter(n => n.embarque_finalizado).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
-  const linhas = negocios.map(n => {
-    const valor = Number(n.quantidade || 0) * Number(n.preco || 0);
-    const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
-    const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
-    const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
-    return `<tr>
-      <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${(n.grao || "—")} ${n.safra || ""}</td><td>${nomeComprador(n)}</td>
-      <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
-      <td><span style="font-size:9.5px;font-weight:bold;color:#a6741a">${(n.status || "—").toUpperCase()}</span></td>
-      <td>${embPeriodo}${embStatus ? `<br><span style="font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado ? "#2f7d32" : "#a6741a"}">${embStatus.toUpperCase()}</span>` : ""}</td>
-    </tr>`;
+  // Divide o relatório por cultura + safra — um bloco de tabela pra cada combinação, com
+  // subtotal próprio, em vez de uma lista só misturando tudo.
+  const grupos = new Map();
+  for (const n of negocios) {
+    const chave = `${n.grao || "—"}__${n.safra || "—"}`;
+    if (!grupos.has(chave)) grupos.set(chave, { grao: n.grao || "—", safra: n.safra || "", negocios: [] });
+    grupos.get(chave).negocios.push(n);
+  }
+  const gruposOrdenados = [...grupos.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
+
+  const blocos = gruposOrdenados.map(grupo => {
+    const linhasGrupo = grupo.negocios.map(n => {
+      const valor = Number(n.quantidade || 0) * Number(n.preco || 0);
+      const temEmbarque = n.data_inicio_embarque || n.data_fim_embarque;
+      const embPeriodo = temEmbarque ? `${fmtDate(n.data_inicio_embarque)} – ${fmtDate(n.data_fim_embarque)}` : "—";
+      const embStatus = temEmbarque ? (n.embarque_finalizado ? "Finalizado" : "Em andamento") : "";
+      return `<tr>
+        <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td><td>${nomeComprador(n)}</td>
+        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(n.preco)}</td><td>${fmtMoney(valor)}</td>
+        <td><span style="font-size:9.5px;font-weight:bold;color:#a6741a">${(n.status || "—").toUpperCase()}</span></td>
+        <td>${embPeriodo}${embStatus ? `<br><span style="font-size:9.5px;font-weight:bold;color:${n.embarque_finalizado ? "#2f7d32" : "#a6741a"}">${embStatus.toUpperCase()}</span>` : ""}</td>
+      </tr>`;
+    }).join("");
+    const volumeGrupo = grupo.negocios.reduce((s, n) => s + Number(n.quantidade || 0), 0);
+    const valorGrupo = grupo.negocios.reduce((s, n) => s + Number(n.quantidade || 0) * Number(n.preco || 0), 0);
+    return `
+    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${grupo.grao.toUpperCase()}${grupo.safra ? " — SAFRA " + grupo.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${grupo.negocios.length} negócio${grupo.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)})</span></h3>
+    <table class="linhas">
+      <thead><tr><th>Contrato</th><th>Data</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Status</th><th>Embarque</th></tr></thead>
+      <tbody>${linhasGrupo}</tbody>
+    </table>`;
   }).join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios em Aberto — ${produtor.nome}</title>
@@ -88,12 +108,9 @@ export default async (req) => {
   </div>
   <h1>RELATÓRIO DE NEGÓCIOS EM ABERTO</h1>
   <div class="sub">${produtor.nome}${produtor.cpf ? " — CPF " + produtor.cpf : ""}${produtor.cidade ? " — " + produtor.cidade : ""} — emitido em ${hoje}</div>
-  <table class="linhas">
-    <thead><tr><th>Contrato</th><th>Data</th><th>Produto/Safra</th><th>Comprador</th><th>Qtd (sc)</th><th>Preço (R$/sc)</th><th>Valor total</th><th>Status</th><th>Embarque</th></tr></thead>
-    <tbody>${linhas}</tbody>
-  </table>
-  <div class="resumo">
-    <div class="item"><span>Negócios em aberto</span><b>${negocios.length}</b></div>
+  ${blocos}
+  <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
+    <div class="item"><span>Total geral — negócios em aberto</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
     <div class="item"><span>Valor total</span><b>${fmtMoney(totalValor)}</b></div>
     <div class="item"><span>Embarques finalizados</span><b>${embarquesFinalizados} de ${negocios.length}</b></div>
