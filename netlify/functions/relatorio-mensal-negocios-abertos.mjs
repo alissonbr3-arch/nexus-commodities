@@ -20,32 +20,13 @@ async function enviarWhatsapp({ instanceId, token, clientToken, telefone, mensag
 }
 
 function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
-function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-
-// Mesma conta de preço líquido usada no resto do app.
-function aplicaFundersulFundems(comprador) {
-  return !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
-}
-function precoLiquidoNegocio(n, comprador, config) {
-  const sacas = Number(n.quantidade || 0);
-  const total = Number(n.preco || 0) * sacas;
-  const senar = total * 0.002;
-  const comFundersulFundems = aplicaFundersulFundems(comprador);
-  const fundersulTotal = comFundersulFundems ? Number(config.fundersul_saca || 0) * sacas : 0;
-  const fundemsTotal = comFundersulFundems ? Number(config.fundems_saca || 0) * sacas : 0;
-  const funruralForma = n.funrural_forma || "Comercialização";
-  const funrural = funruralForma === "Comercialização" ? total * Number(config.funrural_pct || 0) / 100 : 0;
-  const comissaoDoVendedor = n.comissao_pagador === "Comprador" ? 0 : Number(n.comissao || 0);
-  const liquidoEstimado = total - comissaoDoVendedor - senar - fundersulTotal - fundemsTotal - funrural;
-  const informado = n.preco_liquido != null && n.preco_liquido !== "";
-  return informado ? Number(n.preco_liquido) : (sacas ? liquidoEstimado / sacas : 0);
-}
 
 const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
-// Roda todo dia 1º do mês: manda pra cada produtor (por WhatsApp) o resumo dos negócios dele
-// que já foram fechados/entregues mas ainda não foram marcados como Pago — mesma ideia do
-// /extrato (sob demanda), só que enviado sozinho, uma vez por mês, só com o que está em aberto.
+// Roda todo dia 1º do mês: manda pra cada produtor (por WhatsApp) o link do Relatório de
+// Negócios em Aberto dele (relatorio-mensal-publico.mjs — mesmo template visual do
+// "Relatório de Negócios" do menu Relatórios), com os negócios Fechado/Entregue que ainda
+// não foram marcados como Pago.
 export default async () => {
   const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN, SUPABASE_SERVICE_ROLE_KEY } = process.env;
   if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -60,22 +41,14 @@ export default async () => {
   const agora = new Date();
   const mesLabel = `${MESES_PT[agora.getMonth()]} de ${agora.getFullYear()}`;
 
-  const [negResp, cfgResp] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?status=in.(Fechado,Entregue)&deleted_at=is.null&select=*`, { headers: adminHeaders }),
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders }),
-  ]);
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?status=in.(Fechado,Entregue)&deleted_at=is.null&select=id,produtor_id,quantidade`, { headers: adminHeaders });
   const negocios = await negResp.json();
-  const cfgRows = await cfgResp.json().catch(() => []);
-  const config = cfgRows[0] || {};
-
   if (!Array.isArray(negocios) || negocios.length === 0) {
     return new Response(JSON.stringify({ ok: true, produtores: 0, negocios: 0 }), { status: 200 });
   }
 
   const idsProdutores = [...new Set(negocios.map(n => n.produtor_id).filter(Boolean))];
-  const idsCompradores = [...new Set(negocios.map(n => n.cliente_id).filter(Boolean))];
-  const idsCadastros = [...new Set([...idsProdutores, ...idsCompradores])];
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCadastros.join(",")})&select=id,nome,tipo,telefone,telefones_extra,categoria_comprador`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsProdutores.join(",")})&select=id,nome,telefone,telefones_extra`, { headers: adminHeaders });
   const cads = await cadResp.json();
   const cadastrosPorId = new Map(cads.map(c => [c.id, c]));
 
@@ -92,14 +65,9 @@ export default async () => {
     const telefones = [...new Set([produtor?.telefone, ...(produtor?.telefones_extra || [])].map(formatarTelefoneWhats).filter(Boolean))];
     if (telefones.length === 0) continue;
 
-    const linhas = negs.map(n => {
-      const comprador = cadastrosPorId.get(n.cliente_id);
-      const precoLiquido = precoLiquidoNegocio(n, comprador, config);
-      const nomeComprador = comprador ? comprador.nome : (n.contraparte || "—");
-      return `• ${n.numero_contrato || "—"} — ${n.grao || ""}${n.safra ? " " + n.safra : ""} — ${fmtNum(n.quantidade)} sc — ${n.status || "—"}\n   ${nomeComprador} · Líquido: ${fmtMoney(precoLiquido)}/sc`;
-    }).join("\n\n");
     const totalSacas = negs.reduce((s, n) => s + Number(n.quantidade || 0), 0);
-    const mensagem = `📅 Relatório mensal — Negócios em aberto (${mesLabel})\n\nOlá, ${produtor.nome}! Segue o resumo dos seus negócios já fechados que ainda não foram concluídos (pagamento pendente):\n\n${linhas}\n\n— — —\nTotal: ${negs.length} negócio${negs.length === 1 ? "" : "s"} · ${fmtNum(totalSacas)} sc\n\nQualquer dúvida, fale com seu corretor.`;
+    const link = `https://painel.nexuscommoditiesms.com.br/.netlify/functions/relatorio-mensal-publico?id=${produtorId}`;
+    const mensagem = `📅 Relatório mensal — Negócios em aberto (${mesLabel})\n\nOlá, ${produtor.nome}! Você tem ${negs.length} negócio${negs.length === 1 ? "" : "s"} em aberto (${fmtNum(totalSacas)} sc), já fechado${negs.length === 1 ? "" : "s"} mas ainda não pago${negs.length === 1 ? "" : "s"}.\n\nConfira o relatório completo (dá pra salvar como PDF):\n${link}\n\nQualquer dúvida, fale com seu corretor.`;
 
     let algumSucesso = false;
     const erros = [];
