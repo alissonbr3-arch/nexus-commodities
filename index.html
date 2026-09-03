@@ -492,6 +492,11 @@
           </div>
           <div class="cards" id="corretoresCards"></div>
           <div class="panel-card">
+            <h3>Carteira convertida por corretor</h3>
+            <div class="hint">% da carteira de produtores (cadastros sob responsabilidade do corretor) com quem ele já fechou pelo menos um negócio.</div>
+            <div id="carteiraConversaoRanking"></div>
+          </div>
+          <div class="panel-card">
             <h3>Comissões por corretor</h3>
             <div class="hint" id="corretoresTableHint">Recebida = comissão já paga ao corretor no período. A receber = pendente, com vencimento dentro do período.</div>
             <table>
@@ -724,6 +729,9 @@
                   <option value="pago">Recebidas</option>
                   <option value="todas">Todas</option>
                 </select>
+                <select class="filter" id="comissoesFilterCorretor">
+                  <option value="">Todos os corretores</option><option value="eu">Meus negócios</option>
+                </select>
                 <select class="filter" id="comissoesFilterVencimento">
                   <option value="">Vencidos e a vencer</option>
                   <option value="vencido">Vencidos</option>
@@ -757,11 +765,15 @@
                   <option value="pago">Pagas</option>
                   <option value="todas">Todas</option>
                 </select>
+                <select class="filter" id="comissoesCorretorFilterCorretor">
+                  <option value="">Todos os corretores</option>
+                </select>
                 <select class="filter" id="comissoesCorretorFilterMes"><option value="">Todos os meses</option></select>
               </div>
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente. O filtro de mês considera o vencimento.</div>
-            <div class="hint" id="comissoesTotalPagar" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
+            <div class="hint" id="comissoesTotalPagar" style="margin-bottom:6px;font-weight:600;color:var(--gold)"></div>
+            <div class="legend-row" id="comissoesTotalPagarPorCorretor" style="justify-content:flex-start;margin-bottom:10px"></div>
             <table>
               <thead><tr>
                 <th data-sort="recebidoEm">Recebido pela Nexus</th><th data-sort="vencimento">Vencimento</th><th data-sort="corretorNome">Corretor</th><th data-sort="negocioLabel">Negócio</th>
@@ -1371,6 +1383,27 @@ function renderDashboardCorretores() {
 
   body.innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum corretor cadastrado.</td></tr>` :
     stats.map(s => `<tr><td>${s.nome}</td><td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.recebida)}</td><td>${fmtMoney(s.aReceber)}</td><td style="font-weight:500">${fmtMoney(s.total)}</td></tr>`).join("");
+
+  renderCarteiraConversaoRanking();
+}
+function renderCarteiraConversaoRanking() {
+  const el = document.getElementById("carteiraConversaoRanking");
+  if (!el) return;
+  const porCorretor = data.equipe.map(e => {
+    const carteira = data.cadastros.filter(c => c.tipo === "Produtor" && c.owner_id === e.user_id);
+    const convertidos = carteira.filter(c => data.negocios.some(n => n.produtor_id === c.id && n.corretor_id === e.user_id));
+    const pct = carteira.length ? convertidos.length / carteira.length * 100 : 0;
+    return { nome: e.nome, pct, total: carteira.length, feitos: convertidos.length };
+  }).sort((a, b) => b.pct - a.pct);
+  const MEDALHAS = ["🥇", "🥈", "🥉"];
+  el.innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
+    porCorretor.map((p, i) => {
+      const medalha = MEDALHAS[i] || "";
+      const semCarteira = p.total === 0;
+      const corPct = semCarteira ? "var(--ink-soft)" : p.pct >= 50 ? "var(--green)" : p.pct >= 25 ? "var(--gold)" : "var(--red)";
+      const legenda = semCarteira ? "Sem produtores na carteira" : `${p.feitos} de ${p.total} produtores`;
+      return `<div class="rank-row"><div class="rank-num" style="${medalha && !semCarteira ? "font-size:14px;background:none" : ""}">${!semCarteira ? (medalha || (i + 1)) : (i + 1)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${p.nome}</span><span style="font-weight:700;color:${corPct}">${p.pct.toFixed(0)}%</span></div><div style="font-size:11px;color:var(--ink-soft);margin-bottom:3px">${legenda}</div><div class="ws-progress"><div class="bar" style="width:${Math.round(p.pct)}%"></div></div></div></div>`;
+    }).join("");
 }
 
 // ---------------- DASHBOARD ----------------
@@ -3432,9 +3465,11 @@ document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
   });
 });
 document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
+document.getElementById("comissoesFilterCorretor").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterCliente").addEventListener("input", renderComissoesPage);
 document.getElementById("comissoesFilterVencimento").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterStatus").addEventListener("change", renderComissoesPage);
+document.getElementById("comissoesCorretorFilterCorretor").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterMes").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterMes").addEventListener("change", renderComissoesPage);
 document.querySelectorAll('#com-receber thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("comissoes", th.dataset.sort, renderComissoesPage)));
@@ -3473,25 +3508,44 @@ function renderComissoesBarraSelecao(list) {
   texto.textContent = `${selecionados.length} selecionados · Total: ${fmtMoney(total)}`;
   barra.style.display = "flex";
 }
+function renderComissoesCorretorFilterSelect() {
+  const sel = document.getElementById("comissoesCorretorFilterCorretor");
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">Todos os corretores</option>`
+    + data.equipe.map(e => `<option value="${e.user_id}">${e.nome}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === atual) ? atual : "";
+}
+function renderComissoesFilterCorretorSelect() {
+  const sel = document.getElementById("comissoesFilterCorretor");
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">Todos os corretores</option><option value="eu">Meus negócios</option>`
+    + data.equipe.map(e => `<option value="${e.user_id}">${e.nome}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === atual) ? atual : "";
+}
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
   if (!body) return;
+  renderComissoesFilterCorretorSelect();
   const filtro = document.getElementById("comissoesFilterStatus").value;
   const todasLinhas = data.negocios.map(n => ({
     id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
     vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
-    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, negocio: n,
+    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, corretorId: n.corretor_id, negocio: n,
   }));
   popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltro = document.getElementById("comissoesFilterMes").value;
   const clienteFiltro = document.getElementById("comissoesFilterCliente").value.trim().toLowerCase();
   const vencimentoFiltro = document.getElementById("comissoesFilterVencimento").value;
+  const corretorFiltro = document.getElementById("comissoesFilterCorretor").value;
   const hojeISO = todayISO();
   let list = todasLinhas
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.recebida : !n.recebida))
     .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro)
     .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro))
-    .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO));
+    .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO))
+    .filter(c => !corretorFiltro || (corretorFiltro === "eu" ? c.corretorId === currentUserId : c.corretorId === corretorFiltro));
   const st = sortState.comissoes;
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
   comissoesListAtual = list;
@@ -3523,23 +3577,32 @@ function renderComissoesPage() {
 
   const bodyC = document.getElementById("comissoesCorretorBody");
   if (!bodyC) return;
+  renderComissoesCorretorFilterSelect();
   const filtroC = document.getElementById("comissoesCorretorFilterStatus").value;
   const todasLinhasC = data.negocios
     .filter(n => n.corretor_id && Number(n.comissao_corretor || 0) > 0)
     .map(n => ({
       id: n.id, recebidoEm: n.comissao_recebida_em || "", vencimento: dia10MesSeguinte(n.comissao_recebida_em) || "",
-      corretorNome: nomeCorretor(n.corretor_id), negocioLabel: `${n.grao || "—"} · ${n.contraparte || nomeCadastro(n.cliente_id)}`,
+      corretorId: n.corretor_id, corretorNome: nomeCorretor(n.corretor_id), negocioLabel: `${n.grao || "—"} · ${n.contraparte || nomeCadastro(n.cliente_id)}`,
       valor: Number(n.comissao_corretor || 0), paga: n.comissao_corretor_paga, aguardando: !n.comissao_recebida_em, negocio: n,
     }));
   popularFiltroMes("comissoesCorretorFilterMes", todasLinhasC.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltroC = document.getElementById("comissoesCorretorFilterMes").value;
-  let listC = todasLinhasC
+  const corretorFiltroC = document.getElementById("comissoesCorretorFilterCorretor").value;
+  const listSemFiltroCorretor = todasLinhasC
     .filter(n => filtroC === "todas" || (filtroC === "pago" ? n.paga : !n.paga))
     .filter(c => !mesFiltroC || c.vencimento.slice(0,7) === mesFiltroC);
+  let listC = listSemFiltroCorretor.filter(c => !corretorFiltroC || c.corretorId === corretorFiltroC);
   const stC = sortState.comissoesCorretor;
   listC = stC && stC.key ? applySort(listC, stC.key, stC.dir) : listC.sort((a,b) => b.recebidoEm.localeCompare(a.recebidoEm));
   const totalPagarEl = document.getElementById("comissoesTotalPagar");
   if (totalPagarEl) totalPagarEl.textContent = listC.length === 0 ? "" : `Total nesta lista: ${fmtMoney(listC.reduce((s,c) => s + c.valor, 0))} (${listC.length} lançamento${listC.length === 1 ? "" : "s"})`;
+  const totalPorCorretorEl = document.getElementById("comissoesTotalPagarPorCorretor");
+  if (totalPorCorretorEl) {
+    const porCorretor = data.equipe.map(e => ({ nome: e.nome, valor: listSemFiltroCorretor.filter(c => c.corretorId === e.user_id).reduce((s,c) => s + c.valor, 0) }))
+      .filter(p => p.valor > 0).sort((a,b) => b.valor - a.valor);
+    totalPorCorretorEl.innerHTML = porCorretor.map(p => `<span class="legend-chip"><span style="font-weight:600;color:var(--ink)">${p.nome}:</span> ${fmtMoney(p.valor)}</span>`).join("");
+  }
   bodyC.innerHTML = listC.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhuma comissão de corretor encontrada.</td></tr>` :
     listC.map(c => {
       const statusLabel = c.paga ? "Pago" : c.aguardando ? "Aguardando recebimento" : "A pagar";
