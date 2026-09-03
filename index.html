@@ -3514,7 +3514,7 @@ function renderComissoesPage() {
         <td><span class="badge ${statusClasse}">${statusLabel}</span></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
-          ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
+          ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a> <button class="btn-edit-text" onclick="enviarBoletoComissao('${c.id}')">Enviar</button>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
         </td>
       </tr>`;
@@ -3660,6 +3660,43 @@ async function gerarBoletoComissaoAgrupado() {
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
   if (!confirm(`Gerar um boleto único de ${fmtMoney(total)} pra ${pagador.nome}, agrupando os contratos ${contratos}, e mandar por WhatsApp?`)) return;
   await chamarGerarBoleto(ids);
+}
+// Reenvia por WhatsApp e e-mail o boleto de comissão que já foi gerado pra esse negócio (ou pro
+// grupo de negócios que compartilham o mesmo boleto) — pro cliente que perdeu a mensagem, ou
+// quando o envio automático da geração falhou.
+async function enviarBoletoComissao(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const pagadorId = n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id;
+  const pagador = data.cadastros.find(c => c.id === pagadorId);
+  if (!pagador) { alert("Não encontrei o cadastro de quem paga a comissão neste negócio."); return; }
+  if (!confirm(`Enviar o boleto de ${pagador.nome} por WhatsApp e e-mail?`)) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+  try {
+    const resp = await fetch("/.netlify/functions/enviar-boleto-comissao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token }),
+    });
+    const j = await resp.json();
+    if (!j.ok) { alert("Erro: " + j.erro); return; }
+    const canais = [];
+    if (j.whatsapp?.sucesso) canais.push("WhatsApp");
+    if (j.email?.sucesso) canais.push("e-mail");
+    if (canais.length) {
+      alert(`✓ Boleto enviado por ${canais.join(" e ")}.`);
+    } else {
+      const motivos = [];
+      if (!j.whatsapp?.tentado) motivos.push("telefone não cadastrado");
+      else if (!j.whatsapp?.sucesso) motivos.push("falha no envio por WhatsApp");
+      if (!j.email?.tentado) motivos.push("e-mail não cadastrado");
+      else if (j.email?.erro) motivos.push("falha no e-mail: " + j.email.erro);
+      alert("Não consegui enviar por nenhum canal (" + (motivos.join("; ") || "verifique telefone/e-mail cadastrados") + ").");
+    }
+  } catch (e) {
+    alert("Erro ao enviar boleto: " + e.message);
+  }
 }
 async function toggleComissaoPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
