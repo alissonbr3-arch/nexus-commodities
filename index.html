@@ -4964,7 +4964,14 @@ function askConfirm(message, title, confirmLabel, confirmClass) {
 async function deleteItem(table, id, loadFn, renderFn) {
   const ok = await askConfirm("Tem certeza que deseja excluir este item? Essa ação não pode ser desfeita.");
   if (!ok) return;
-  await sb.from(table).delete().eq("id", id);
+  const { error } = await sb.from(table).delete().eq("id", id);
+  if (error) {
+    const msg = error.code === "23503"
+      ? "Não consegui excluir: ainda existem outros registros vinculados a este item (negócios, fazendas, etc.) — remova-os primeiro."
+      : "Não consegui excluir: " + (error.message || error);
+    alert(msg);
+    return;
+  }
   await loadFn(); renderFn();
   if (table === "nexus_negocios") renderDashboard();
 }
