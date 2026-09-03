@@ -771,7 +771,7 @@
                 <select class="filter" id="comissoesCorretorFilterMes"><option value="">Todos os meses</option></select>
               </div>
             </div>
-            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte à Nexus receber a comissão do cliente. O filtro de mês considera o vencimento.</div>
+            <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mesmo mês em que a Nexus recebe a comissão do cliente. O filtro de mês considera o vencimento.</div>
             <div class="hint" id="comissoesTotalPagar" style="margin-bottom:6px;font-weight:600;color:var(--gold)"></div>
             <div class="legend-row" id="comissoesTotalPagarPorCorretor" style="justify-content:flex-start;margin-bottom:10px"></div>
             <table>
@@ -1366,7 +1366,7 @@ function renderDashboardCorretores() {
   const stats = data.equipe.map(e => {
     const negocios = data.negocios.filter(n => n.corretor_id === e.user_id && Number(n.comissao_corretor||0) > 0);
     const recebida = negocios.filter(n => n.comissao_corretor_paga && dentroDoPeriodoCorretores(n.comissao_corretor_paga_em, limites)).reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
-    const aReceber = negocios.filter(n => !n.comissao_corretor_paga && dentroDoPeriodoCorretores(dia10MesSeguinte(n.comissao_recebida_em), limites)).reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
+    const aReceber = negocios.filter(n => !n.comissao_corretor_paga && dentroDoPeriodoCorretores(dia10MesmoMes(n.comissao_recebida_em), limites)).reduce((s,n) => s + Number(n.comissao_corretor||0), 0);
     const volume = negocios.filter(n => dentroDoPeriodoCorretores(n.data, limites)).reduce((s,n) => s + Number(n.quantidade||0), 0);
     return { nome: e.nome, recebida, aReceber, volume, total: recebida + aReceber };
   }).sort((a,b) => b.total - a.total);
@@ -3482,6 +3482,14 @@ function dia10MesSeguinte(dataISO) {
   if (nm > 12) { nm = 1; ny++; }
   return `${ny}-${String(nm).padStart(2,"0")}-10`;
 }
+// Vencimento do repasse ao corretor: dia 10 do MESMO mês em que a Nexus recebeu a comissão do
+// cliente (não mais do mês seguinte) — o que a Nexus recebe em setembro, paga ao corretor
+// também em setembro.
+function dia10MesmoMes(dataISO) {
+  if (!dataISO) return null;
+  const [y, m] = dataISO.split("-").map(Number);
+  return `${y}-${String(m).padStart(2,"0")}-10`;
+}
 
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 function mesAnoLabel(iso) { const [y,m] = iso.split("-").map(Number); return `${MESES_PT[m-1]}/${y}`; }
@@ -3582,7 +3590,7 @@ function renderComissoesPage() {
   const todasLinhasC = data.negocios
     .filter(n => n.corretor_id && Number(n.comissao_corretor || 0) > 0)
     .map(n => ({
-      id: n.id, recebidoEm: n.comissao_recebida_em || "", vencimento: dia10MesSeguinte(n.comissao_recebida_em) || "",
+      id: n.id, recebidoEm: n.comissao_recebida_em || "", vencimento: dia10MesmoMes(n.comissao_recebida_em) || "",
       corretorId: n.corretor_id, corretorNome: nomeCorretor(n.corretor_id), negocioLabel: `${n.grao || "—"} · ${n.contraparte || nomeCadastro(n.cliente_id)}`,
       valor: Number(n.comissao_corretor || 0), paga: n.comissao_corretor_paga, aguardando: !n.comissao_recebida_em, negocio: n,
     }));
