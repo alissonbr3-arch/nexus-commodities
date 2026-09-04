@@ -531,7 +531,7 @@
           <div class="hint">Preencha o preço que cada comprador está pagando hoje. Fica visível pra equipe toda.</div>
           <div style="overflow-x:auto;">
           <table>
-            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th><th></th></tr></thead>
+            <thead><tr><th>Comprador</th><th>Soja Disponível (R$/sc)</th><th>Soja Futuro (R$/sc)</th><th>Milho Disponível (R$/sc)</th><th>Milho Futuro (R$/sc)</th><th>Sorgo (R$/sc)</th><th>Atualizado</th><th></th></tr></thead>
             <tbody id="precoMercadoBody"></tbody>
           </table>
           </div>
@@ -1765,7 +1765,7 @@ function cancelarEdicaoPrecoMercado(id) { precoMercadoEditando.delete(id); rende
 async function salvarPrecoMercadoLinha(id) {
   const g = campo => { const el = document.getElementById(`pm_${campo}_${id}`); return el.value === "" ? null : Number(el.value); };
   const payload = {
-    preco_soja_disponivel: g("sd"), preco_soja_futuro: g("sf"), preco_milho_disponivel: g("md"), preco_sorgo: g("so"),
+    preco_soja_disponivel: g("sd"), preco_soja_futuro: g("sf"), preco_milho_disponivel: g("md"), preco_milho_futuro: g("mf"), preco_sorgo: g("so"),
     preco_mercado_atualizado_em: new Date().toISOString(),
   };
   await sb.from("nexus_cadastros").update(payload).eq("id", id);
@@ -1774,6 +1774,7 @@ async function salvarPrecoMercadoLinha(id) {
     { campo: "soja_disponivel", valor: payload.preco_soja_disponivel },
     { campo: "soja_futuro", valor: payload.preco_soja_futuro },
     { campo: "milho_disponivel", valor: payload.preco_milho_disponivel },
+    { campo: "milho_futuro", valor: payload.preco_milho_futuro },
     { campo: "sorgo", valor: payload.preco_sorgo },
   ].filter(x => x.valor != null).map(x => ({ comprador_id: id, campo: x.campo, data: hoje, preco: x.valor }));
   if (historico.length > 0) { await sb.from("nexus_preco_comprador_historico").upsert(historico, { onConflict: "comprador_id,campo,data" }); await loadPrecoCompradorHistorico(); }
@@ -1785,7 +1786,7 @@ function renderPrecoMercado() {
   const body = document.getElementById("precoMercadoBody");
   if (!body) return;
   const compradores = data.cadastros.filter(c => c.tipo === "Comprador").sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  body.innerHTML = compradores.length === 0 ? `<tr class="empty-row"><td colspan="7">Nenhum comprador cadastrado.</td></tr>` :
+  body.innerHTML = compradores.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum comprador cadastrado.</td></tr>` :
     compradores.map(c => {
       if (precoMercadoEditando.has(c.id)) {
         return `<tr>
@@ -1793,6 +1794,7 @@ function renderPrecoMercado() {
           <td><input type="number" step="0.01" id="pm_sd_${c.id}" value="${c.preco_soja_disponivel ?? ""}" style="width:100px"></td>
           <td><input type="number" step="0.01" id="pm_sf_${c.id}" value="${c.preco_soja_futuro ?? ""}" style="width:100px"></td>
           <td><input type="number" step="0.01" id="pm_md_${c.id}" value="${c.preco_milho_disponivel ?? ""}" style="width:100px"></td>
+          <td><input type="number" step="0.01" id="pm_mf_${c.id}" value="${c.preco_milho_futuro ?? ""}" style="width:100px"></td>
           <td><input type="number" step="0.01" id="pm_so_${c.id}" value="${c.preco_sorgo ?? ""}" style="width:100px"></td>
           <td style="font-size:11.5px;color:var(--ink-soft)">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
           <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 10px;font-size:11.5px" onclick="salvarPrecoMercadoLinha('${c.id}')">OK</button> <button class="btn-edit-text" onclick="cancelarEdicaoPrecoMercado('${c.id}')">Cancelar</button></td>
@@ -1803,6 +1805,7 @@ function renderPrecoMercado() {
         <td>${c.preco_soja_disponivel != null ? fmtMoney(c.preco_soja_disponivel) : "—"}</td>
         <td>${c.preco_soja_futuro != null ? fmtMoney(c.preco_soja_futuro) : "—"}</td>
         <td>${c.preco_milho_disponivel != null ? fmtMoney(c.preco_milho_disponivel) : "—"}</td>
+        <td>${c.preco_milho_futuro != null ? fmtMoney(c.preco_milho_futuro) : "—"}</td>
         <td>${c.preco_sorgo != null ? fmtMoney(c.preco_sorgo) : "—"}</td>
         <td style="font-size:11.5px;color:var(--ink-soft)">${tempoRelativo(c.preco_mercado_atualizado_em)}</td>
         <td style="white-space:nowrap"><button class="btn-edit-text" onclick="iniciarEdicaoPrecoMercado('${c.id}')">Editar</button></td>
@@ -1818,8 +1821,8 @@ function renderPrecoMercado() {
   }
 }
 let precoCompradorHistoricoChart = null;
-const CAMPO_PRECO_LABELS = { soja_disponivel: "Soja Disponível", soja_futuro: "Soja Futuro", milho_disponivel: "Milho Disponível", sorgo: "Sorgo" };
-const PALETTE_PRECO_COMPRADOR = { soja_disponivel: "#d9ab34", soja_futuro: "#b8860b", milho_disponivel: "#6fa348", sorgo: "#4a8bb0" };
+const CAMPO_PRECO_LABELS = { soja_disponivel: "Soja Disponível", soja_futuro: "Soja Futuro", milho_disponivel: "Milho Disponível", milho_futuro: "Milho Futuro", sorgo: "Sorgo" };
+const PALETTE_PRECO_COMPRADOR = { soja_disponivel: "#d9ab34", soja_futuro: "#b8860b", milho_disponivel: "#6fa348", milho_futuro: "#4f7d34", sorgo: "#4a8bb0" };
 function renderPrecoCompradorHistoricoChart() {
   const canvas = document.getElementById("precoCompradorHistoricoChart");
   const sel = document.getElementById("precoCompradorHistSelect");
@@ -4772,7 +4775,7 @@ function openIntencaoModal(id) {
   showModal();
   atualizarComparativoPrecos();
 }
-const CAMPO_PRECO_POR_GRAO = { Soja: ["soja_disponivel","soja_futuro"], Milho: ["milho_disponivel"], Sorgo: ["sorgo"] };
+const CAMPO_PRECO_POR_GRAO = { Soja: ["soja_disponivel","soja_futuro"], Milho: ["milho_disponivel","milho_futuro"], Sorgo: ["sorgo"] };
 function atualizarComparativoPrecos() {
   const wrap = document.getElementById("intComparativoPrecos");
   if (!wrap) return;
