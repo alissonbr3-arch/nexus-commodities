@@ -569,6 +569,12 @@
         <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
 
         <div class="panel-card" style="margin-top:16px">
+          <h3>Soja &amp; Milho — 5 anos</h3>
+          <div class="hint">Referência de mercado (CBOT, contrato contínuo) convertida em R$/saca de 60kg, semanal. São Gabriel do Oeste não tem série pública gratuita de 5 anos da praça local — esta é a referência mais próxima disponível.</div>
+          <div class="chart-wrap"><canvas id="cotacoes5AnosChart"></canvas></div>
+        </div>
+
+        <div class="panel-card" style="margin-top:16px">
           <h3>Histórico de cotações</h3>
           <div class="hint">Evolução do preço (R$/saca) dos contratos CBOT atualizados automaticamente. Começa a partir de agora — sem dados retroativos.</div>
           <div class="chart-wrap"><canvas id="cotacoesHistoricoChart"></canvas></div>
@@ -1138,7 +1144,7 @@ async function loadCadastros() { const { data: rows, error } = await sb.from("ne
 async function loadGrupos() { const { data: rows, error } = await sb.from("nexus_grupos").select("*").order("nome"); if (!error) data.grupos = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
-async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(1000); if (!error) data.cotacoesHistorico = rows || []; }
+async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000); if (!error) data.cotacoesHistorico = rows || []; }
 async function loadPrecoCompradorHistorico() { const { data: rows, error } = await sb.from("nexus_preco_comprador_historico").select("*").order("data").limit(2000); if (!error) data.precoCompradorHistorico = rows || []; }
 async function loadDespesas() { const { data: rows, error } = await sb.from("nexus_despesas").select("*").order("data", { ascending: false }); if (!error) data.despesas = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
@@ -1743,6 +1749,7 @@ function renderCotacoes() {
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
   atualizarPreviewPrecoPraca();
   renderCotacoesHistoricoChart();
+  renderCotacoes5AnosChart();
   renderPrecoMercado();
 }
 function tempoRelativo(iso) {
@@ -1839,7 +1846,9 @@ const PALETTE_COTACAO_HIST = { "ZSU26.CBT": "#d9ab34", "ZSX26.CBT": "#4a8bb0", "
 function renderCotacoesHistoricoChart() {
   const canvas = document.getElementById("cotacoesHistoricoChart");
   if (!canvas) return;
-  const hist = data.cotacoesHistorico || [];
+  // "ZS=F" e "ZC=F-5A" são a série contínua de 5 anos (card "Soja & Milho — 5 anos" logo
+  // acima) — ficam fora daqui pra não esticar o eixo de datas dos contratos específicos.
+  const hist = (data.cotacoesHistorico || []).filter(h => h.codigo !== "ZS=F" && h.codigo !== "ZC=F-5A");
   if (hist.length === 0) {
     if (cotacoesHistoricoChart) { cotacoesHistoricoChart.destroy(); cotacoesHistoricoChart = null; }
     return;
@@ -1858,6 +1867,39 @@ function renderCotacoesHistoricoChart() {
     data: { labels: datas.map(fmtDate), datasets },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#8b93a1" } } },
       scales: { y: { grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, x: { grid: { display: false }, ticks: { color: "#8b93a1" } } } }
+  });
+}
+let cotacoes5AnosChart = null;
+const PALETTE_5ANOS = { "ZS=F": "#2e9678", "ZC=F-5A": "#c97f0a" };
+const LABELS_5ANOS = { "ZS=F": "Soja", "ZC=F-5A": "Milho" };
+// Série contínua (contrato CBOT genérico, não os contratos específicos de mês da tabela
+// acima) usada só pro card "Soja & Milho — 5 anos" — backfill de 5 anos + segue os dados
+// que forem chegando via cron, quando/se algum dia atualizarmos ZS=F/ZC=F-5A também.
+function renderCotacoes5AnosChart() {
+  const canvas = document.getElementById("cotacoes5AnosChart");
+  if (!canvas) return;
+  const hist = (data.cotacoesHistorico || []).filter(h => h.codigo === "ZS=F" || h.codigo === "ZC=F-5A");
+  if (hist.length === 0) {
+    if (cotacoes5AnosChart) { cotacoes5AnosChart.destroy(); cotacoes5AnosChart = null; }
+    return;
+  }
+  const datas = [...new Set(hist.map(h => h.data))].sort();
+  const codigos = ["ZS=F", "ZC=F-5A"].filter(c => hist.some(h => h.codigo === c));
+  const datasets = codigos.map(codigo => {
+    const porData = {}; hist.filter(h => h.codigo === codigo).forEach(h => { porData[h.data] = Number(h.preco_saca_brl || 0); });
+    const cor = PALETTE_5ANOS[codigo];
+    return { label: LABELS_5ANOS[codigo], data: datas.map(d => porData[d] ?? null), borderColor: cor, backgroundColor: cor + "22", fill: true, spanGaps: true, tension: 0.2, pointRadius: 0, borderWidth: 2 };
+  });
+  if (cotacoes5AnosChart) cotacoes5AnosChart.destroy();
+  cotacoes5AnosChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: datas.map(fmtDate), datasets },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom", labels: { color: "#8b93a1" } } },
+      scales: {
+        y: { grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1", callback: (v) => "R$ " + v } },
+        x: { grid: { display: false }, ticks: { color: "#8b93a1", maxTicksLimit: 10, autoSkip: true } }
+      } }
   });
 }
 document.querySelectorAll('#page-cotacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("cotacoes", th.dataset.sort, renderCotacoes)));
