@@ -853,6 +853,7 @@
             <button class="btn-primary" id="addDespesaBtn">+ Nova despesa</button>
           </div>
           <div class="hint" style="margin-bottom:8px">Entradas = comissões efetivamente recebidas dos clientes (data de recebimento). Saídas = despesas cadastradas, incluindo repasses aos corretores.</div>
+          <div class="hint" id="despesasTotalFiltro" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
           <table>
             <thead><tr><th data-sort="data">Data</th><th data-sort="descricao">Descrição</th><th data-sort="categoria">Categoria</th><th data-sort="valor">Valor</th><th></th></tr></thead>
             <tbody id="despesasBody"></tbody>
@@ -4460,6 +4461,18 @@ function renderDespesasPage() {
       return `<tr><td>${fmtDate(d.data)}</td><td>${d.descricao}</td><td>${d.categoria}</td><td style="color:${cor};font-weight:500">${entrada ? "+ " : "− "}${fmtMoney(d.valor)}</td>
         <td>${acoes}</td></tr>`;
     }).join("");
+
+  // Soma do que está filtrado na tela agora (categoria e/ou mês) — separa entrada de saída
+  // pra não somar sinais diferentes junto quando os dois tipos aparecem na lista.
+  const totalFiltroEl = document.getElementById("despesasTotalFiltro");
+  if (totalFiltroEl) {
+    const totalEntradasFiltro = list.filter(d => d.tipo === "entrada").reduce((s,d) => s + Number(d.valor||0), 0);
+    const totalSaidasFiltro = list.filter(d => d.tipo === "saida").reduce((s,d) => s + Number(d.valor||0), 0);
+    const partes = [];
+    if (totalEntradasFiltro > 0) partes.push(`Entradas: ${fmtMoney(totalEntradasFiltro)}`);
+    if (totalSaidasFiltro > 0) partes.push(`Saídas: ${fmtMoney(totalSaidasFiltro)}`);
+    totalFiltroEl.textContent = list.length === 0 ? "" : `${partes.join(" · ")} (${list.length} lançamento${list.length === 1 ? "" : "s"})`;
+  }
 
   const hoje = new Date();
   const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}`;
