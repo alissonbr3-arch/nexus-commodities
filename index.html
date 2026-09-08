@@ -1959,7 +1959,6 @@ const NEGOCIO_CHECKLIST_ITENS = [
   { campo: "check_liberacao_embarque", label: "Liberação de Embarque", icone: "&#128666;" },
   { campo: "check_embarque_entrega", label: "Embarque/Entrega", icone: "&#128230;" },
   { campo: "check_pagamento", label: "Pagamento", icone: "&#128181;" },
-  { campo: "check_comissao", label: "Comissão", icone: "&#128176;" },
 ];
 function negocioChecklistHtml(n) {
   return `<div class="neg-checklist">${NEGOCIO_CHECKLIST_ITENS.map(it => `<span class="neg-check-icon${n[it.campo] ? " done" : ""}" title="${it.label}${n[it.campo] ? " — feito" : " — pendente"}" onclick="toggleNegocioCheck('${n.id}','${it.campo}')">${it.icone}</span>`).join("")}</div>`;
@@ -2244,11 +2243,11 @@ async function saveNegocio(id) {
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: v("f_dataPagamento") || null,
     pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$" })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
-  // "Finalizado" dá baixa em tudo do checklist, menos a comissão — essa é fechada
-  // à parte, na tela de Financeiro (via comissao_recebida_em).
+  // "Finalizado" dá baixa em tudo do checklist. A comissão é controlada à parte,
+  // na tela de Financeiro (via comissao_recebida_em).
   if (payload.status === "Finalizado") {
     const existing = id ? data.negocios.find(x => x.id === id) : null;
-    NEGOCIO_CHECKLIST_ITENS.forEach(it => { if (it.campo !== "check_comissao") payload[it.campo] = true; });
+    NEGOCIO_CHECKLIST_ITENS.forEach(it => { payload[it.campo] = true; });
     payload.embarque_finalizado = true;
     payload.embarque_finalizado_em = existing?.embarque_finalizado_em || new Date().toISOString();
   }
