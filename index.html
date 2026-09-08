@@ -865,7 +865,7 @@
           <div class="cards" id="fluxoProjCards"></div>
           <div class="panel-card" style="margin-top:14px">
             <h3>Projeção dos próximos 6 meses</h3>
-            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. Lançamentos de hoje ou antes já são fato — aparecem no Extrato, não aqui.</div>
+            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. No mês atual, soma o que já é fato (recebido/pago até hoje) com o que ainda está projetado pro resto do mês — nos meses seguintes é só projeção.</div>
             <div class="chart-wrap"><canvas id="fluxoProjChart"></canvas></div>
           </div>
           <div class="panel-card" style="margin-top:14px">
@@ -4559,6 +4559,18 @@ function renderFluxoCaixaProjetado() {
     const key = clampMes(venc.slice(0, 7));
     saidasPorMes[key] = (saidasPorMes[key] || 0) + Number(n.comissao_corretor || 0);
   });
+
+  // O mês atual já está andando — parte dele já é fato (comissão recebida e despesa paga
+  // até hoje), parte ainda é projeção (o resto do mês). Soma as duas coisas só no mês atual;
+  // nos meses seguintes não tem "já realizado", é 100% projeção.
+  const entradasJaRealizadasMesAtual = data.negocios
+    .filter(n => !n.deleted_at && n.comissao_recebida_em && n.comissao_recebida_em.slice(0, 7) === primeiroMes)
+    .reduce((s, n) => s + Number(n.comissao || 0), 0);
+  entradasPorMes[primeiroMes] = (entradasPorMes[primeiroMes] || 0) + entradasJaRealizadasMesAtual;
+  const saidasJaRealizadasMesAtual = data.despesas
+    .filter(d => d.data <= hojeISO && (d.data || "").slice(0, 7) === primeiroMes)
+    .reduce((s, d) => s + Number(d.valor || 0), 0);
+  saidasPorMes[primeiroMes] = (saidasPorMes[primeiroMes] || 0) + saidasJaRealizadasMesAtual;
 
   let acumulado = 0;
   const linhas = months.map(m => {
