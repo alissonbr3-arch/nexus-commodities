@@ -2051,6 +2051,9 @@ async function toggleNegocioCheck(id, campo) {
     payload.embarque_finalizado = novo;
     payload.embarque_finalizado_em = novo ? new Date().toISOString() : null;
   }
+  // Quando o último item do checklist é marcado, o negócio vira "Finalizado" sozinho.
+  const todosMarcados = NEGOCIO_CHECKLIST_ITENS.every(it => (it.campo === campo ? novo : n[it.campo]));
+  if (todosMarcados && n.status !== "Finalizado") payload.status = "Finalizado";
   await sb.from("nexus_negocios").update(payload).eq("id", id);
   await loadNegocios();
   renderNegocios();
