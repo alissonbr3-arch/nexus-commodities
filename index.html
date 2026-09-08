@@ -4304,6 +4304,7 @@ function gerarReciboComissao(negocioId) {
     .assinaturas { margin-top: 60px; }
     .assinatura { margin-top: 46px; text-align: center; width: 340px; margin-left: auto; margin-right: auto; }
     .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    .assinatura-nexus { font-family: "Segoe Script", "Bradley Hand", "Brush Script MT", cursive; font-size: 26px; color: #1a1a1a; margin-bottom: -4px; }
     .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     @media print { body { margin: 0; } }
   </style></head><body>
@@ -4326,7 +4327,7 @@ function gerarReciboComissao(negocioId) {
   </table>
   <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
   <div class="assinaturas">
-    <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
+    <div class="assinatura"><div class="assinatura-nexus">${NEXUS_EMPRESA.nome}</div><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
@@ -4372,6 +4373,7 @@ function gerarReciboComissaoAgrupado() {
     .assinaturas { margin-top: 60px; }
     .assinatura { margin-top: 46px; text-align: center; width: 340px; margin-left: auto; margin-right: auto; }
     .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    .assinatura-nexus { font-family: "Segoe Script", "Bradley Hand", "Brush Script MT", cursive; font-size: 26px; color: #1a1a1a; margin-bottom: -4px; }
     .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     @media print { body { margin: 0; } }
   </style></head><body>
@@ -4389,7 +4391,7 @@ function gerarReciboComissaoAgrupado() {
   </table>
   <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
   <div class="assinaturas">
-    <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
+    <div class="assinatura"><div class="assinatura-nexus">${NEXUS_EMPRESA.nome}</div><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
