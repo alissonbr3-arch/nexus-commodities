@@ -845,7 +845,7 @@
             <div class="actions-left">
               <select class="filter" id="despesasFilterCategoria">
                 <option value="">Todas as categorias</option>
-                <option>Aluguel</option><option>Salários</option><option>Combustível</option><option>Escritório</option><option>Marketing</option><option>Impostos</option><option>Outros</option>
+                <option>Aluguel</option><option>Salários</option><option>Comissão Corretor</option><option>Combustível</option><option>Escritório</option><option>Marketing</option><option>Impostos</option><option>Outros</option>
               </select>
               <select class="filter" id="despesasFilterMes"><option value="">Todos os meses</option></select>
             </div>
@@ -3567,6 +3567,7 @@ function renderFinanceiro() {
     data.negocios.map(n => `<tr><td>${n.grao}</td><td>${n.contraparte}</td><td>${nomeCorretor(n.corretor_id)}</td><td>${fmtDate(n.data)}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td><td>${fmtMoney(n.comissao)}</td><td>${fmtMoney(n.comissao_corretora)}</td><td>${fmtMoney(n.comissao_corretor)}</td></tr>`).join("");
 
   renderComissoesPage();
+  renderDespesasPage();
 }
 
 // ---------------- FINANCEIRO: COMISSÕES ----------------
@@ -3904,12 +3905,31 @@ async function toggleComissaoPaga(negocioId) {
   renderFinanceiro(); renderNegocios(); renderDashboard();
 }
 
+// Marcar o repasse de comissão ao corretor como pago também lança (ou remove) a despesa
+// correspondente sozinho, pra já entrar no "Resultado líquido do mês" sem precisar cadastrar
+// a despesa na mão duas vezes. A despesa fica amarrada ao negócio (negocio_id) pra saber
+// exatamente qual apagar se o pagamento for desmarcado depois.
 async function toggleComissaoCorretorPaga(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return;
   const pago = !n.comissao_corretor_paga;
   await sb.from("nexus_negocios").update({ comissao_corretor_paga: pago, comissao_corretor_paga_em: pago ? todayISO() : null }).eq("id", negocioId);
+  if (pago) {
+    const corretorNome = nomeCorretor(n.corretor_id);
+    await sb.from("nexus_despesas").insert([{
+      descricao: `Repasse comissão — ${corretorNome} (${n.numero_contrato || n.grao || "negócio"})`,
+      categoria: "Comissão Corretor",
+      valor: Number(n.comissao_corretor || 0),
+      data: todayISO(),
+      obs: "Lançada automaticamente ao marcar o repasse como pago.",
+      negocio_id: negocioId,
+      created_by: currentUserId,
+    }]);
+  } else {
+    await sb.from("nexus_despesas").delete().eq("negocio_id", negocioId).eq("categoria", "Comissão Corretor");
+  }
   await loadNegocios();
+  await loadDespesas();
   renderFinanceiro();
 }
 
@@ -4440,7 +4460,7 @@ function openDespesaModal(id) {
     <h3>${id ? "Editar despesa" : "Nova despesa"}</h3>
     <div class="field"><label>Descrição</label><input type="text" id="f_despDescricao" value="${item.descricao || ""}" placeholder="Ex: Aluguel do escritório"></div>
     <div class="field-row">
-      <div class="field"><label>Categoria</label><select id="f_despCategoria">${["Aluguel","Salários","Combustível","Escritório","Marketing","Impostos","Outros"].map(c => `<option ${item.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      <div class="field"><label>Categoria</label><select id="f_despCategoria">${["Aluguel","Salários","Comissão Corretor","Combustível","Escritório","Marketing","Impostos","Outros"].map(c => `<option ${item.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
       <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="f_despValor" value="${item.valor || ""}"></div>
     </div>
     <div class="field"><label>Data</label><input type="date" id="f_despData" value="${item.data || todayISO()}"></div>
