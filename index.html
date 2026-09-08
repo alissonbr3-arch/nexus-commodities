@@ -4489,14 +4489,44 @@ function openDespesaModal(id) {
     </div>
     <div class="field"><label>Data</label><input type="date" id="f_despData" value="${item.data || todayISO()}"></div>
     <div class="field"><label>Observações</label><textarea id="f_despObs" rows="2">${item.obs || ""}</textarea></div>
+    ${id ? "" : `
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+        <input type="checkbox" id="f_despRecorrente" onchange="onDespesaRecorrenteChange()" style="width:auto">
+        Despesa recorrente (lança automaticamente nos próximos meses)
+      </label>
+    </div>
+    <div class="field" id="f_despRecorrenteMesesWrap" style="display:none">
+      <label>Repetir por quantos meses (incluindo este)</label>
+      <input type="number" id="f_despRecorrenteMeses" min="2" max="36" value="12">
+    </div>`}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveDespesa('${id || ""}')">Salvar</button></div>`;
   showModal();
+}
+function onDespesaRecorrenteChange() {
+  const wrap = document.getElementById("f_despRecorrenteMesesWrap");
+  if (wrap) wrap.style.display = document.getElementById("f_despRecorrente").checked ? "" : "none";
+}
+// Soma meses a uma data ISO (YYYY-MM-DD) preservando o dia, pra gerar as parcelas de uma
+// despesa recorrente (Date lida com virada de ano/mês sozinha).
+function addMonthsISO(dataISO, meses) {
+  const [y, m, d] = dataISO.split("-").map(Number);
+  const dt = new Date(y, m - 1 + meses, d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 async function saveDespesa(id) {
   const payload = { descricao: v("f_despDescricao"), categoria: v("f_despCategoria"), valor: n("f_despValor"), data: v("f_despData") || todayISO(), obs: v("f_despObs"), updated_at: new Date().toISOString() };
   if (!payload.descricao.trim()) { alert("Informe a descrição da despesa."); return; }
-  if (id) { await sb.from("nexus_despesas").update(payload).eq("id", id); }
-  else { payload.created_by = currentUserId; await sb.from("nexus_despesas").insert([payload]); }
+  if (id) {
+    await sb.from("nexus_despesas").update(payload).eq("id", id);
+  } else {
+    payload.created_by = currentUserId;
+    const recorrente = document.getElementById("f_despRecorrente")?.checked;
+    const meses = recorrente ? Math.max(2, Math.min(36, Number(document.getElementById("f_despRecorrenteMeses").value) || 12)) : 1;
+    const linhas = Array.from({ length: meses }, (_, i) => ({ ...payload, data: addMonthsISO(payload.data, i) }));
+    const { error } = await sb.from("nexus_despesas").insert(linhas);
+    if (error) { alert("Não consegui salvar a despesa: " + error.message); return; }
+  }
   await loadDespesas(); closeModal(); renderDespesasPage();
 }
 async function excluirDespesa(id) {
