@@ -797,7 +797,10 @@
             <div class="hint" id="comissoesTotalReceber" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
             <div class="hint" id="comissoesBarraSelecao" style="display:none;margin-bottom:10px;padding:8px 12px;border:1px solid var(--gold);border-radius:8px;align-items:center;justify-content:space-between;gap:10px">
               <span id="comissoesSelecaoTexto"></span>
-              <button class="btn-primary" onclick="gerarBoletoComissaoAgrupado()">Gerar boleto agrupado</button>
+              <div style="display:flex;gap:8px">
+                <button class="btn-ghost" onclick="gerarReciboComissaoAgrupado()">Gerar relatório agrupado</button>
+                <button class="btn-primary" onclick="gerarBoletoComissaoAgrupado()">Gerar boleto agrupado</button>
+              </div>
             </div>
             <table>
               <thead><tr>
@@ -4318,6 +4321,69 @@ function gerarReciboComissao(negocioId) {
   </body></html>`;
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// Recibo único cobrindo vários negócios selecionados de uma vez — mesma regra do boleto
+// agrupado (só dá pra juntar quando é a mesma pessoa/empresa pagando a comissão).
+function gerarReciboComissaoAgrupado() {
+  const ids = [...comissoesSelecionados];
+  if (ids.length < 2) return;
+  const negocios = ids.map(id => data.negocios.find(n => n.id === id)).filter(Boolean)
+    .sort((a,b) => (a.data_pagamento||a.data||"").localeCompare(b.data_pagamento||b.data||""));
+  const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
+  if (pagadorIds.size > 1) { alert("Os negócios selecionados têm pagadores diferentes — só dá pra agrupar num relatório só quando é a mesma pessoa/empresa pagando."); return; }
+  const pagador = data.cadastros.find(c => c.id === [...pagadorIds][0]);
+  if (!pagador) { alert("Não encontrei o cadastro de quem paga a comissão."); return; }
+
+  const total = negocios.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const linhas = negocios.map(n => `<tr>
+      <td>${n.numero_contrato || "—"}</td>
+      <td>${(n.grao||"—").toUpperCase()}${n.safra ? " SAFRA " + n.safra : ""}</td>
+      <td>${fmtNum(n.quantidade)} sc</td>
+      <td>${fmtMoney(n.comissao_saca)}</td>
+      <td>${fmtMoney(n.comissao)}</td>
+    </tr>`).join("");
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Recibo de Comissão Agrupado — ${pagador.nome}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12.5px; color: #111; max-width: 800px; margin: 30px auto; line-height: 1.45; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
+    .head img { height: 48px; }
+    .head .info { font-size: 11px; color: #555; }
+    h1 { font-size: 15px; text-align: center; margin: 18px 0; }
+    table.linhas { width: 100%; border-collapse: collapse; margin: 14px 0; }
+    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
+    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
+    table.linhas tfoot td { font-weight: bold; background: #f2f2f2; }
+    .assinaturas { margin-top: 60px; }
+    .assinatura { margin-top: 46px; text-align: center; width: 340px; margin-left: auto; margin-right: auto; }
+    .assinatura .linha { border-top: 1px solid #333; padding-top: 4px; font-weight: bold; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    @media print { body { margin: 0; } }
+  </style></head><body>
+  <img class="watermark" src="${NEXUS_LOGO}">
+  <div class="head">
+    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
+    <img src="${NEXUS_LOGO}" style="height:54px">
+  </div>
+  <h1>RECIBO DE COMISSÃO — AGRUPADO</h1>
+  <p>Recebemos de <strong>${pagador.nome}</strong> a quantia total de <strong>${fmtMoney(total)}</strong> (${valorPorExtenso(total)}), referente às comissões de intermediação das Confirmações de Negócio Nº ${contratos}, detalhadas abaixo.</p>
+  <table class="linhas">
+    <thead><tr><th>Contrato</th><th>Produto</th><th>Quantidade</th><th>Comissão (R$/sc)</th><th>Valor</th></tr></thead>
+    <tbody>${linhas}</tbody>
+    <tfoot><tr><td colspan="4">TOTAL</td><td>${fmtMoney(total)}</td></tr></tfoot>
+  </table>
+  <p style="text-align:center; margin-top:24px">SÃO GABRIEL DO OESTE, MS, ${hoje}</p>
+  <div class="assinaturas">
+    <div class="assinatura"><div class="linha">${NEXUS_EMPRESA.nome.toUpperCase()}<br>${NEXUS_EMPRESA.cnpj}</div></div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`;
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
 
