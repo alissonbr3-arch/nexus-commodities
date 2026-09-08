@@ -865,7 +865,7 @@
           <div class="cards" id="fluxoProjCards"></div>
           <div class="panel-card" style="margin-top:14px">
             <h3>Projeção dos próximos 6 meses</h3>
-            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data futura (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual.</div>
+            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. Lançamentos de hoje ou antes já são fato — aparecem no Extrato, não aqui.</div>
             <div class="chart-wrap"><canvas id="fluxoProjChart"></canvas></div>
           </div>
           <div class="panel-card" style="margin-top:14px">
@@ -4543,7 +4543,7 @@ function renderFluxoCaixaProjetado() {
   // mesmo mês da entrada acima pros ainda não recebidos).
   const hojeISO = todayISO();
   const saidasPorMes = {};
-  data.despesas.filter(d => d.data >= hojeISO).forEach(d => {
+  data.despesas.filter(d => d.data > hojeISO).forEach(d => {
     const key = (d.data || "").slice(0, 7);
     saidasPorMes[key] = (saidasPorMes[key] || 0) + Number(d.valor || 0);
   });
