@@ -737,6 +737,7 @@
           <button class="fin-tab-btn active" data-fintab="geral">Visão geral</button>
           <button class="fin-tab-btn" data-fintab="comissoes">Comissões</button>
           <button class="fin-tab-btn" data-fintab="despesas">Extrato</button>
+          <button class="fin-tab-btn" data-fintab="fluxo">Fluxo de Caixa</button>
         </div>
 
         <div id="fin-geral">
@@ -858,6 +859,22 @@
             <thead><tr><th data-sort="data">Data</th><th data-sort="descricao">Descrição</th><th data-sort="categoria">Categoria</th><th data-sort="valor">Valor</th><th></th></tr></thead>
             <tbody id="despesasBody"></tbody>
           </table>
+        </div>
+
+        <div id="fin-fluxo" style="display:none">
+          <div class="cards" id="fluxoProjCards"></div>
+          <div class="panel-card" style="margin-top:14px">
+            <h3>Projeção dos próximos 6 meses</h3>
+            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data futura (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual.</div>
+            <div class="chart-wrap"><canvas id="fluxoProjChart"></canvas></div>
+          </div>
+          <div class="panel-card" style="margin-top:14px">
+            <h3>Detalhe mês a mês</h3>
+            <table>
+              <thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo do mês</th><th>Saldo acumulado</th></tr></thead>
+              <tbody id="fluxoProjBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -3581,8 +3598,10 @@ document.querySelectorAll("#finTabs .fin-tab-btn").forEach(btn => {
     document.getElementById("fin-geral").style.display = btn.dataset.fintab === "geral" ? "block" : "none";
     document.getElementById("fin-comissoes").style.display = btn.dataset.fintab === "comissoes" ? "block" : "none";
     document.getElementById("fin-despesas").style.display = btn.dataset.fintab === "despesas" ? "block" : "none";
+    document.getElementById("fin-fluxo").style.display = btn.dataset.fintab === "fluxo" ? "block" : "none";
     if (btn.dataset.fintab === "comissoes") renderComissoesPage();
     if (btn.dataset.fintab === "despesas") renderDespesasPage();
+    if (btn.dataset.fintab === "fluxo") renderFluxoCaixaProjetado();
   });
 });
 document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
@@ -4487,6 +4506,107 @@ function renderDespesasPage() {
     { label: "Despesas no ano", value: fmtMoney(despesasAno), foot: anoAtual, ic: "&#128202;", bg: "var(--orange-soft)", color: "var(--orange)" },
     { label: "Resultado líquido do mês", value: fmtMoney(resultadoLiquido), foot: "entradas − despesas", ic: resultadoLiquido >= 0 ? "&#10003;" : "&#9888;", bg: resultadoLiquido >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: resultadoLiquido >= 0 ? "var(--blue)" : "var(--red)" },
   ].map(dashCardHtml).join("");
+}
+
+let fluxoProjChart = null;
+// Projeta os próximos 6 meses de caixa a partir dos negócios ainda em aberto — não é
+// histórico (isso é o Extrato), é estimativa: "quanto deve entrar e sair daqui pra frente".
+function renderFluxoCaixaProjetado() {
+  const canvas = document.getElementById("fluxoProjChart");
+  if (!canvas) return;
+  const hoje = new Date();
+  const months = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    months.push({ key, labelCurto: d.toLocaleDateString("pt-BR", { month: "short" }), labelLongo: mesAnoLabel(key) });
+  }
+
+  // Vencimento já passado (comissão ou repasse vencidos e ainda não liquidados) não pode
+  // simplesmente sumir da projeção — cai tudo no primeiro mês (o atual), como "esperado agora".
+  const primeiroMes = months[0].key;
+  const clampMes = (key) => (key < primeiroMes ? primeiroMes : key);
+
+  // Entradas projetadas: comissões ainda não recebidas, no mês do vencimento estimado
+  // (mesma regra de "Comissões a Receber": dia 10 do mês seguinte ao pagamento da venda).
+  const negociosAReceber = data.negocios.filter(n => !n.deleted_at && !n.comissao_recebida_em && n.data_pagamento);
+  const entradasPorMes = {};
+  negociosAReceber.forEach(n => {
+    const venc = dia10MesSeguinte(n.data_pagamento);
+    if (!venc) return;
+    const key = clampMes(venc.slice(0, 7));
+    entradasPorMes[key] = (entradasPorMes[key] || 0) + Number(n.comissao || 0);
+  });
+
+  // Saídas projetadas: despesas já cadastradas com data futura (recorrentes inclusas) +
+  // repasse de corretor ainda não pago (vencimento real pros já recebidos, projetado pro
+  // mesmo mês da entrada acima pros ainda não recebidos).
+  const hojeISO = todayISO();
+  const saidasPorMes = {};
+  data.despesas.filter(d => d.data >= hojeISO).forEach(d => {
+    const key = (d.data || "").slice(0, 7);
+    saidasPorMes[key] = (saidasPorMes[key] || 0) + Number(d.valor || 0);
+  });
+  data.negocios.filter(n => !n.deleted_at && n.comissao_recebida_em && !n.comissao_corretor_paga && Number(n.comissao_corretor || 0) > 0).forEach(n => {
+    const venc = dia10MesmoMes(n.comissao_recebida_em);
+    if (!venc) return;
+    const key = clampMes(venc.slice(0, 7));
+    saidasPorMes[key] = (saidasPorMes[key] || 0) + Number(n.comissao_corretor || 0);
+  });
+  negociosAReceber.filter(n => Number(n.comissao_corretor || 0) > 0).forEach(n => {
+    const venc = dia10MesSeguinte(n.data_pagamento);
+    if (!venc) return;
+    const key = clampMes(venc.slice(0, 7));
+    saidasPorMes[key] = (saidasPorMes[key] || 0) + Number(n.comissao_corretor || 0);
+  });
+
+  let acumulado = 0;
+  const linhas = months.map(m => {
+    const entradas = entradasPorMes[m.key] || 0;
+    const saidas = saidasPorMes[m.key] || 0;
+    const saldo = entradas - saidas;
+    acumulado += saldo;
+    return { ...m, entradas, saidas, saldo, acumulado };
+  });
+
+  const totalEntradas = linhas.reduce((s, l) => s + l.entradas, 0);
+  const totalSaidas = linhas.reduce((s, l) => s + l.saidas, 0);
+  const saldoTotal = totalEntradas - totalSaidas;
+  const piorMes = linhas.reduce((min, l) => (l.saldo < min.saldo ? l : min), linhas[0]);
+  document.getElementById("fluxoProjCards").innerHTML = [
+    { label: "Entradas projetadas (6 meses)", value: fmtMoney(totalEntradas), foot: "comissões a receber", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Saídas projetadas (6 meses)", value: fmtMoney(totalSaidas), foot: "despesas + repasses", ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Saldo projetado (6 meses)", value: fmtMoney(saldoTotal), foot: "entradas − saídas", ic: saldoTotal >= 0 ? "&#10003;" : "&#9888;", bg: saldoTotal >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoTotal >= 0 ? "var(--blue)" : "var(--red)" },
+    { label: "Mês mais apertado", value: piorMes ? piorMes.labelLongo : "—", foot: piorMes ? `saldo ${fmtMoney(piorMes.saldo)}` : "", ic: "&#9888;", bg: "var(--orange-soft)", color: "var(--orange)" },
+  ].map(dashCardHtml).join("");
+
+  if (fluxoProjChart) fluxoProjChart.destroy();
+  fluxoProjChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: linhas.map(l => l.labelCurto),
+      datasets: [
+        { label: "Entradas", data: linhas.map(l => l.entradas), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 34 },
+        { label: "Saídas", data: linhas.map(l => -l.saidas), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 34 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { color: chartTickColor } } },
+      scales: { y: { grid: { color: chartGridColor }, ticks: { color: chartTickColor } }, x: { grid: { display: false }, ticks: { color: chartTickColor } } },
+    },
+  });
+
+  const body = document.getElementById("fluxoProjBody");
+  if (body) {
+    body.innerHTML = linhas.map(l => `<tr>
+      <td>${l.labelLongo}</td>
+      <td style="color:var(--green)">${fmtMoney(l.entradas)}</td>
+      <td style="color:var(--red)">${fmtMoney(l.saidas)}</td>
+      <td style="color:${l.saldo >= 0 ? "var(--green)" : "var(--red)"};font-weight:500">${fmtMoney(l.saldo)}</td>
+      <td style="color:${l.acumulado >= 0 ? "var(--ink)" : "var(--red)"};font-weight:600">${fmtMoney(l.acumulado)}</td>
+    </tr>`).join("");
+  }
 }
 document.getElementById("despesasFilterCategoria").addEventListener("change", renderDespesasPage);
 document.getElementById("despesasFilterMes").addEventListener("change", renderDespesasPage);
