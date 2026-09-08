@@ -4586,8 +4586,10 @@ function renderFluxoCaixaProjetado() {
     data: {
       labels: linhas.map(l => l.labelCurto),
       datasets: [
-        { label: "Entradas", data: linhas.map(l => l.entradas), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 34 },
-        { label: "Saídas", data: linhas.map(l => -l.saidas), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 34 },
+        { label: "Entradas", data: linhas.map(l => l.entradas), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 26 },
+        { label: "Saídas", data: linhas.map(l => -l.saidas), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 26 },
+        { label: "Saldo do mês", data: linhas.map(l => l.saldo), backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 26 },
+        { type: "line", label: "Saldo acumulado", data: linhas.map(l => l.acumulado), borderColor: "#4a8bb0", backgroundColor: "#4a8bb0", pointBackgroundColor: "#4a8bb0", pointRadius: 4, borderWidth: 2, tension: 0.25, fill: false },
       ],
     },
     options: {
