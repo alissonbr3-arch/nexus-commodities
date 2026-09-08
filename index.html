@@ -3916,7 +3916,7 @@ async function toggleComissaoCorretorPaga(negocioId) {
   await sb.from("nexus_negocios").update({ comissao_corretor_paga: pago, comissao_corretor_paga_em: pago ? todayISO() : null }).eq("id", negocioId);
   if (pago) {
     const corretorNome = nomeCorretor(n.corretor_id);
-    await sb.from("nexus_despesas").insert([{
+    const { error } = await sb.from("nexus_despesas").insert([{
       descricao: `Repasse comissão — ${corretorNome} (${n.numero_contrato || n.grao || "negócio"})`,
       categoria: "Comissão Corretor",
       valor: Number(n.comissao_corretor || 0),
@@ -3925,8 +3925,10 @@ async function toggleComissaoCorretorPaga(negocioId) {
       negocio_id: negocioId,
       created_by: currentUserId,
     }]);
+    if (error) alert("O repasse foi marcado como pago, mas não consegui lançar a despesa correspondente: " + error.message);
   } else {
-    await sb.from("nexus_despesas").delete().eq("negocio_id", negocioId).eq("categoria", "Comissão Corretor");
+    const { error } = await sb.from("nexus_despesas").delete().eq("negocio_id", negocioId).eq("categoria", "Comissão Corretor");
+    if (error) alert("Não consegui remover a despesa vinculada a este repasse: " + error.message);
   }
   await loadNegocios();
   await loadDespesas();
