@@ -864,7 +864,7 @@
         <div id="fin-fluxo" style="display:none">
           <div class="cards" id="fluxoProjCards"></div>
           <div class="panel-card" style="margin-top:14px">
-            <h3>Projeção dos próximos 6 meses</h3>
+            <h3>Projeção dos próximos 9 meses</h3>
             <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. No mês atual, soma o que já é fato (recebido/pago até hoje) com o que ainda está projetado pro resto do mês — nos meses seguintes é só projeção.</div>
             <div class="chart-wrap"><canvas id="fluxoProjChart"></canvas></div>
           </div>
@@ -4509,14 +4509,14 @@ function renderDespesasPage() {
 }
 
 let fluxoProjChart = null;
-// Projeta os próximos 6 meses de caixa a partir dos negócios ainda em aberto — não é
+// Projeta os próximos 9 meses de caixa a partir dos negócios ainda em aberto — não é
 // histórico (isso é o Extrato), é estimativa: "quanto deve entrar e sair daqui pra frente".
 function renderFluxoCaixaProjetado() {
   const canvas = document.getElementById("fluxoProjChart");
   if (!canvas) return;
   const hoje = new Date();
   const months = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 9; i++) {
     const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
     months.push({ key, labelCurto: d.toLocaleDateString("pt-BR", { month: "short" }), labelLongo: mesAnoLabel(key) });
@@ -4586,9 +4586,9 @@ function renderFluxoCaixaProjetado() {
   const saldoTotal = totalEntradas - totalSaidas;
   const piorMes = linhas.reduce((min, l) => (l.saldo < min.saldo ? l : min), linhas[0]);
   document.getElementById("fluxoProjCards").innerHTML = [
-    { label: "Entradas projetadas (6 meses)", value: fmtMoney(totalEntradas), foot: "comissões a receber", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
-    { label: "Saídas projetadas (6 meses)", value: fmtMoney(totalSaidas), foot: "despesas + repasses", ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
-    { label: "Saldo projetado (6 meses)", value: fmtMoney(saldoTotal), foot: "entradas − saídas", ic: saldoTotal >= 0 ? "&#10003;" : "&#9888;", bg: saldoTotal >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoTotal >= 0 ? "var(--blue)" : "var(--red)" },
+    { label: "Entradas projetadas (9 meses)", value: fmtMoney(totalEntradas), foot: "comissões a receber", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
+    { label: "Saídas projetadas (9 meses)", value: fmtMoney(totalSaidas), foot: "despesas + repasses", ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Saldo projetado (9 meses)", value: fmtMoney(saldoTotal), foot: "entradas − saídas", ic: saldoTotal >= 0 ? "&#10003;" : "&#9888;", bg: saldoTotal >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoTotal >= 0 ? "var(--blue)" : "var(--red)" },
     { label: "Mês mais apertado", value: piorMes ? piorMes.labelLongo : "—", foot: piorMes ? `saldo ${fmtMoney(piorMes.saldo)}` : "", ic: "&#9888;", bg: "var(--orange-soft)", color: "var(--orange)" },
   ].map(dashCardHtml).join("");
 
