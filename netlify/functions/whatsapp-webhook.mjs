@@ -188,7 +188,7 @@ async function responderPagamento(payload, adminHeaders, zapi) {
     return;
   }
   const idsProdutores = meusProdutores.map(p => p.id);
-  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&status=neq.Pago&data_pagamento=not.is.null&select=numero_contrato,grao,data_pagamento&order=data_pagamento.asc`, { headers: adminHeaders });
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&check_pagamento=is.false&data_pagamento=not.is.null&select=numero_contrato,grao,data_pagamento&order=data_pagamento.asc`, { headers: adminHeaders });
   const negocios = await negResp.json();
   if (!Array.isArray(negocios) || negocios.length === 0) {
     await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Você não tem nenhum pagamento em aberto com data definida no momento." });
