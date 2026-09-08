@@ -736,7 +736,7 @@
         <div class="subtabs" id="finTabs">
           <button class="fin-tab-btn active" data-fintab="geral">Visão geral</button>
           <button class="fin-tab-btn" data-fintab="comissoes">Comissões</button>
-          <button class="fin-tab-btn" data-fintab="despesas">Despesas</button>
+          <button class="fin-tab-btn" data-fintab="despesas">Extrato</button>
         </div>
 
         <div id="fin-geral">
@@ -845,12 +845,14 @@
             <div class="actions-left">
               <select class="filter" id="despesasFilterCategoria">
                 <option value="">Todas as categorias</option>
+                <option>Comissão Recebida</option>
                 <option>Aluguel</option><option>Salários</option><option>Comissão Corretor</option><option>Combustível</option><option>Escritório</option><option>Marketing</option><option>Impostos</option><option>Outros</option>
               </select>
               <select class="filter" id="despesasFilterMes"><option value="">Todos os meses</option></select>
             </div>
             <button class="btn-primary" id="addDespesaBtn">+ Nova despesa</button>
           </div>
+          <div class="hint" style="margin-bottom:8px">Entradas = comissões efetivamente recebidas dos clientes (data de recebimento). Saídas = despesas cadastradas, incluindo repasses aos corretores.</div>
           <table>
             <thead><tr><th data-sort="data">Data</th><th data-sort="descricao">Descrição</th><th data-sort="categoria">Categoria</th><th data-sort="valor">Valor</th><th></th></tr></thead>
             <tbody id="despesasBody"></tbody>
@@ -4429,28 +4431,48 @@ function gerarReciboComissaoAgrupado() {
 function renderDespesasPage() {
   const body = document.getElementById("despesasBody");
   if (!body) return;
-  popularFiltroMes("despesasFilterMes", data.despesas.map(d => (d.data || "").slice(0,7)));
+  // Extrato = entradas (comissões efetivamente recebidas dos clientes, data de recebimento —
+  // caixa, não a data do negócio) + saídas (despesas cadastradas, incluindo repasse a corretor).
+  const entradas = data.negocios
+    .filter(n => n.comissao_recebida_em)
+    .map(n => ({
+      id: `entrada-${n.id}`, tipo: "entrada", data: n.comissao_recebida_em,
+      descricao: `Comissão recebida — ${n.numero_contrato || n.grao || "negócio"} (${nomeCadastro(n.produtor_id)})`,
+      categoria: "Comissão Recebida", valor: Number(n.comissao || 0), negocioId: n.id,
+    }));
+  const saidas = data.despesas.map(d => ({ ...d, tipo: "saida" }));
+  const todos = [...entradas, ...saidas];
+
+  popularFiltroMes("despesasFilterMes", todos.map(d => (d.data || "").slice(0,7)));
   const filtroCategoria = document.getElementById("despesasFilterCategoria").value;
   const filtroMes = document.getElementById("despesasFilterMes").value;
-  const list = data.despesas
+  const list = todos
     .filter(d => (!filtroCategoria || d.categoria === filtroCategoria) && (!filtroMes || (d.data||"").slice(0,7) === filtroMes))
     .sort((a,b) => (b.data||"").localeCompare(a.data||""));
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhuma despesa encontrada.</td></tr>` :
-    list.map(d => `<tr><td>${fmtDate(d.data)}</td><td>${d.descricao}</td><td>${d.categoria}</td><td>${fmtMoney(d.valor)}</td>
-      <td><button class="btn-edit-text" onclick="openDespesaModal('${d.id}')">Editar</button><button class="btn-danger-text" onclick="excluirDespesa('${d.id}')">Excluir</button></td></tr>`).join("");
+
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum lançamento encontrado.</td></tr>` :
+    list.map(d => {
+      const entrada = d.tipo === "entrada";
+      const cor = entrada ? "var(--green)" : "var(--red)";
+      const acoes = entrada
+        ? `<button class="btn-edit-text" onclick="abrirNegocioDeNotificacao('${d.negocioId}')">Ver negócio</button>`
+        : `<button class="btn-edit-text" onclick="openDespesaModal('${d.id}')">Editar</button><button class="btn-danger-text" onclick="excluirDespesa('${d.id}')">Excluir</button>`;
+      return `<tr><td>${fmtDate(d.data)}</td><td>${d.descricao}</td><td>${d.categoria}</td><td style="color:${cor};font-weight:500">${entrada ? "+ " : "− "}${fmtMoney(d.valor)}</td>
+        <td>${acoes}</td></tr>`;
+    }).join("");
 
   const hoje = new Date();
   const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}`;
   const anoAtual = String(hoje.getFullYear());
   const despesasMes = data.despesas.filter(d => (d.data||"").slice(0,7) === mesAtualKey).reduce((s,d) => s + Number(d.valor||0), 0);
   const despesasAno = data.despesas.filter(d => (d.data||"").slice(0,4) === anoAtual).reduce((s,d) => s + Number(d.valor||0), 0);
-  const comissaoMes = data.negocios.filter(n => n.data && n.data.slice(0,7) === mesAtualKey).reduce((s,n) => s + Number(n.comissao||0), 0);
-  const resultadoLiquido = comissaoMes - despesasMes;
+  const entradasMes = entradas.filter(e => (e.data||"").slice(0,7) === mesAtualKey).reduce((s,e) => s + Number(e.valor||0), 0);
+  const resultadoLiquido = entradasMes - despesasMes;
   document.getElementById("despesasCards").innerHTML = [
+    { label: "Entradas no mês", value: fmtMoney(entradasMes), foot: "comissões recebidas", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Despesas no mês", value: fmtMoney(despesasMes), foot: mesAnoLabel(mesAtualKey), ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
     { label: "Despesas no ano", value: fmtMoney(despesasAno), foot: anoAtual, ic: "&#128202;", bg: "var(--orange-soft)", color: "var(--orange)" },
-    { label: "Comissão gerada no mês", value: fmtMoney(comissaoMes), foot: "receita bruta", ic: "$", bg: "var(--green-soft)", color: "var(--green)" },
-    { label: "Resultado líquido do mês", value: fmtMoney(resultadoLiquido), foot: "comissão − despesas", ic: resultadoLiquido >= 0 ? "&#10003;" : "&#9888;", bg: resultadoLiquido >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: resultadoLiquido >= 0 ? "var(--blue)" : "var(--red)" },
+    { label: "Resultado líquido do mês", value: fmtMoney(resultadoLiquido), foot: "entradas − despesas", ic: resultadoLiquido >= 0 ? "&#10003;" : "&#9888;", bg: resultadoLiquido >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: resultadoLiquido >= 0 ? "var(--blue)" : "var(--red)" },
   ].map(dashCardHtml).join("");
 }
 document.getElementById("despesasFilterCategoria").addEventListener("change", renderDespesasPage);
