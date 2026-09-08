@@ -204,7 +204,7 @@ async function responderEmbarque(payload, adminHeaders, zapi) {
     return;
   }
   const idsProdutores = meusProdutores.map(p => p.id);
-  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&status=neq.Pago&status=neq.Entregue&data_fim_embarque=not.is.null&select=numero_contrato,grao,modalidade,data_inicio_embarque,data_fim_embarque&order=data_fim_embarque.asc`, { headers: adminHeaders });
+  const negResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&deleted_at=is.null&embarque_finalizado=is.false&data_fim_embarque=not.is.null&select=numero_contrato,grao,modalidade,data_inicio_embarque,data_fim_embarque&order=data_fim_embarque.asc`, { headers: adminHeaders });
   const negocios = await negResp.json();
   if (!Array.isArray(negocios) || negocios.length === 0) {
     await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Você não tem nenhuma janela de embarque/entrega pendente no momento." });
