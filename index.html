@@ -539,7 +539,7 @@
           <div class="cards" id="corretoresCards"></div>
           <div class="panel-card">
             <h3>Carteira convertida por corretor</h3>
-            <div class="hint">% da carteira de produtores (cadastros sob responsabilidade do corretor) com quem ele já fechou pelo menos um negócio.</div>
+            <div class="hint">% da carteira de produtores (cadastros sob responsabilidade do corretor) com quem ele já fechou pelo menos um negócio. Produtores do mesmo grupo contam como uma unidade só.</div>
             <div id="carteiraConversaoRanking"></div>
           </div>
           <div class="panel-card">
@@ -1464,9 +1464,20 @@ function renderCarteiraConversaoRanking() {
   if (!el) return;
   const porCorretor = data.equipe.map(e => {
     const carteira = data.cadastros.filter(c => c.tipo === "Produtor" && c.owner_id === e.user_id);
-    const convertidos = carteira.filter(c => data.negocios.some(n => n.produtor_id === c.id && n.corretor_id === e.user_id));
-    const pct = carteira.length ? convertidos.length / carteira.length * 100 : 0;
-    return { nome: e.nome, pct, total: carteira.length, feitos: convertidos.length };
+    // Produtores do mesmo grupo (ex: sócios da mesma propriedade) contam como uma unidade só
+    // na carteira, não um por pessoa — sem grupo, cada produtor continua contando individual.
+    const unidades = new Map();
+    carteira.forEach(c => {
+      const chave = c.grupo_id || c.id;
+      if (!unidades.has(chave)) unidades.set(chave, []);
+      unidades.get(chave).push(c);
+    });
+    const totalUnidades = unidades.size;
+    const unidadesConvertidas = [...unidades.values()].filter(membros =>
+      membros.some(c => data.negocios.some(n => n.produtor_id === c.id && n.corretor_id === e.user_id))
+    ).length;
+    const pct = totalUnidades ? unidadesConvertidas / totalUnidades * 100 : 0;
+    return { nome: e.nome, pct, total: totalUnidades, feitos: unidadesConvertidas };
   }).sort((a, b) => b.pct - a.pct);
   const MEDALHAS = ["🥇", "🥈", "🥉"];
   el.innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` :
