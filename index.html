@@ -80,6 +80,12 @@
     --pink: #8f3f6d;
     --pink-soft: rgba(143,63,109,0.12);
   }
+  /* A logo é um PNG branco (só essa cor, fundo transparente) — some no tema claro,
+     que tem fundo branco. Invertida ela fica preta, sem precisar de outro arquivo. */
+  [data-theme="light"] .login-box img,
+  [data-theme="light"] .sidebar .brand img {
+    filter: invert(1);
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
