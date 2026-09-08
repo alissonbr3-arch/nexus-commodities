@@ -149,7 +149,6 @@ const MENSAGEM_AJUDA = `🤖 *Comandos disponíveis*\n\n` +
   `/confirmacao [nº do contrato] — link da Confirmação de Negócio completa, pronta pra salvar como PDF\n` +
   `/pagamento — seus próximos pagamentos em aberto\n` +
   `/embarque — suas janelas de embarque/entrega pendentes\n` +
-  `/cotacao — cotação do dia de soja e milho\n` +
   `/ajuda — mostra esta lista`;
 
 async function responderConfirmacao(payload, adminHeaders, zapi, argumento) {
@@ -216,24 +215,6 @@ async function responderEmbarque(payload, adminHeaders, zapi) {
     return `• ${n.numero_contrato || "—"} — ${n.grao || ""} — ${rotulo}: ${fmtDate(n.data_inicio_embarque)} a ${fmtDate(n.data_fim_embarque)}`;
   }).join("\n");
   await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `🚚 Embarques/entregas pendentes\n\n${linhas}` });
-}
-
-// "/cotacao" não depende de telefone cadastrado — é informação de mercado pública, não dado
-// de negociação de ninguém.
-async function responderCotacao(payload, adminHeaders, zapi) {
-  const cotResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?preco_saca_brl=gt.0&select=produto,mes,pct,preco_saca_brl,updated_at&order=produto.asc`, { headers: adminHeaders });
-  const cotacoes = await cotResp.json().catch(() => []);
-  if (!Array.isArray(cotacoes) || cotacoes.length === 0) {
-    await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: "Não encontrei cotação disponível no momento." });
-    return;
-  }
-  const dolarResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_dolar?id=eq.1&select=atual,ptax_auto,ptax`, { headers: adminHeaders });
-  const dolarRows = await dolarResp.json().catch(() => []);
-  const d = dolarRows[0] || {};
-  const dolar = Number(d.ptax_auto || d.atual || d.ptax || 0);
-  const linhas = cotacoes.map(c => `${c.produto}${c.mes ? " " + c.mes : ""}: ${fmtMoney(c.preco_saca_brl)}/sc (${Number(c.pct) >= 0 ? "+" : ""}${Number(c.pct).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`).join("\n");
-  const atualizadoEm = cotacoes[0]?.updated_at ? new Date(cotacoes[0].updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-  await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: `📈 Cotações\n\n${linhas}${dolar ? `\n\nDólar: ${fmtMoney(dolar)}` : ""}${atualizadoEm ? `\nAtualizado em ${atualizadoEm}` : ""}` });
 }
 
 async function responderExtrato(payload, adminHeaders, zapi) {
@@ -318,7 +299,6 @@ export default async (req) => {
   if (comando === "/confirmacao") { await responderConfirmacao(payload, adminHeaders, zapi, argumento); return json({ ok: true }); }
   if (comando === "/pagamento" || comando === "/pagamentos") { await responderPagamento(payload, adminHeaders, zapi); return json({ ok: true }); }
   if (comando === "/embarque" || comando === "/embarques") { await responderEmbarque(payload, adminHeaders, zapi); return json({ ok: true }); }
-  if (comando === "/cotacao" || comando === "/cotacoes") { await responderCotacao(payload, adminHeaders, zapi); return json({ ok: true }); }
   if (comando === "/ajuda" || comando === "/menu" || comando === "/help") {
     await enviarWhatsapp({ ...zapi, telefone: payload.phone, mensagem: MENSAGEM_AJUDA });
     return json({ ok: true });
