@@ -25,6 +25,11 @@ function linhasPagamento(n) {
   return linhas;
 }
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function contaBancariaDoNegocio(n, vendedor) {
+  if (n.conta_bancaria === "Terciária" && vendedor.dados_bancarios_terciaria) return vendedor.dados_bancarios_terciaria;
+  if (n.conta_bancaria === "Secundária" && vendedor.dados_bancarios_secundaria) return vendedor.dados_bancarios_secundaria;
+  return vendedor.dados_bancarios || "—";
+}
 // Diz se um documento é CPF (até 11 dígitos) ou CNPJ (mais de 11 dígitos) — alguns produtores
 // rurais são cadastrados como pessoa jurídica (CNPJ) em vez de CPF, então o rótulo na
 // Confirmação de Negócio precisa se ajustar sozinho em vez de dizer sempre "CPF".
@@ -237,7 +242,7 @@ export function montarConfirmacaoHtml(n, vendedor, comprador, fazenda, config) {
     <tr><td class="label">INSCRIÇÃO ESTADUAL</td><td>${propriedadeIE}</td></tr>
     <tr><td class="label">PROPRIEDADE</td><td>${propriedadeNome}</td></tr>
     <tr><td class="label">MUNICÍPIO/UF</td><td>${propriedadeMunicipioUf}</td></tr>
-    <tr><td class="label">DADOS BANCÁRIOS</td><td>${(n.conta_bancaria === "Secundária" && vendedor.dados_bancarios_secundaria) ? vendedor.dados_bancarios_secundaria : (vendedor.dados_bancarios || "—")}</td></tr>
+    <tr><td class="label">DADOS BANCÁRIOS</td><td>${contaBancariaDoNegocio(n, vendedor)}</td></tr>
   </table>
   <table class="dados">
     <tr><td class="label">COMPRADOR</td><td>${comprador.nome}</td></tr>
