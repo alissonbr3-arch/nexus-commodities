@@ -846,12 +846,15 @@
             <div class="actions-left">
               <select class="filter" id="despesasFilterCategoria">
                 <option value="">Todas as categorias</option>
-                <option>Comissão Recebida</option>
+                <option>Comissão Recebida</option><option>Comissão Extra</option><option>Juros</option><option>Reembolso</option><option>Outras Receitas</option>
                 <option>Aluguel</option><option>Salários</option><option>Comissão Corretor</option><option>Combustível</option><option>Escritório</option><option>Marketing</option><option>Impostos</option><option>Outros</option>
               </select>
               <select class="filter" id="despesasFilterMes"><option value="">Todos os meses</option></select>
             </div>
-            <button class="btn-primary" id="addDespesaBtn">+ Nova despesa</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn-ghost" id="addReceitaBtn">+ Nova receita</button>
+              <button class="btn-primary" id="addDespesaBtn">+ Nova despesa</button>
+            </div>
           </div>
           <div class="hint" style="margin-bottom:8px">Entradas = comissões efetivamente recebidas dos clientes (data de recebimento). Saídas = despesas cadastradas, incluindo repasses aos corretores.</div>
           <div class="hint" id="despesasTotalFiltro" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
@@ -1151,7 +1154,7 @@ function onCpfCnpjInput(id) {
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "tudo";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1202,7 +1205,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
   wireRealtime();
 }
@@ -1223,6 +1226,7 @@ async function loadCotacoes() { const { data: rows, error } = await sb.from("nex
 async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000); if (!error) data.cotacoesHistorico = rows || []; }
 async function loadPrecoCompradorHistorico() { const { data: rows, error } = await sb.from("nexus_preco_comprador_historico").select("*").order("data").limit(2000); if (!error) data.precoCompradorHistorico = rows || []; }
 async function loadDespesas() { const { data: rows, error } = await sb.from("nexus_despesas").select("*").order("data", { ascending: false }); if (!error) data.despesas = rows || []; }
+async function loadReceitas() { const { data: rows, error } = await sb.from("nexus_receitas").select("*").order("data", { ascending: false }); if (!error) data.receitas = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
@@ -1242,6 +1246,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_config" }, async () => { await loadConfig(); renderConfiguracoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_preco_comprador_historico" }, async () => { await loadPrecoCompradorHistorico(); renderPrecoCompradorHistoricoChart(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_despesas" }, async () => { await loadDespesas(); renderDespesasPage(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_receitas" }, async () => { await loadReceitas(); renderDespesasPage(); })
     .subscribe((status) => { setSyncStatus(status === "SUBSCRIBED"); });
 }
 
@@ -4463,14 +4468,17 @@ function renderDespesasPage() {
   const body = document.getElementById("despesasBody");
   if (!body) return;
   // Extrato = entradas (comissões efetivamente recebidas dos clientes, data de recebimento —
-  // caixa, não a data do negócio) + saídas (despesas cadastradas, incluindo repasse a corretor).
-  const entradas = data.negocios
+  // caixa, não a data do negócio — + receitas lançadas na mão) + saídas (despesas cadastradas,
+  // incluindo repasse a corretor).
+  const entradasNegocio = data.negocios
     .filter(n => n.comissao_recebida_em)
     .map(n => ({
-      id: `entrada-${n.id}`, tipo: "entrada", data: n.comissao_recebida_em,
+      id: `entrada-${n.id}`, tipo: "entrada", origem: "negocio", data: n.comissao_recebida_em,
       descricao: `Comissão recebida — ${n.numero_contrato || n.grao || "negócio"} (${nomeCadastro(n.produtor_id)})`,
       categoria: "Comissão Recebida", valor: Number(n.comissao || 0), negocioId: n.id,
     }));
+  const entradasManuais = data.receitas.map(r => ({ ...r, tipo: "entrada", origem: "manual" }));
+  const entradas = [...entradasNegocio, ...entradasManuais];
   const saidas = data.despesas.map(d => ({ ...d, tipo: "saida" }));
   const todos = [...entradas, ...saidas];
 
@@ -4486,7 +4494,9 @@ function renderDespesasPage() {
       const entrada = d.tipo === "entrada";
       const cor = entrada ? "var(--green)" : "var(--red)";
       const acoes = entrada
-        ? `<button class="btn-edit-text" onclick="abrirNegocioDeNotificacao('${d.negocioId}')">Ver negócio</button>`
+        ? (d.origem === "manual"
+            ? `<button class="btn-edit-text" onclick="openReceitaModal('${d.id}')">Editar</button><button class="btn-danger-text" onclick="excluirReceita('${d.id}')">Excluir</button>`
+            : `<button class="btn-edit-text" onclick="abrirNegocioDeNotificacao('${d.negocioId}')">Ver negócio</button>`)
         : `<button class="btn-edit-text" onclick="openDespesaModal('${d.id}')">Editar</button><button class="btn-danger-text" onclick="excluirDespesa('${d.id}')">Excluir</button>`;
       return `<tr><td>${fmtDate(d.data)}</td><td>${d.descricao}</td><td>${d.categoria}</td><td style="color:${cor};font-weight:500">${entrada ? "+ " : "− "}${fmtMoney(d.valor)}</td>
         <td>${acoes}</td></tr>`;
@@ -4576,7 +4586,10 @@ function renderFluxoCaixaProjetado() {
   // nos meses seguintes não tem "já realizado", é 100% projeção.
   const entradasJaRealizadasMesAtual = data.negocios
     .filter(n => !n.deleted_at && n.comissao_recebida_em && n.comissao_recebida_em.slice(0, 7) === primeiroMes)
-    .reduce((s, n) => s + Number(n.comissao || 0), 0);
+    .reduce((s, n) => s + Number(n.comissao || 0), 0)
+    + data.receitas
+      .filter(r => (r.data || "").slice(0, 7) === primeiroMes)
+      .reduce((s, r) => s + Number(r.valor || 0), 0);
   entradasPorMes[primeiroMes] = (entradasPorMes[primeiroMes] || 0) + entradasJaRealizadasMesAtual;
   const saidasJaRealizadasMesAtual = data.despesas
     .filter(d => d.data <= hojeISO && (d.data || "").slice(0, 7) === primeiroMes)
@@ -4636,6 +4649,7 @@ function renderFluxoCaixaProjetado() {
 document.getElementById("despesasFilterCategoria").addEventListener("change", renderDespesasPage);
 document.getElementById("despesasFilterMes").addEventListener("change", renderDespesasPage);
 document.getElementById("addDespesaBtn").addEventListener("click", () => openDespesaModal(null));
+document.getElementById("addReceitaBtn").addEventListener("click", () => openReceitaModal(null));
 function openDespesaModal(id) {
   const item = id ? data.despesas.find(d => d.id === id) : { descricao: "", categoria: "Outros", valor: "", data: todayISO(), obs: "" };
   document.getElementById("modalContent").innerHTML = `
@@ -4692,6 +4706,42 @@ async function excluirDespesa(id) {
   if (!ok) return;
   await sb.from("nexus_despesas").delete().eq("id", id);
   await loadDespesas(); renderDespesasPage();
+}
+
+// Receita lançada na mão (não vinculada a negócio) — ex: comissão extra, juros, reembolso.
+// Entra no Extrato como entrada igual às comissões recebidas de negócio, só que editável.
+function openReceitaModal(id) {
+  const item = id ? data.receitas.find(r => r.id === id) : { descricao: "", categoria: "Outras Receitas", valor: "", data: todayISO(), obs: "" };
+  document.getElementById("modalContent").innerHTML = `
+    <h3>${id ? "Editar receita" : "Nova receita"}</h3>
+    <div class="field"><label>Descrição</label><input type="text" id="f_recDescricao" value="${item.descricao || ""}" placeholder="Ex: Consultoria pontual"></div>
+    <div class="field-row">
+      <div class="field"><label>Categoria</label><select id="f_recCategoria">${["Comissão Extra","Juros","Reembolso","Outras Receitas"].map(c => `<option ${item.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="f_recValor" value="${item.valor || ""}"></div>
+    </div>
+    <div class="field"><label>Data</label><input type="date" id="f_recData" value="${item.data || todayISO()}"></div>
+    <div class="field"><label>Observações</label><textarea id="f_recObs" rows="2">${item.obs || ""}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveReceita('${id || ""}')">Salvar</button></div>`;
+  showModal();
+}
+async function saveReceita(id) {
+  const payload = { descricao: v("f_recDescricao"), categoria: v("f_recCategoria"), valor: n("f_recValor"), data: v("f_recData") || todayISO(), obs: v("f_recObs"), updated_at: new Date().toISOString() };
+  if (!payload.descricao.trim()) { alert("Informe a descrição da receita."); return; }
+  let error;
+  if (id) {
+    ({ error } = await sb.from("nexus_receitas").update(payload).eq("id", id));
+  } else {
+    payload.created_by = currentUserId;
+    ({ error } = await sb.from("nexus_receitas").insert([payload]));
+  }
+  if (error) { alert("Não consegui salvar a receita: " + error.message); return; }
+  await loadReceitas(); closeModal(); renderDespesasPage();
+}
+async function excluirReceita(id) {
+  const ok = await askConfirm("Tem certeza que deseja excluir esta receita? Essa ação não pode ser desfeita.");
+  if (!ok) return;
+  await sb.from("nexus_receitas").delete().eq("id", id);
+  await loadReceitas(); renderDespesasPage();
 }
 
 // ---------------- AGENDA ----------------
