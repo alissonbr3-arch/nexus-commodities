@@ -4516,17 +4516,30 @@ function renderDespesasPage() {
   }
 
   const hoje = new Date();
+  const hojeISO = todayISO();
   const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}`;
   const anoAtual = String(hoje.getFullYear());
   const despesasMes = data.despesas.filter(d => (d.data||"").slice(0,7) === mesAtualKey).reduce((s,d) => s + Number(d.valor||0), 0);
   const despesasAno = data.despesas.filter(d => (d.data||"").slice(0,4) === anoAtual).reduce((s,d) => s + Number(d.valor||0), 0);
   const entradasMes = entradas.filter(e => (e.data||"").slice(0,7) === mesAtualKey).reduce((s,e) => s + Number(e.valor||0), 0);
+  const entradasAno = entradas.filter(e => (e.data||"").slice(0,4) === anoAtual).reduce((s,e) => s + Number(e.valor||0), 0);
   const resultadoLiquido = entradasMes - despesasMes;
+
+  // Saldo atual = saldo inicial (Fluxo de Caixa > Editar) + tudo que já entrou/saiu de fato
+  // desde a data de referência até hoje. Sem saldo inicial configurado, soma o histórico todo.
+  const saldoInicialConfig = Number(data.config?.saldo_inicial_caixa || 0);
+  const dataRefSaldo = data.config?.saldo_inicial_caixa_data || null;
+  const entradasDesdeRef = entradas.filter(e => e.data && e.data <= hojeISO && (!dataRefSaldo || e.data > dataRefSaldo)).reduce((s,e) => s + Number(e.valor||0), 0);
+  const saidasDesdeRef = data.despesas.filter(d => d.data && d.data <= hojeISO && (!dataRefSaldo || d.data > dataRefSaldo)).reduce((s,d) => s + Number(d.valor||0), 0);
+  const saldoAtual = saldoInicialConfig + entradasDesdeRef - saidasDesdeRef;
+
   document.getElementById("despesasCards").innerHTML = [
     { label: "Entradas no mês", value: fmtMoney(entradasMes), foot: "comissões recebidas", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Despesas no mês", value: fmtMoney(despesasMes), foot: mesAnoLabel(mesAtualKey), ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
+    { label: "Receitas no ano", value: fmtMoney(entradasAno), foot: anoAtual, ic: "&#128200;", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Despesas no ano", value: fmtMoney(despesasAno), foot: anoAtual, ic: "&#128202;", bg: "var(--orange-soft)", color: "var(--orange)" },
     { label: "Resultado líquido do mês", value: fmtMoney(resultadoLiquido), foot: "entradas − despesas", ic: resultadoLiquido >= 0 ? "&#10003;" : "&#9888;", bg: resultadoLiquido >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: resultadoLiquido >= 0 ? "var(--blue)" : "var(--red)" },
+    { label: "Saldo atual", value: fmtMoney(saldoAtual), foot: dataRefSaldo ? `desde ${fmtDate(dataRefSaldo)}` : "configure em Fluxo de Caixa", ic: "&#128176;", bg: saldoAtual >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoAtual >= 0 ? "var(--blue)" : "var(--red)" },
   ].map(dashCardHtml).join("");
 }
 
