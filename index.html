@@ -865,16 +865,17 @@
         </div>
 
         <div id="fin-fluxo" style="display:none">
+          <div class="hint" id="saldoInicialLabel" style="margin-bottom:10px;display:flex;align-items:center;gap:10px;font-weight:600;color:var(--gold)"></div>
           <div class="cards" id="fluxoProjCards"></div>
           <div class="panel-card" style="margin-top:14px">
             <h3>Projeção dos próximos 9 meses</h3>
-            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. No mês atual, soma o que já é fato (recebido/pago até hoje) com o que ainda está projetado pro resto do mês — nos meses seguintes é só projeção.</div>
+            <div class="hint">Entradas = comissões ainda não recebidas, no mês do vencimento estimado (dia 10 do mês seguinte ao pagamento da venda). Saídas = despesas já cadastradas com data depois de hoje (inclui recorrentes) + repasses de comissão a corretor ainda não pagos, projetados pro mesmo mês do recebimento. Vencimentos já passados entram no mês atual. No mês atual, soma o que já é fato (recebido/pago até hoje) com o que ainda está projetado pro resto do mês — nos meses seguintes é só projeção. O saldo inicial (acima) é o ponto de partida real do caixa — cada mês soma entradas e subtrai saídas a partir dele.</div>
             <div class="chart-wrap"><canvas id="fluxoProjChart"></canvas></div>
           </div>
           <div class="panel-card" style="margin-top:14px">
             <h3>Detalhe mês a mês</h3>
             <table>
-              <thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo do mês</th><th>Saldo acumulado</th></tr></thead>
+              <thead><tr><th>Mês</th><th>Saldo Inicial</th><th>Entradas</th><th>Saídas</th><th>Saldo Final</th></tr></thead>
               <tbody id="fluxoProjBody"></tbody>
             </table>
           </div>
@@ -4529,6 +4530,27 @@ function renderDespesasPage() {
   ].map(dashCardHtml).join("");
 }
 
+// Saldo inicial de caixa — ponto de partida real (do extrato bancário) pro saldo acumulado
+// da projeção não começar do zero. Fica guardado em nexus_config (linha única).
+function openSaldoInicialModal() {
+  const cfg = data.config || {};
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Saldo inicial de caixa</h3>
+    <div class="hint" style="margin-bottom:10px">Confira no extrato bancário e informe o saldo numa data de referência — a projeção soma entradas e saídas a partir daí, mês a mês.</div>
+    <div class="field-row">
+      <div class="field"><label>Saldo (R$)</label><input type="number" step="0.01" id="f_saldoInicialValor" value="${cfg.saldo_inicial_caixa || 0}"></div>
+      <div class="field"><label>Data de referência</label><input type="date" id="f_saldoInicialData" value="${cfg.saldo_inicial_caixa_data || todayISO()}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveSaldoInicial()">Salvar</button></div>`;
+  showModal();
+}
+async function saveSaldoInicial() {
+  const payload = { saldo_inicial_caixa: n("f_saldoInicialValor"), saldo_inicial_caixa_data: v("f_saldoInicialData") || todayISO() };
+  const { error } = await sb.from("nexus_config").update(payload).eq("id", 1);
+  if (error) { alert("Não consegui salvar o saldo inicial: " + error.message); return; }
+  await loadConfig(); closeModal(); renderFluxoCaixaProjetado();
+}
+
 let fluxoProjChart = null;
 // Projeta os próximos 9 meses de caixa a partir dos negócios ainda em aberto — não é
 // histórico (isso é o Extrato), é estimativa: "quanto deve entrar e sair daqui pra frente".
@@ -4596,24 +4618,32 @@ function renderFluxoCaixaProjetado() {
     .reduce((s, d) => s + Number(d.valor || 0), 0);
   saidasPorMes[primeiroMes] = (saidasPorMes[primeiroMes] || 0) + saidasJaRealizadasMesAtual;
 
-  let acumulado = 0;
+  const saldoInicialConfig = Number(data.config?.saldo_inicial_caixa || 0);
+  let acumulado = saldoInicialConfig;
   const linhas = months.map(m => {
     const entradas = entradasPorMes[m.key] || 0;
     const saidas = saidasPorMes[m.key] || 0;
     const saldo = entradas - saidas;
+    const saldoInicialMes = acumulado;
     acumulado += saldo;
-    return { ...m, entradas, saidas, saldo, acumulado };
+    return { ...m, entradas, saidas, saldo, saldoInicialMes, acumulado };
   });
+
+  const saldoInicialLabelEl = document.getElementById("saldoInicialLabel");
+  if (saldoInicialLabelEl) {
+    saldoInicialLabelEl.innerHTML = `<span>Saldo inicial: ${fmtMoney(saldoInicialConfig)}${data.config?.saldo_inicial_caixa_data ? ` (em ${fmtDate(data.config.saldo_inicial_caixa_data)})` : ""}</span><button class="btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="openSaldoInicialModal()">Editar</button>`;
+  }
 
   const totalEntradas = linhas.reduce((s, l) => s + l.entradas, 0);
   const totalSaidas = linhas.reduce((s, l) => s + l.saidas, 0);
   const saldoTotal = totalEntradas - totalSaidas;
-  const piorMes = linhas.reduce((min, l) => (l.saldo < min.saldo ? l : min), linhas[0]);
+  const saldoFinalProjetado = linhas[linhas.length - 1].acumulado;
+  const piorMes = linhas.reduce((min, l) => (l.acumulado < min.acumulado ? l : min), linhas[0]);
   document.getElementById("fluxoProjCards").innerHTML = [
     { label: "Entradas projetadas (9 meses)", value: fmtMoney(totalEntradas), foot: "comissões a receber", ic: "&#8599;", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Saídas projetadas (9 meses)", value: fmtMoney(totalSaidas), foot: "despesas + repasses", ic: "&#8600;", bg: "var(--red-soft)", color: "var(--red)" },
-    { label: "Saldo projetado (9 meses)", value: fmtMoney(saldoTotal), foot: "entradas − saídas", ic: saldoTotal >= 0 ? "&#10003;" : "&#9888;", bg: saldoTotal >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoTotal >= 0 ? "var(--blue)" : "var(--red)" },
-    { label: "Mês mais apertado", value: piorMes ? piorMes.labelLongo : "—", foot: piorMes ? `saldo ${fmtMoney(piorMes.saldo)}` : "", ic: "&#9888;", bg: "var(--orange-soft)", color: "var(--orange)" },
+    { label: "Saldo final projetado", value: fmtMoney(saldoFinalProjetado), foot: `em ${linhas[linhas.length - 1].labelLongo} (variação de ${fmtMoney(saldoTotal)})`, ic: saldoFinalProjetado >= 0 ? "&#10003;" : "&#9888;", bg: saldoFinalProjetado >= 0 ? "var(--blue-soft)" : "var(--red-soft)", color: saldoFinalProjetado >= 0 ? "var(--blue)" : "var(--red)" },
+    { label: "Mês mais apertado", value: piorMes ? piorMes.labelLongo : "—", foot: piorMes ? `saldo final ${fmtMoney(piorMes.acumulado)}` : "", ic: "&#9888;", bg: "var(--orange-soft)", color: "var(--orange)" },
   ].map(dashCardHtml).join("");
 
   if (fluxoProjChart) fluxoProjChart.destroy();
@@ -4625,7 +4655,7 @@ function renderFluxoCaixaProjetado() {
         { label: "Entradas", data: linhas.map(l => l.entradas), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 26 },
         { label: "Saídas", data: linhas.map(l => -l.saidas), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 26 },
         { label: "Saldo do mês", data: linhas.map(l => l.saldo), backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 26 },
-        { type: "line", label: "Saldo acumulado", data: linhas.map(l => l.acumulado), borderColor: "#4a8bb0", backgroundColor: "#4a8bb0", pointBackgroundColor: "#4a8bb0", pointRadius: 4, borderWidth: 2, tension: 0.25, fill: false },
+        { type: "line", label: "Saldo em caixa", data: linhas.map(l => l.acumulado), borderColor: "#4a8bb0", backgroundColor: "#4a8bb0", pointBackgroundColor: "#4a8bb0", pointRadius: 4, borderWidth: 2, tension: 0.25, fill: false },
       ],
     },
     options: {
@@ -4639,9 +4669,9 @@ function renderFluxoCaixaProjetado() {
   if (body) {
     body.innerHTML = linhas.map(l => `<tr>
       <td>${l.labelLongo}</td>
+      <td style="color:${l.saldoInicialMes >= 0 ? "var(--ink-soft)" : "var(--red)"}">${fmtMoney(l.saldoInicialMes)}</td>
       <td style="color:var(--green)">${fmtMoney(l.entradas)}</td>
       <td style="color:var(--red)">${fmtMoney(l.saidas)}</td>
-      <td style="color:${l.saldo >= 0 ? "var(--green)" : "var(--red)"};font-weight:500">${fmtMoney(l.saldo)}</td>
       <td style="color:${l.acumulado >= 0 ? "var(--ink)" : "var(--red)"};font-weight:600">${fmtMoney(l.acumulado)}</td>
     </tr>`).join("");
   }
