@@ -435,10 +435,10 @@
 
         <div class="subpage active" id="sub-executivo">
           <div class="filters-row">
-            <button class="period-btn active" data-period="tudo">Tudo</button>
-            <button class="period-btn" data-period="30">30d</button>
-            <button class="period-btn" data-period="60">60d</button>
-            <button class="period-btn" data-period="90">90d</button>
+            <button class="period-btn" data-period="dia">Diário</button>
+            <button class="period-btn" data-period="semana">Semanal</button>
+            <button class="period-btn active" data-period="mes">Mensal</button>
+            <button class="period-btn" data-period="ano">Anual</button>
           </div>
           <div class="cards" id="dashCards"></div>
           <div class="grid-2">
@@ -1157,7 +1157,7 @@ function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : 
 
 let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
-let currentPeriod = "tudo";
+let currentPeriod = "mes";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
 let compradorGraoChart = null, compradorVolumeMensalChart = null, produtorEstadoChart = null, produtorSafraChart = null, fluxoCaixaChart = null;
 let currentUserId = null;
@@ -1376,9 +1376,8 @@ document.querySelectorAll(".period-btn").forEach(btn => {
 });
 
 function periodFilteredNegocios() {
-  if (currentPeriod === "tudo") return data.negocios;
-  const days = Number(currentPeriod); const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-  return data.negocios.filter(n => n.data && new Date(n.data) >= cutoff);
+  const limites = limitesPeriodoCorretores(currentPeriod);
+  return data.negocios.filter(n => dentroDoPeriodoCorretores(n.data, limites));
 }
 
 // ---------------- DASHBOARD CORRETORES ----------------
@@ -1393,6 +1392,7 @@ function limitesPeriodoCorretores(periodo) {
   const hoje = new Date();
   const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   if (periodo === "total") return null;
+  if (periodo === "dia") { const hojeISO = toISO(hoje); return { inicio: hojeISO, fim: hojeISO }; }
   if (periodo === "semana") {
     const dow = hoje.getDay(); const diffToMonday = dow === 0 ? 6 : dow - 1;
     const seg = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - diffToMonday);
