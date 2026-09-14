@@ -3155,33 +3155,183 @@ function gerarLiberacaoEmbarque(negocioId) {
   if (!win) { alert("Habilite pop-ups para gerar a liberação."); return; }
   win.document.open(); win.document.write(r.html); win.document.close();
 }
+// Gera a Liberação de Embarque como PDF nativo (texto vetorial de verdade, selecionável e
+// pesquisável) usando jsPDF, com o mesmo conteúdo/ordem do montarLiberacaoEmbarqueHtml (a via
+// de impressão). Duplicado de propósito, mesmo padrão do gerarConfirmacaoPdfNativo — se mudar
+// o texto/layout da Liberação lá, replicar aqui.
+async function gerarLiberacaoPdfNativo(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return null;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a liberação."); return null; }
+  if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return null; }
+  const sacas = Number(n.quantidade || 0);
+  const kg = sacas * 60;
+  const armazem = n.armazem_id ? data.cadastros.find(c => c.id === n.armazem_id) : null;
+  const destinatario = armazem ? armazem.nome : (n.local_origem || "—");
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const logo = await logoParaPdf();
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = 595.28, pageH = 841.89, margem = 42;
+  const larguraUtil = pageW - margem * 2;
+  let y = margem;
+
+  function novaPagina() { doc.addPage(); y = margem; }
+  function garanteEspaco(altura) { if (y + altura > pageH - margem) novaPagina(); }
+  function paragrafo(texto, opts = {}) {
+    const tamanho = opts.tamanho || 10;
+    const entreLinhas = opts.entreLinhas || tamanho * 1.32;
+    doc.setFontSize(tamanho);
+    doc.setFont("helvetica", opts.negrito ? "bold" : "normal");
+    for (const linhaOriginal of String(texto).split("\n")) {
+      if (linhaOriginal.trim() === "") { y += entreLinhas * 0.5; continue; }
+      for (const linha of doc.splitTextToSize(linhaOriginal, larguraUtil)) {
+        garanteEspaco(entreLinhas);
+        doc.text(linha, margem, y);
+        y += entreLinhas;
+      }
+    }
+  }
+  function linhaRotuloValor(rotulo, valor, opts = {}) {
+    const tamanho = opts.tamanho || 10;
+    const entreLinhas = tamanho * 1.32;
+    doc.setFontSize(tamanho);
+    doc.setFont("helvetica", "bold");
+    const rotuloTexto = rotulo + " ";
+    const larguraRotulo = doc.getTextWidth(rotuloTexto);
+    doc.setFont("helvetica", "normal");
+    const linhas = doc.splitTextToSize(String(valor), larguraUtil - larguraRotulo);
+    garanteEspaco(entreLinhas);
+    doc.setFont("helvetica", "bold");
+    doc.text(rotuloTexto, margem, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(linhas[0] || "", margem + larguraRotulo, y);
+    y += entreLinhas;
+    for (let i = 1; i < linhas.length; i++) {
+      garanteEspaco(entreLinhas);
+      doc.text(linhas[i], margem, y);
+      y += entreLinhas;
+    }
+  }
+  function titulo3(texto) {
+    garanteEspaco(26);
+    y += 10;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11.5);
+    doc.text(texto, margem, y);
+    y += 15;
+  }
+  function tabela(linhas) {
+    const larguraLabel = 165, padding = 6;
+    doc.setFontSize(9.5);
+    for (const [label, valor] of linhas) {
+      doc.setFont("helvetica", "normal");
+      const linhasValor = doc.splitTextToSize(String(valor), larguraUtil - larguraLabel - padding * 2);
+      const altura = Math.max(20, linhasValor.length * 12 + 8);
+      garanteEspaco(altura);
+      doc.setDrawColor(153);
+      doc.setFillColor(242, 242, 242);
+      doc.rect(margem, y, larguraLabel, altura, "FD");
+      doc.rect(margem + larguraLabel, y, larguraUtil - larguraLabel, altura, "S");
+      doc.setFont("helvetica", "bold");
+      doc.text(label, margem + padding, y + 13);
+      doc.setFont("helvetica", "normal");
+      linhasValor.forEach((l, i) => doc.text(l, margem + larguraLabel + padding, y + 13 + i * 12));
+      y += altura;
+    }
+    y += 12;
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+  doc.text(NEXUS_EMPRESA.nome, margem, y);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(NEXUS_EMPRESA.endereco, margem, y + 13);
+  doc.text(`${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}`, margem, y + 24);
+  doc.addImage(logo, "PNG", pageW - margem - 44, y - 10, 44, 44, undefined, "MEDIUM");
+  y += 36;
+  doc.setDrawColor(184, 134, 11); doc.setLineWidth(1.3);
+  doc.line(margem, y, pageW - margem, y);
+  y += 22;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  doc.text(`São Gabriel do Oeste - MS, ${hoje}`, pageW - margem, y, { align: "right" });
+  y += 20;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13.5);
+  doc.splitTextToSize("TERMO FORMAL DE LIBERAÇÃO PARA EMBARQUE DE GRÃOS", larguraUtil).forEach(l => { doc.text(l, pageW / 2, y, { align: "center" }); y += 17; });
+  y += 5;
+
+  paragrafo(`Referente à Confirmação de Negócio Nº ${n.numero_contrato || "—"} – ${vendedor.nome} X ${comprador.nome}`, { negrito: true });
+  y += 6;
+
+  titulo3("DESTINATÁRIO PRINCIPAL E NOTIFICAÇÕES (C/C):");
+  tabela([
+    ["Destinatário (Armazém)", destinatario],
+    ["C/C (Comprador)", comprador.nome],
+    ["C/C (Vendedor)", vendedor.nome],
+  ]);
+
+  paragrafo(`Pelo presente instrumento, a NEXUS COMMODITIES formaliza e comunica a autorização e liberação oficial para o início das operações de carregamento e embarque da mercadoria pactuada, nos termos da Confirmação de Negócio de Compra e Venda nº ${n.numero_contrato || "—"}, observadas as especificações e condições detalhadas a seguir:`);
+
+  titulo3("1. DETALHAMENTO DO EMBARQUE E ESPECIFICAÇÕES DO PRODUTO:");
+  tabela([
+    ["Produto / Mercadoria", `${(n.grao||"—").toUpperCase()} EM GRÃOS A GRANEL (PADRÃO COMERCIAL)`],
+    ["Volume / Quantidade Liberada", `${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG`],
+    ["Data Efetiva de Liberação", `${fmtDate(n.data_inicio_embarque)} (Autorizado o carregamento a partir desta data)`],
+    ["Local de Carregamento e Retirada", destinatario],
+  ]);
+
+  titulo3("2. DISPOSIÇÕES SOBRE ARMAZENAGEM, QUEBRA TÉCNICA E RESPONSABILIDADES:");
+  linhaRotuloValor("Responsabilidade de Custos:", `Todos os custos decorrentes de armazenagem, retenção e eventuais percentuais de quebra técnica do produto correrão por conta e responsabilidade exclusiva do VENDEDOR até a data limite de ${fmtDate(n.data_fim_embarque) || "—"}.`);
+
+  y += 30;
+  garanteEspaco(50);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+  doc.text(NEXUS_EMPRESA.nome, pageW / 2, y, { align: "center" }); y += 12;
+  doc.text(NEXUS_EMPRESA.endereco, pageW / 2, y, { align: "center" }); y += 12;
+  doc.text(`Fone / WhatsApp: ${NEXUS_EMPRESA.telefone}`, pageW / 2, y, { align: "center" }); y += 12;
+  doc.text(`E-mail: ${NEXUS_EMPRESA.email}`, pageW / 2, y, { align: "center" });
+
+  return doc;
+}
+// Manda a Liberação de Embarque em PDF (nativo, texto de verdade) por e-mail já anexado, via
+// Resend — antes ia como HTML completo no corpo do e-mail, agora vai como anexo PDF de verdade.
 async function enviarLiberacaoPorEmail(negocioId) {
-  const r = montarLiberacaoEmbarqueHtml(negocioId);
-  if (!r) return;
-  const { vendedor, comprador, armazem } = r;
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return;
+  const vendedor = data.cadastros.find(c => c.id === n.produtor_id);
+  const comprador = data.cadastros.find(c => c.id === n.cliente_id);
+  if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a liberação."); return; }
+  if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return; }
   if (!vendedor.email || !comprador.email) {
     const faltando = [!vendedor.email ? vendedor.nome : null, !comprador.email ? comprador.nome : null].filter(Boolean).join(" e ");
     alert(`Cadastre o e-mail de contato de ${faltando} antes de enviar (aba Cadastros).`);
     return;
   }
+  const armazem = n.armazem_id ? data.cadastros.find(c => c.id === n.armazem_id) : null;
   const linhaArmazem = armazem
     ? (armazem.email ? `\n- ${armazem.nome} (${armazem.email})` : `\n⚠️ ${armazem.nome} está selecionado como armazém, mas não tem e-mail cadastrado — não vai receber.`)
     : "";
-  const confirmar = confirm(`Enviar a Liberação de Embarque ${r.numeroContrato || ""} por e-mail para:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})${linhaArmazem}\n\nConfirmar envio?`);
+  const confirmar = confirm(`Enviar a Liberação de Embarque ${n.numero_contrato || ""} em PDF por e-mail para:\n- ${vendedor.nome} (${vendedor.email})\n- ${comprador.nome} (${comprador.email})${linhaArmazem}\n\nConfirmar envio?`);
   if (!confirmar) return;
-  const htmlSemScript = r.html.replace(/<script[\s\S]*?<\/script>/, "");
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { alert("Sessão expirada, faça login novamente."); return; }
   try {
+    const doc = await gerarLiberacaoPdfNativo(negocioId);
+    if (!doc) return;
+    const pdfBlob = doc.output("blob");
+    const pdfBase64 = await blobParaBase64(pdfBlob);
     const resp = await fetch("/.netlify/functions/enviar-liberacao-embarque", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, html: htmlSemScript }),
+      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, pdf_base64: pdfBase64 }),
     });
     const j = await resp.json();
     alert(j.ok ? "✓ E-mail enviado" : "✗ Erro: " + j.erro);
   } catch (e) {
-    alert("Erro ao enviar: " + e.message);
+    alert("Erro ao gerar/enviar PDF: " + e.message);
   }
 }
 

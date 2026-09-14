@@ -5,13 +5,28 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
 // Cópia visível (CC, não oculta) pra Nexus em toda Liberação de Embarque enviada.
 const CC_NEXUS = "nexuscommodities@terra.com.br";
+// Assinatura padrão (logo + contato) anexada no rodapé de todo e-mail enviado pelo app.
+// Precisa ser uma URL pública (não base64) pra funcionar nos clientes de e-mail.
+const ASSINATURA_EMAIL_HTML = `
+  <table style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd;font-family:Arial,Helvetica,sans-serif">
+    <tr>
+      <td style="padding-right:12px"><img src="https://painel.nexuscommoditiesms.com.br/logo-nexus.png" alt="Nexus Commodities" width="48" height="48" style="display:block"></td>
+      <td style="font-size:12px;color:#555;line-height:1.5">
+        <strong style="color:#111;font-size:13px">Nexus Commodities</strong><br>
+        (67) 99130-9516<br>
+        São Gabriel do Oeste - MS
+      </td>
+    </tr>
+  </table>`;
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-// Envia a Liberação de Embarque por e-mail (Resend) pro produtor e comprador, só pra conhecimento
-// das partes — sem DocuSign, não precisa de assinatura. Só corretores da equipe Nexus podem chamar.
+// Envia a Liberação de Embarque em PDF anexado por e-mail (Resend) pro produtor, comprador e
+// armazém, só pra conhecimento das partes — sem DocuSign, não precisa de assinatura. O PDF já
+// vem pronto (gerado no navegador do corretor com jsPDF), essa function só recebe e envia. Só
+// corretores da equipe Nexus podem chamar.
 export default async (req) => {
   let payload;
   try {
@@ -19,9 +34,9 @@ export default async (req) => {
   } catch {
     return json({ ok: false, erro: "Corpo da requisição inválido." }, 400);
   }
-  const { negocio_id, access_token, html } = payload || {};
-  if (!negocio_id || !access_token || !html) {
-    return json({ ok: false, erro: "Dados incompletos (negocio_id, access_token e html são obrigatórios)." }, 400);
+  const { negocio_id, access_token, pdf_base64 } = payload || {};
+  if (!negocio_id || !access_token || !pdf_base64) {
+    return json({ ok: false, erro: "Dados incompletos (negocio_id, access_token e pdf_base64 são obrigatórios)." }, 400);
   }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -68,6 +83,8 @@ export default async (req) => {
     erro = "RESEND_API_KEY não configurada.";
   } else {
     try {
+      // Mesmo padrão de nome já usado na Confirmação em PDF por e-mail.
+      const nomeArquivo = `Liberacao ${negocio.numero_contrato || "negocio"} - ${vendedor.nome} x ${comprador.nome}.pdf`.replace(/[\\/]/g, "-");
       const resp = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
@@ -76,7 +93,8 @@ export default async (req) => {
           to: destinatarios,
           cc: CC_NEXUS,
           subject: `Liberação de Embarque ${negocio.numero_contrato || ""} — Nexus Commodities`,
-          html,
+          html: `<p>Olá,</p><p>Segue em anexo a Liberação de Embarque ${negocio.numero_contrato || ""}, referente à negociação de ${(negocio.grao||"—")}${negocio.safra ? " Safra " + negocio.safra : ""}.</p><p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
+          attachments: [{ filename: nomeArquivo, content: pdf_base64 }],
         }),
       });
       const respData = await resp.json();
