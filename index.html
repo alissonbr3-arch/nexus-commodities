@@ -943,7 +943,7 @@
         <div class="totals-strip" id="wsTotals"></div>
         <div class="team-grid" id="wsCards" style="display:none;grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));"></div>
         <table id="wsListTable">
-          <thead><tr><th>Nome</th><th>Status</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Status</th><th>Soja esperado (sc)</th><th>Soja negociado (sc)</th><th>Milho esperado (sc)</th><th>Milho negociado (sc)</th><th>Sorgo negociado (sc)</th><th>Último contato</th><th>Lembrete</th><th></th></tr></thead>
           <tbody id="wsListBody"></tbody>
         </table>
       </div>
@@ -5257,18 +5257,19 @@ function renderWorkspace() {
   const volumeMilhoTotal = clientes.reduce((s,c) => s + Number(c.volume_anual_milho||0), 0);
   const negociadoSojaTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Soja"), 0);
   const negociadoMilhoTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Milho"), 0);
+  const negociadoSorgoTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Sorgo"), 0);
   const contatadosHoje = clientes.filter(c => c.last_contact_date === today).length;
 
   document.getElementById("wsTotals").innerHTML = `
     <div class="t"><div class="k">Clientes na carteira</div><div class="v">${clientes.length}</div></div>
     <div class="t"><div class="k">Volume esperado (soja / milho)</div><div class="v">${fmtNum(volumeSojaTotal)} / ${fmtNum(volumeMilhoTotal)} sc</div></div>
-    <div class="t"><div class="k">Já negociado (soja / milho)</div><div class="v" style="color:var(--gold)">${fmtNum(negociadoSojaTotal)} / ${fmtNum(negociadoMilhoTotal)} sc</div></div>
+    <div class="t"><div class="k">Já negociado (soja / milho / sorgo)</div><div class="v" style="color:var(--gold)">${fmtNum(negociadoSojaTotal)} / ${fmtNum(negociadoMilhoTotal)} / ${fmtNum(negociadoSorgoTotal)} sc</div></div>
     <div class="t"><div class="k">Contatados hoje</div><div class="v" style="color:var(--green)">${contatadosHoje} / ${clientes.length}</div></div>`;
 
   const cards = document.getElementById("wsCards");
   cards.innerHTML = clientes.length === 0 ? `<div class="placeholder-box">Nenhum cliente atribuído a este corretor ainda. Atribua um responsável em Cadastros.</div>` :
     clientes.map(c => {
-      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
+      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho"), negSorgo = volumeNegociadoClienteGrao(c.id, "Sorgo");
       const esperado = volumeTotalCadastro(c);
       const pct = esperado > 0 ? Math.min(100, Math.round((negSoja+negMilho) / esperado * 100)) : 0;
       const contatadoHoje = c.last_contact_date === today;
@@ -5286,6 +5287,7 @@ function renderWorkspace() {
         <div class="ws-metrics">
           <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_soja)} / ${fmtNum(negSoja)} sc</div></div>
           <div class="m"><div class="k">Milho — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_milho)} / ${fmtNum(negMilho)} sc</div></div>
+          ${negSorgo > 0 ? `<div class="m"><div class="k">Sorgo — negociado</div><div class="v">${fmtNum(negSorgo)} sc</div></div>` : ""}
         </div>
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div style="display:flex;gap:6px;align-items:center">
@@ -5305,9 +5307,9 @@ function renderWorkspace() {
       </div>`;
     }).join("");
 
-  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="9">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
+  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
     clientes.map(c => {
-      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
+      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho"), negSorgo = volumeNegociadoClienteGrao(c.id, "Sorgo");
       const contatadoHoje = c.last_contact_date === today;
       const statsNeg = statsPorCliente.get(c.id);
       return `<tr>
@@ -5317,6 +5319,7 @@ function renderWorkspace() {
         <td>${fmtNum(negSoja)}</td>
         <td>${fmtNum(c.volume_anual_milho)}</td>
         <td>${fmtNum(negMilho)}</td>
+        <td>${fmtNum(negSorgo)}</td>
         <td>${labelUltimoContato(c.last_contact_date)}<div class="ws-ultimo-negocio">${labelUltimoNegocio(statsNeg.ultimaData)}</div></td>
         <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
         <td style="white-space:nowrap">
