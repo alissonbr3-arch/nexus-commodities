@@ -3,6 +3,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // Remetente dos e-mails via Resend — precisa ser um domínio verificado lá (nexuscommoditiesms.com.br).
 const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
+// Cópia visível (CC, não oculta) pra Nexus em toda Liberação de Embarque enviada.
+const CC_NEXUS = "nexuscommodities@terra.com.br";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -72,6 +74,7 @@ export default async (req) => {
         body: JSON.stringify({
           from: FROM_EMAIL,
           to: destinatarios,
+          cc: CC_NEXUS,
           subject: `Liberação de Embarque ${negocio.numero_contrato || ""} — Nexus Commodities`,
           html,
         }),
@@ -88,7 +91,7 @@ export default async (req) => {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
-      negocio_id, tipo: "Liberação de Embarque", destinatarios: destinatarios.join(", "),
+      negocio_id, tipo: "Liberação de Embarque", destinatarios: `${destinatarios.join(", ")}, ${CC_NEXUS} (cc)`,
       enviado_por: caller.id, sucesso, erro,
     }),
   }).catch(() => {});
