@@ -5294,7 +5294,6 @@ function renderWorkspace() {
           <input type="text" class="ws-reminder-input" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete — clique para anotar" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()">
           <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
             <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:7px 9px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003;" : "&#128222;"}</button>
-            ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:7px 9px;display:flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
           </div>
         </div>
         <div class="ws-foot">
@@ -5325,7 +5324,6 @@ function renderWorkspace() {
         <td style="white-space:nowrap">
           <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
             <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
-            ${c.tipo === "Produtor" ? `<button class="btn-ghost" style="padding:5px 8px;display:inline-flex;align-items:center" title="Enviar ao Funil (Ofertado)" onclick="enviarAoFunil('${c.id}', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>` : ""}
           </div>
         </td>
       </tr>`;
@@ -5350,17 +5348,6 @@ async function salvarLembreteRapido(cadastroId, novoValor) {
   c.lembrete = novoValor;
   await sb.from("nexus_cadastros").update({ lembrete: novoValor }).eq("id", cadastroId);
 }
-async function enviarAoFunil(produtorId, btnEl) {
-  await sb.from("nexus_intencoes").insert([{ produtor_id: produtorId, grao: "Soja", quantidade_sacas: 0, preco_alvo: 0, preco_referencia: 0, status: "Ofertado", owner_id: currentUserId, created_by: currentUserId }]);
-  await loadIntencoes(); renderFunil();
-  if (btnEl) {
-    const original = btnEl.innerHTML;
-    btnEl.innerHTML = "&#10003; No funil";
-    btnEl.disabled = true;
-    setTimeout(() => { btnEl.innerHTML = original; btnEl.disabled = false; }, 2000);
-  }
-}
-
 // ---------------- FUNIL ----------------
 const FUNIL_STATUS = ["Ofertado", "Intenção registrada", "Preço bateu", "Convertido", "Perdido"];
 function nomeCadastro(id) { const c = data.cadastros.find(x => x.id === id); return c ? c.nome : "—"; }
