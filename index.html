@@ -313,6 +313,8 @@
   .ws-card .ws-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .ws-card .ws-name { font-size: 12.5px; font-weight: 500; }
   .ws-card .ws-sub { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
+  .ws-stars { color: var(--gold); font-size: 11px; letter-spacing: 1px; white-space: nowrap; }
+  .ws-ultimo-negocio { font-size: 10.5px; color: var(--ink-soft); }
   .ws-metrics { display: flex; gap: 8px; }
   .ws-metrics .m { flex: 1; background: var(--card-alt); border-radius: 8px; padding: 6px 8px; }
   .ws-metrics .m .k { font-size: 9.5px; color: var(--ink-soft); }
@@ -5163,6 +5165,27 @@ function labelUltimoContato(dateStr) {
   if (dias === 1) return "Último contato há 1 dia";
   return `Último contato há ${dias} dias`;
 }
+// Estatísticas de negócios fechados por um produtor (contagem + data do mais recente) — usadas
+// pras estrelinhas de destaque e pro indicador de "último negócio" no Workspace.
+function statsNegociosProdutor(cadastroId) {
+  const negs = data.negocios.filter(n => n.produtor_id === cadastroId);
+  let ultimaData = null;
+  for (const n of negs) { if (n.data && (!ultimaData || n.data > ultimaData)) ultimaData = n.data; }
+  return { qtd: negs.length, ultimaData };
+}
+// 1 a 3 estrelas conforme a quantidade de negócios fechados; sem estrela abaixo de 2 negócios.
+function estrelasProdutorHtml(qtd) {
+  const estrelas = qtd >= 6 ? 3 : qtd >= 4 ? 2 : qtd >= 2 ? 1 : 0;
+  if (estrelas === 0) return "";
+  return `<span class="ws-stars" title="${qtd} negócios fechados">${"★".repeat(estrelas)}</span>`;
+}
+function labelUltimoNegocio(dateStr) {
+  const dias = diasDesde(dateStr);
+  if (dias === null) return "Nenhum negócio fechado ainda";
+  if (dias === 0) return "Último negócio feito hoje";
+  if (dias === 1) return "Último negócio feito há 1 dia";
+  return `Último negócio feito há ${dias} dias`;
+}
 
 function renderPrecoPracaBanner() {
   const el = document.getElementById("precoPracaBanner");
@@ -5235,12 +5258,14 @@ function renderWorkspace() {
       const esperado = volumeTotalCadastro(c);
       const pct = esperado > 0 ? Math.min(100, Math.round((negSoja+negMilho) / esperado * 100)) : 0;
       const contatadoHoje = c.last_contact_date === today;
+      const statsNeg = statsNegociosProdutor(c.id);
       return `
       <div class="ws-card">
         <div class="ws-head">
           <div style="display:flex;align-items:center;gap:10px">
             ${avatarThumbHtml(c, 34)}
             <div class="ws-name">${c.nome}</div>
+            ${estrelasProdutorHtml(statsNeg.qtd)}
           </div>
           <div style="display:flex;gap:3px;flex-wrap:nowrap">${flagBadgesHtml(c)}</div>
         </div>
@@ -5258,7 +5283,10 @@ function renderWorkspace() {
         </div>
         <div class="ws-foot">
           <div class="ws-phone">&#9742; ${c.telefone || "—"}</div>
-          <div style="font-size:11px;color:var(--ink-soft)">${labelUltimoContato(c.last_contact_date)}</div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--ink-soft)">${labelUltimoContato(c.last_contact_date)}</div>
+            <div class="ws-ultimo-negocio">${labelUltimoNegocio(statsNeg.ultimaData)}</div>
+          </div>
         </div>
       </div>`;
     }).join("");
@@ -5267,14 +5295,15 @@ function renderWorkspace() {
     clientes.map(c => {
       const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho");
       const contatadoHoje = c.last_contact_date === today;
+      const statsNeg = statsNegociosProdutor(c.id);
       return `<tr>
-        <td>${c.nome}</td>
+        <td><div style="display:flex;align-items:center;gap:6px">${c.nome} ${estrelasProdutorHtml(statsNeg.qtd)}</div></td>
         <td style="white-space:nowrap"><div style="display:flex;gap:3px">${flagBadgesHtml(c)}</div></td>
         <td>${fmtNum(c.volume_anual_soja)}</td>
         <td>${fmtNum(negSoja)}</td>
         <td>${fmtNum(c.volume_anual_milho)}</td>
         <td>${fmtNum(negMilho)}</td>
-        <td>${labelUltimoContato(c.last_contact_date)}</td>
+        <td>${labelUltimoContato(c.last_contact_date)}<div class="ws-ultimo-negocio">${labelUltimoNegocio(statsNeg.ultimaData)}</div></td>
         <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
         <td style="white-space:nowrap">
           <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
