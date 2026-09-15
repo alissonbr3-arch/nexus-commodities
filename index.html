@@ -2230,10 +2230,22 @@ function sugerirNumeroContrato() {
 }
 function fazendaOptionsHtml(produtorId, selectedId) {
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
-  return `<option value="">— Nenhuma —</option>` + fazendas.map(f => `<option value="${f.id}" ${selectedId===f.id?"selected":""}>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}</option>`).join("");
+  return `<option value="">— Nenhuma —</option>` + fazendas.map(f => `<option value="${f.id}" ${selectedId===f.id?"selected":""}>${f.nome}${f.municipio_uf ? " — " + f.municipio_uf : ""}${f.inscricao_estadual ? " — IE " + f.inscricao_estadual : ""}</option>`).join("");
+}
+// Mostra o texto completo da conta (não só "Principal"/"Secundária"/"Terciária") pra dar pra
+// diferenciar uma da outra direto no dropdown, sem precisar ir no cadastro conferir.
+function contaBancariaOptionsHtml(produtorId, selectedValue) {
+  const p = data.cadastros.find(c => c.id === produtorId) || {};
+  const val = selectedValue || "Principal";
+  let opts = `<option value="Principal" ${val==="Principal"?"selected":""}>Principal${p.dados_bancarios ? " — " + p.dados_bancarios : ""}</option>`;
+  if (p.dados_bancarios_secundaria) opts += `<option value="Secundária" ${val==="Secundária"?"selected":""}>Secundária — ${p.dados_bancarios_secundaria}</option>`;
+  if (p.dados_bancarios_terciaria) opts += `<option value="Terciária" ${val==="Terciária"?"selected":""}>Terciária — ${p.dados_bancarios_terciaria}</option>`;
+  return opts;
 }
 function onProdutorSelectChange() {
   document.getElementById("f_fazendaSelect").innerHTML = fazendaOptionsHtml(v("f_produtorSelect"), null);
+  const contaSelect = document.getElementById("f_contaBancaria");
+  if (contaSelect) contaSelect.innerHTML = contaBancariaOptionsHtml(v("f_produtorSelect"), null);
   atualizarContaBancariaWrap();
   const produtor = data.cadastros.find(c => c.id === v("f_produtorSelect"));
   const funruralSelect = document.getElementById("f_funruralForma");
@@ -2320,7 +2332,7 @@ function openNegocioModal(id) {
     </div>
     <div class="field" id="f_contaBancariaWrap" style="display:none">
       <label>Conta bancária a usar (na Confirmação)</label>
-      <select id="f_contaBancaria"><option ${(!item.conta_bancaria||item.conta_bancaria==="Principal")?"selected":""}>Principal</option><option ${item.conta_bancaria==="Secundária"?"selected":""}>Secundária</option><option ${item.conta_bancaria==="Terciária"?"selected":""}>Terciária</option></select>
+      <select id="f_contaBancaria">${contaBancariaOptionsHtml(item.produtor_id, item.conta_bancaria)}</select>
     </div>
     <div class="field-row" style="grid-template-columns:1fr 1fr 1fr"><div class="field"><label>Quantidade (sacas)</label><input type="number" id="f_quantidade" value="${item.quantidade}" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Preço Bruto (R$/saca)</label><input type="number" step="0.01" id="f_preco" value="${item.preco}"></div><div class="field"><label>Preço Líquido (R$/saca)</label><input type="number" step="0.01" id="f_precoLiquido" value="${item.preco_liquido || ""}" placeholder="Opcional"></div></div>
     <div class="field-row"><div class="field"><label>Comissão (R$/saca)</label><input type="number" step="0.01" id="f_comissaoSaca" value="${item.comissao_saca||""}" placeholder="Ex: 0,25 a 0,30" oninput="atualizarComissaoTotal()"></div><div class="field"><label>Comissão total</label><div id="f_comissaoTotalDisplay" style="padding:10px 12px;background:var(--card-alt);border-radius:8px;font-size:13px">${fmtMoney(item.comissao||0)}</div></div></div>
