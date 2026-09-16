@@ -565,7 +565,7 @@
         <div class="subpage" id="sub-analitico" style="display:none">
           <div class="panel-card">
             <h3>Faixa de preço negociado — safras vigentes</h3>
-            <div class="hint">Menor, médio e maior preço bruto (R$/sc) fechado em cada safra — bom pra mostrar ao cliente como o mercado está se comportando</div>
+            <div class="hint">Menor, médio e maior preço líquido (R$/sc) fechado em cada safra — bom pra mostrar ao cliente como o mercado está se comportando</div>
             <div class="chart-wrap"><canvas id="analiticoPrecoSafraChart"></canvas></div>
             <div class="totals-strip" id="analiticoPrecoSafraResumo" style="margin-top:12px"></div>
           </div>
@@ -1445,9 +1445,10 @@ function renderAnaliticoPrecoSafraChart() {
   const canvas = document.getElementById("analiticoPrecoSafraChart");
   if (!canvas) return;
   const stats = ANALITICO_PRECO_SAFRAS.map(s => {
-    const negs = data.negocios.filter(n => n.grao === s.grao && n.safra === s.safra && Number(n.preco) > 0);
+    const negs = data.negocios.filter(n => n.grao === s.grao && n.safra === s.safra && Number(n.preco) > 0)
+      .map(n => ({ produtor_id: n.produtor_id, precoLiquido: precoLiquidoNegocio(n).precoLiquido }));
     if (!negs.length) return { ...s, min: null, media: null, max: null, qtd: 0, topProdutor: null };
-    const precos = negs.map(n => Number(n.preco));
+    const precos = negs.map(n => n.precoLiquido);
     const min = Math.min(...precos), max = Math.max(...precos);
     const media = precos.reduce((a,b) => a+b, 0) / precos.length;
     // Produtor com melhor preço médio negociado na safra (não o maior preço isolado — a média
@@ -1456,7 +1457,7 @@ function renderAnaliticoPrecoSafraChart() {
     negs.forEach(n => {
       if (!n.produtor_id) return;
       if (!precosPorProdutor.has(n.produtor_id)) precosPorProdutor.set(n.produtor_id, []);
-      precosPorProdutor.get(n.produtor_id).push(Number(n.preco));
+      precosPorProdutor.get(n.produtor_id).push(n.precoLiquido);
     });
     let topProdutor = null;
     for (const [produtorId, lista] of precosPorProdutor) {
