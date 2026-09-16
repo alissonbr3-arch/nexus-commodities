@@ -8,17 +8,6 @@ function formatarTelefoneWhats(telefone) {
   return digitos;
 }
 
-async function enviarWhatsapp({ instanceId, token, clientToken, telefone, mensagem }) {
-  const resp = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": clientToken },
-    body: JSON.stringify({ phone: telefone, message: mensagem }),
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || data.error) throw new Error(data.error || data.message || `Z-API retornou ${resp.status}`);
-  return data;
-}
-
 // Lista de comandos igual à do /ajuda do bot (whatsapp-webhook.mjs) — se um comando for
 // adicionado/removido de lá, atualizar aqui também.
 const MENSAGEM_CANAL = `📲 *Canal Nexus Commodities no WhatsApp*
@@ -40,15 +29,14 @@ São Gabriel do Oeste/MS`;
 // pra usar o WhatsApp da Nexus pra tirar dúvida sozinho, com a lista de comandos disponíveis.
 // Não depende de negócio nenhum — é só lembrete de canal, então manda uma vez por telefone
 // único (sem repetir se o mesmo número aparecer em mais de um cadastro/grupo).
+// NÃO manda direto (mandar ~120 mensagens de uma vez foi o que derrubou a conta em restrição
+// do WhatsApp em 15/09/2026) — só enfileira em nexus_whatsapp_fila. Quem manda de fato, um
+// telefone a cada 3 minutos, é o processar-fila-whatsapp.mjs.
 export default async () => {
-  const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN, SUPABASE_SERVICE_ROLE_KEY } = process.env;
+  const { SUPABASE_SERVICE_ROLE_KEY } = process.env;
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ ok: false, erro: "SUPABASE_SERVICE_ROLE_KEY não configurada." }), { status: 500 });
   }
-  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN || !ZAPI_CLIENT_TOKEN) {
-    return new Response(JSON.stringify({ ok: false, erro: "Variáveis do Z-API não configuradas." }), { status: 200 });
-  }
-  const zapi = { instanceId: ZAPI_INSTANCE_ID, token: ZAPI_TOKEN, clientToken: ZAPI_CLIENT_TOKEN };
   const adminHeaders = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
 
   const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?tipo=eq.Produtor&select=telefone,telefones_extra`, { headers: adminHeaders });
@@ -62,15 +50,13 @@ export default async () => {
     return new Response(JSON.stringify({ ok: true, telefones: 0 }), { status: 200 });
   }
 
-  let sucessos = 0;
-  const erros = [];
-  for (const telefone of telefones) {
-    try {
-      await enviarWhatsapp({ ...zapi, telefone, mensagem: MENSAGEM_CANAL });
-      sucessos++;
-    } catch (e) {
-      erros.push(`${telefone}: ${e.message || e}`);
-    }
+  const filaResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_whatsapp_fila`, {
+    method: "POST",
+    headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(telefones.map(telefone => ({ telefone, mensagem: MENSAGEM_CANAL, tipo: "Aviso Canal Mensal" }))),
+  });
+  if (!filaResp.ok) {
+    return new Response(JSON.stringify({ ok: false, erro: `Falha ao enfileirar (status ${filaResp.status}).` }), { status: 500 });
   }
 
   await fetch(`${SUPABASE_URL}/rest/v1/nexus_email_log`, {
@@ -78,11 +64,11 @@ export default async () => {
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
       negocio_id: null, tipo: "WhatsApp Aviso Canal Mensal", destinatarios: telefones.join(", "),
-      enviado_por: null, sucesso: sucessos > 0, erro: erros.join("; ") || null,
+      enviado_por: null, sucesso: true, erro: `${telefones.length} mensagens enfileiradas — envio gradual a 1 a cada 3 minutos`,
     }),
   }).catch(() => {});
 
-  return new Response(JSON.stringify({ ok: true, telefones: telefones.length, sucessos, falhas: erros.length }), { status: 200 });
+  return new Response(JSON.stringify({ ok: true, enfileirados: telefones.length }), { status: 200 });
 };
 
 export const config = { schedule: "0 11 15 * *" };
