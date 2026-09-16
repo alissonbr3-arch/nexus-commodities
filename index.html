@@ -564,6 +564,12 @@
         </div>
         <div class="subpage" id="sub-analitico" style="display:none">
           <div class="panel-card">
+            <h3>Faixa de preço negociado — safras vigentes</h3>
+            <div class="hint">Menor, médio e maior preço bruto (R$/sc) fechado em cada safra — bom pra mostrar ao cliente como o mercado está se comportando</div>
+            <div class="chart-wrap"><canvas id="analiticoPrecoSafraChart"></canvas></div>
+            <div class="totals-strip" id="analiticoPrecoSafraResumo" style="margin-top:12px"></div>
+          </div>
+          <div class="panel-card">
             <h3>Evolução da comissão média</h3>
             <div class="hint">Comissão média por saca (R$/sc), mês a mês, nos últimos 12 meses</div>
             <div class="chart-wrap"><canvas id="analiticoMargemChart"></canvas></div>
@@ -1422,11 +1428,56 @@ function dentroDoPeriodoCorretores(dataISO, limites) {
   return dataISO >= limites.inicio && dataISO <= limites.fim;
 }
 // ---------------- DASHBOARD ANALÍTICO ----------------
-let analiticoMargemChart = null, analiticoSazonalidadeChart = null, analiticoAnoAnoChart = null;
+let analiticoMargemChart = null, analiticoSazonalidadeChart = null, analiticoAnoAnoChart = null, analiticoPrecoSafraChart = null;
 function renderDashboardAnalitico() {
+  renderAnaliticoPrecoSafraChart();
   renderAnaliticoMargemChart();
   renderAnaliticoSazonalidadeChart();
   renderAnaliticoAnoAnoChart();
+}
+// Safras vigentes que o cliente costuma perguntar — ajustar aqui quando a próxima safra abrir.
+const ANALITICO_PRECO_SAFRAS = [
+  { grao: "Soja", safra: "2025/2026", label: "Soja 25/26" },
+  { grao: "Milho", safra: "2026/2026", label: "Milho 26/26" },
+  { grao: "Soja", safra: "2026/2027", label: "Soja 26/27" },
+];
+function renderAnaliticoPrecoSafraChart() {
+  const canvas = document.getElementById("analiticoPrecoSafraChart");
+  if (!canvas) return;
+  const stats = ANALITICO_PRECO_SAFRAS.map(s => {
+    const precos = data.negocios.filter(n => n.grao === s.grao && n.safra === s.safra && Number(n.preco) > 0).map(n => Number(n.preco));
+    if (!precos.length) return { ...s, min: null, media: null, max: null, qtd: 0 };
+    const min = Math.min(...precos), max = Math.max(...precos);
+    const media = precos.reduce((a,b) => a+b, 0) / precos.length;
+    return { ...s, min, media, max, qtd: precos.length };
+  });
+  if (analiticoPrecoSafraChart) analiticoPrecoSafraChart.destroy();
+  analiticoPrecoSafraChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: stats.map(s => s.label),
+      datasets: [
+        { label: "Mínimo", data: stats.map(s => s.min), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 40 },
+        { label: "Médio", data: stats.map(s => s.media), backgroundColor: "#d9ab34", borderRadius: 5, maxBarThickness: 40 },
+        { label: "Máximo", data: stats.map(s => s.max), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 40 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom", labels: { color: chartTickColor } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` } },
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: chartGridColor }, ticks: { color: chartTickColor, callback: v => "R$ " + v } },
+        x: { grid: { display: false }, ticks: { color: chartTickColor } },
+      },
+    },
+  });
+  document.getElementById("analiticoPrecoSafraResumo").innerHTML = stats.map(s => `
+    <div class="t"><div class="k">${s.label}</div><div class="v">${s.qtd ? fmtMoney(s.media) : "—"}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${s.qtd ? `${fmtMoney(s.min)} a ${fmtMoney(s.max)} · ${s.qtd} negócio${s.qtd===1?"":"s"}` : "Sem negócios fechados ainda"}</div>
+    </div>`).join("");
 }
 function renderAnaliticoMargemChart() {
   const canvas = document.getElementById("analiticoMargemChart");
