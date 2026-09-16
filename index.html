@@ -1445,11 +1445,28 @@ function renderAnaliticoPrecoSafraChart() {
   const canvas = document.getElementById("analiticoPrecoSafraChart");
   if (!canvas) return;
   const stats = ANALITICO_PRECO_SAFRAS.map(s => {
-    const precos = data.negocios.filter(n => n.grao === s.grao && n.safra === s.safra && Number(n.preco) > 0).map(n => Number(n.preco));
-    if (!precos.length) return { ...s, min: null, media: null, max: null, qtd: 0 };
+    const negs = data.negocios.filter(n => n.grao === s.grao && n.safra === s.safra && Number(n.preco) > 0);
+    if (!negs.length) return { ...s, min: null, media: null, max: null, qtd: 0, topProdutor: null };
+    const precos = negs.map(n => Number(n.preco));
     const min = Math.min(...precos), max = Math.max(...precos);
     const media = precos.reduce((a,b) => a+b, 0) / precos.length;
-    return { ...s, min, media, max, qtd: precos.length };
+    // Produtor com melhor preço médio negociado na safra (não o maior preço isolado — a média
+    // de todos os negócios dele, pra não premiar quem só teve uma venda pontual boa).
+    const precosPorProdutor = new Map();
+    negs.forEach(n => {
+      if (!n.produtor_id) return;
+      if (!precosPorProdutor.has(n.produtor_id)) precosPorProdutor.set(n.produtor_id, []);
+      precosPorProdutor.get(n.produtor_id).push(Number(n.preco));
+    });
+    let topProdutor = null;
+    for (const [produtorId, lista] of precosPorProdutor) {
+      const mediaProdutor = lista.reduce((a,b) => a+b, 0) / lista.length;
+      if (!topProdutor || mediaProdutor > topProdutor.media) {
+        const c = data.cadastros.find(c => c.id === produtorId);
+        topProdutor = { nome: c ? c.nome : "—", media: mediaProdutor };
+      }
+    }
+    return { ...s, min, media, max, qtd: negs.length, topProdutor };
   });
   if (analiticoPrecoSafraChart) analiticoPrecoSafraChart.destroy();
   analiticoPrecoSafraChart = new Chart(canvas, {
@@ -1477,6 +1494,7 @@ function renderAnaliticoPrecoSafraChart() {
   document.getElementById("analiticoPrecoSafraResumo").innerHTML = stats.map(s => `
     <div class="t"><div class="k">${s.label}</div><div class="v">${s.qtd ? fmtMoney(s.media) : "—"}</div>
       <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${s.qtd ? `${fmtMoney(s.min)} a ${fmtMoney(s.max)} · ${s.qtd} negócio${s.qtd===1?"":"s"}` : "Sem negócios fechados ainda"}</div>
+      ${s.topProdutor ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">&#127942; ${s.topProdutor.nome} — ${fmtMoney(s.topProdutor.media)}</div>` : ""}
     </div>`).join("");
 }
 function renderAnaliticoMargemChart() {
