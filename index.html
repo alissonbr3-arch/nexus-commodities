@@ -4508,7 +4508,7 @@ function gerarRelatorioProdutor() {
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const totalValor = negocios.reduce((s,n) => s + precoLiquidoNegocio(n).liquidoTotal, 0);
-  const recebidos = negocios.filter(n => n.comissao_recebida_em).length;
+  const recebidos = negocios.filter(n => n.check_pagamento).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const grupo = produtores.length > 1;
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
@@ -4530,7 +4530,7 @@ function gerarRelatorioProdutor() {
       const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
       volumeGrupo += Number(n.quantidade||0);
       valorGrupo += liquidoTotal;
-      const recebido = !!n.comissao_recebida_em;
+      const recebido = !!n.check_pagamento;
       const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
       return `<tr>
         <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${compradorNome}</td>
