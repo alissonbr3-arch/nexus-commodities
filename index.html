@@ -1742,8 +1742,8 @@ function renderDashCorretorRanking() {
   const porCorretor = data.equipe.map(e => {
     const negsCorretor = list.filter(n => n.corretor_id === e.user_id);
     const valor = negsCorretor.reduce((s,n) => s + Number(n.quantidade||0), 0);
-    const comissaoCorretora = negsCorretor.reduce((s,n) => s + Number(n.comissao_corretora||0), 0);
-    return { nome: e.nome, valor, comissaoCorretora, meta: metaParaPeriodoCorretor(e, dashCorretorPeriodo) };
+    const comissaoTotal = negsCorretor.reduce((s,n) => s + Number(n.comissao||0), 0);
+    return { nome: e.nome, valor, comissaoTotal, meta: metaParaPeriodoCorretor(e, dashCorretorPeriodo) };
   }).sort((a,b) => b.valor - a.valor);
   const max = Math.max(1, ...porCorretor.map(p => p.valor));
   const totalGeral = porCorretor.reduce((s,p) => s + p.valor, 0);
@@ -1752,7 +1752,7 @@ function renderDashCorretorRanking() {
       const pctMeta = p.meta > 0 ? Math.round(p.valor/p.meta*100) : 0;
       const metaLine = p.meta > 0 ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-soft);margin-bottom:3px"><span>Meta: ${fmtNum(p.meta)} sc</span><span style="font-weight:700;color:${pctMeta>=100?"var(--green)":"var(--ink-soft)"}">${pctMeta}% da meta</span></div>` : "";
       const medalha = MEDALHAS[i] || "";
-      return `<div class="rank-row"><div class="rank-num" style="${medalha?"font-size:14px;background:none":""}">${medalha || (i+1)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:1px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div style="text-align:right;font-size:11px;color:var(--gold);margin-bottom:3px">${fmtMoney(p.comissaoCorretora)} pra corretora</div>${metaLine}<div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`;
+      return `<div class="rank-row"><div class="rank-num" style="${medalha?"font-size:14px;background:none":""}">${medalha || (i+1)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:1px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div style="text-align:right;font-size:11px;color:var(--gold);margin-bottom:3px">${fmtMoney(p.comissaoTotal)} em comissão total</div>${metaLine}<div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`;
     }).join("");
   const totalHtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--border);font-size:13px"><span style="color:var(--ink-soft)">Volume total da equipe</span><span style="font-weight:700;color:var(--gold)">${fmtNum(totalGeral)} sc</span></div>`;
   document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` : linhasHtml + totalHtml;
