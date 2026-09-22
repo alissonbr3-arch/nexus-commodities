@@ -1747,6 +1747,7 @@ function renderDashCorretorRanking() {
   }).sort((a,b) => b.valor - a.valor);
   const max = Math.max(1, ...porCorretor.map(p => p.valor));
   const totalGeral = porCorretor.reduce((s,p) => s + p.valor, 0);
+  const totalComissaoGeral = porCorretor.reduce((s,p) => s + p.comissaoTotal, 0);
   const MEDALHAS = ["🥇","🥈","🥉"];
   const linhasHtml = porCorretor.map((p,i) => {
       const pctMeta = p.meta > 0 ? Math.round(p.valor/p.meta*100) : 0;
@@ -1754,7 +1755,10 @@ function renderDashCorretorRanking() {
       const medalha = MEDALHAS[i] || "";
       return `<div class="rank-row"><div class="rank-num" style="${medalha?"font-size:14px;background:none":""}">${medalha || (i+1)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:1px"><span>${p.nome}</span><span style="font-weight:500">${fmtNum(p.valor)} sc</span></div><div style="text-align:right;font-size:11px;color:var(--gold);margin-bottom:3px">${fmtMoney(p.comissaoTotal)} em comissão total</div>${metaLine}<div class="ws-progress"><div class="bar" style="width:${Math.round(p.valor/max*100)}%"></div></div></div></div>`;
     }).join("");
-  const totalHtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--border);font-size:13px"><span style="color:var(--ink-soft)">Volume total da equipe</span><span style="font-weight:700;color:var(--gold)">${fmtNum(totalGeral)} sc</span></div>`;
+  const totalHtml = `<div style="margin-top:10px;padding-top:12px;border-top:1px solid var(--border);font-size:13px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-soft)">Volume total da equipe</span><span style="font-weight:700;color:var(--gold)">${fmtNum(totalGeral)} sc</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><span style="color:var(--ink-soft)">Comissão total da equipe</span><span style="font-weight:700;color:var(--gold)">${fmtMoney(totalComissaoGeral)}</span></div>
+  </div>`;
   document.getElementById("dashCorretorRanking").innerHTML = porCorretor.length === 0 ? `<div class="placeholder-box">Nenhum corretor cadastrado.</div>` : linhasHtml + totalHtml;
 }
 function renderGraoChart(list) {
