@@ -1135,7 +1135,17 @@ function quantidadePrimeiraParcela(n) {
 }
 function linhasPagamento(n) {
   const extras = n.pagamentos_extra || [];
-  const linhas = [["DATA DE PAGAMENTO", fmtDate(n.data_pagamento) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
+  // Quando a 1ª parcela extra cai na mesma data do campo-base "Data de pagamento", é a mesma
+  // parcela lançada duas vezes (comum quando o corretor lança todas as parcelas em "Pagamentos
+  // adicionais" em vez de deixar a 1ª implícita no campo-base) — trata os extras como a lista
+  // completa das parcelas, sem repetir a data base como uma linha fantasma à parte.
+  if (extras.length && extras[0].data === n.data_pagamento) {
+    return extras.map((p, i) => {
+      const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
+      return [`DATA DE PAGAMENTO (${i + 1}ª PARC)`, `${fmtDate(p.data)} — ${valor}`];
+    });
+  }
+  const linhas = [[`DATA DE PAGAMENTO${extras.length ? " (1ª PARC)" : ""}`, fmtDate(n.data_pagamento) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
   extras.forEach((p, i) => {
     const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
     linhas.push([`DATA DE PAGAMENTO (${i + 2}ª PARC)`, `${fmtDate(p.data)} — ${valor}`]);
