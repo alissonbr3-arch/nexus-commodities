@@ -2451,6 +2451,20 @@ function openNegocioModal(id) {
   renderPagamentosExtraModal();
   showModal();
 }
+// Sincroniza a linha do comprador em "Preço do dia" (Mercado) com o preço do negócio recém
+// salvo — só a coluna "Disponível" (um negócio fechado é preço à vista/spot; a cotação
+// "Futuro" continua manual, é uma referência à parte). Sorgo não tem coluna futura, cai
+// direto no campo único. Não mexe se não tiver comprador cadastrado (contraparte "Outro")
+// ou preço zerado (rascunho).
+async function sincronizarPrecoMercadoComNegocio(n) {
+  if (!n.cliente_id || !(Number(n.preco) > 0)) return;
+  const campoPorGrao = { Soja: "preco_soja_disponivel", Milho: "preco_milho_disponivel", Sorgo: "preco_sorgo" };
+  const campo = campoPorGrao[n.grao];
+  if (!campo) return;
+  await sb.from("nexus_cadastros").update({ [campo]: n.preco, preco_mercado_atualizado_em: new Date().toISOString() }).eq("id", n.cliente_id);
+  const campoHistorico = { preco_soja_disponivel: "soja_disponivel", preco_milho_disponivel: "milho_disponivel", preco_sorgo: "sorgo" }[campo];
+  await sb.from("nexus_preco_comprador_historico").upsert([{ comprador_id: n.cliente_id, campo: campoHistorico, data: todayISO(), preco: n.preco }], { onConflict: "comprador_id,campo,data" });
+}
 async function saveNegocio(id) {
   const selVal = v("f_clienteSelect");
   let cliente_id = null, contraparte = "—";
@@ -2479,12 +2493,13 @@ async function saveNegocio(id) {
   let savedId = id;
   if (id) { await sb.from("nexus_negocios").update(payload).eq("id", id); }
   else { const { data: rows } = await sb.from("nexus_negocios").insert([payload]).select(); savedId = rows && rows[0] ? rows[0].id : null; }
+  await sincronizarPrecoMercadoComNegocio(payload);
   if (convertingIntencaoId && savedId) {
     await sb.from("nexus_intencoes").update({ status: "Convertido", negocio_id: savedId }).eq("id", convertingIntencaoId);
     convertingIntencaoId = null;
     await loadIntencoes(); renderFunil();
   }
-  await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace(); renderEmbarquesPage();
+  await loadCadastros(); await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace(); renderEmbarquesPage(); renderPrecoMercado();
 }
 document.getElementById("addNegocioBtn").addEventListener("click", () => openNegocioModal(null));
 
