@@ -18,6 +18,22 @@ function formatarTelefoneWhats(telefone) {
 
 function fmtMoney(v) { return "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+function fmtNum(v) { return Number(v || 0).toLocaleString("pt-BR"); }
+
+// Relatório da cobrança em texto (uma linha por contrato) que vai junto do boleto no WhatsApp.
+// nomePorId só é usado quando quem paga é o comprador — aí vale dizer de qual produtor é cada
+// contrato; quando o pagador é o próprio vendedor, o produtor de todas as linhas é ele.
+function relatorioCobrancaTexto(negocios, nomeProdutorPorId) {
+  const linhas = negocios.map(n => {
+    const produto = `${n.grao || "—"}${n.safra ? " " + n.safra : ""}`;
+    const porSaca = Number(n.comissao_saca) > 0 ? ` × ${fmtMoney(n.comissao_saca)}/sc` : "";
+    const produtor = nomeProdutorPorId && nomeProdutorPorId[n.produtor_id] ? ` — ${nomeProdutorPorId[n.produtor_id]}` : "";
+    return `• ${n.numero_contrato || "—"} — ${produto}${produtor}\n   ${fmtNum(n.quantidade)} sc${porSaca} = ${fmtMoney(n.comissao)}`;
+  });
+  const total = negocios.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  return `📋 *Relatório da cobrança*\n${linhas.join("\n")}\n*Total: ${fmtMoney(total)}*`;
+}
+
 // Telefones de um cadastro E de todos os outros cadastros do mesmo grupo dele (ex: sócios da
 // mesma propriedade) — sem duplicar. Sem grupo, é só o telefone do próprio cadastro mesmo.
 async function telefonesComGrupo(cadastro, adminHeaders) {
@@ -162,9 +178,11 @@ export default async (req) => {
   const telefones = await telefonesComGrupo(pagador, adminHeaders);
   if (telefones.length && ZAPI_INSTANCE_ID && ZAPI_TOKEN && ZAPI_CLIENT_TOKEN) {
     whatsapp.tentado = true;
-    const mensagem = negocios.length === 1
-      ? `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto da comissão de intermediação referente à Confirmação de Negócio nº ${contratos}:\nValor: ${fmtMoney(valorTotal)}\nVencimento: ${dueDate.split("-").reverse().join("/")}\n\n${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`
-      : `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto agrupado da comissão de intermediação referente às Confirmações de Negócio nº ${contratos}:\nValor total: ${fmtMoney(valorTotal)}\nVencimento: ${dueDate.split("-").reverse().join("/")}\n\n${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`;
+    const pagadorEhComprador = negocios.some(n => n.comissao_pagador === "Comprador");
+    const nomeProdutorPorId = pagadorEhComprador ? Object.fromEntries(cads.map(c => [c.id, c.nome])) : null;
+    const relatorio = relatorioCobrancaTexto(negocios, nomeProdutorPorId);
+    const vencBR = dueDate.split("-").reverse().join("/");
+    const mensagem = `Olá, ${pagador.nome}! Aqui é da Nexus Commodities.\n\nSegue o boleto ${negocios.length === 1 ? "" : "agrupado "}da comissão de intermediação referente ${negocios.length === 1 ? "à Confirmação de Negócio" : "às Confirmações de Negócio"} nº ${contratos}.\n\n${relatorio}\nVencimento: ${vencBR}\n\nBoleto: ${payData.invoiceUrl}\n\nQualquer dúvida, fale com seu corretor.`;
     for (const telefone of telefones) {
       try {
         const resp = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
