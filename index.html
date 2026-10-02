@@ -851,6 +851,7 @@
             <div class="panel-head">
               <div class="actions-left">
                 <input type="text" class="search-input" id="comissoesFilterCliente" placeholder="Buscar cliente (vendedor ou comprador)...">
+                <select class="filter" id="comissoesFilterProdutor"><option value="">Todos os produtores</option></select>
                 <select class="filter" id="comissoesFilterStatus">
                   <option value="pendente">A receber</option>
                   <option value="pago">Recebidas</option>
@@ -3968,6 +3969,7 @@ document.querySelectorAll("#comissoesSubTabs .com-tab-btn").forEach(btn => {
 document.getElementById("comissoesFilterStatus").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterCorretor").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterCliente").addEventListener("input", renderComissoesPage);
+document.getElementById("comissoesFilterProdutor").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesFilterVencimento").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterStatus").addEventListener("change", renderComissoesPage);
 document.getElementById("comissoesCorretorFilterCorretor").addEventListener("change", renderComissoesPage);
@@ -4045,6 +4047,12 @@ function renderComissoesPage() {
   }));
   popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltro = document.getElementById("comissoesFilterMes").value;
+  const selProdutor = document.getElementById("comissoesFilterProdutor");
+  const produtorAtual = selProdutor.value;
+  const produtoresNaLista = [...new Set(todasLinhas.map(c => c.vendedorNome).filter(nm => nm && nm !== "—"))].sort((a,b) => a.localeCompare(b, "pt-BR"));
+  selProdutor.innerHTML = `<option value="">Todos os produtores</option>` + produtoresNaLista.map(nm => `<option value="${nm.replace(/"/g, "&quot;")}">${nm}</option>`).join("");
+  selProdutor.value = produtoresNaLista.includes(produtorAtual) ? produtorAtual : "";
+  const produtorFiltro = selProdutor.value;
   const clienteFiltro = document.getElementById("comissoesFilterCliente").value.trim().toLowerCase();
   const vencimentoFiltro = document.getElementById("comissoesFilterVencimento").value;
   const corretorFiltro = document.getElementById("comissoesFilterCorretor").value;
@@ -4052,6 +4060,7 @@ function renderComissoesPage() {
   let list = todasLinhas
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.recebida : !n.recebida))
     .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro)
+    .filter(c => !produtorFiltro || c.vendedorNome === produtorFiltro)
     .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro))
     .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO))
     .filter(c => !corretorFiltro || (corretorFiltro === "eu" ? c.corretorId === currentUserId : c.corretorId === corretorFiltro));
@@ -4134,7 +4143,8 @@ function gerarRelatorioComissoes() {
   const list = comissoesListAtual;
   if (!list || list.length === 0) { alert("Nenhuma comissão na lista atual pra gerar relatório."); return; }
 
-  const clienteFiltro = (document.getElementById("comissoesFilterCliente").value || "").trim();
+  const produtorFiltro = document.getElementById("comissoesFilterProdutor").value;
+  const clienteFiltro = produtorFiltro || (document.getElementById("comissoesFilterCliente").value || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const totalValor = list.reduce((s, c) => s + c.valor, 0);
   const recebidas = list.filter(c => c.recebida).length;
