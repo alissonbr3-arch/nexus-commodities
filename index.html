@@ -867,7 +867,7 @@
                 </select>
                 <select class="filter" id="comissoesFilterMes"><option value="">Todos os meses</option></select>
               </div>
-              <button class="btn-primary" onclick="gerarRelatorioComissoes()">Gerar relatório</button>
+              <button class="btn-primary" id="comissoesGerarRelatorioBtn" onclick="gerarRelatorioComissoes()">Gerar relatório</button>
             </div>
             <div class="map-note" style="margin-bottom:8px">Vencimento = dia 10 do mês seguinte ao pagamento da venda pelo comprador. O filtro de mês considera o vencimento.</div>
             <div class="hint" id="comissoesTotalReceber" style="margin-bottom:10px;font-weight:600;color:var(--gold)"></div>
@@ -4012,6 +4012,11 @@ function toggleComissaoSelecionado(id, checked) {
 function renderComissoesBarraSelecao(list) {
   const barra = document.getElementById("comissoesBarraSelecao");
   const texto = document.getElementById("comissoesSelecaoTexto");
+  const btnRelatorio = document.getElementById("comissoesGerarRelatorioBtn");
+  if (btnRelatorio) {
+    const qtdSel = list.filter(c => comissoesSelecionados.has(c.id)).length;
+    btnRelatorio.textContent = qtdSel ? `Gerar relatório (${qtdSel} selecionado${qtdSel === 1 ? "" : "s"})` : "Gerar relatório";
+  }
   if (!barra || !texto) return;
   if (comissoesSelecionados.size < 2) { barra.style.display = "none"; return; }
   const selecionados = list.filter(c => comissoesSelecionados.has(c.id));
@@ -4140,11 +4145,14 @@ function renderComissoesPage() {
 // cliente, status, vencimento, mês) — é assim que fica "filtrado por comprador/vendedor": basta
 // buscar o nome do cliente antes de gerar.
 function gerarRelatorioComissoes() {
-  const list = comissoesListAtual;
+  // Com linhas marcadas na lista, o relatório sai só com elas; sem nenhuma marcada, sai a lista toda.
+  const selecionadas = (comissoesListAtual || []).filter(c => comissoesSelecionados.has(c.id));
+  const list = selecionadas.length ? selecionadas : comissoesListAtual;
   if (!list || list.length === 0) { alert("Nenhuma comissão na lista atual pra gerar relatório."); return; }
 
   const produtorFiltro = document.getElementById("comissoesFilterProdutor").value;
-  const clienteFiltro = produtorFiltro || (document.getElementById("comissoesFilterCliente").value || "").trim();
+  const vendedoresNoRelatorio = [...new Set(list.map(c => c.vendedorNome))];
+  const clienteFiltro = produtorFiltro || (vendedoresNoRelatorio.length === 1 && vendedoresNoRelatorio[0] !== "—" ? vendedoresNoRelatorio[0] : (document.getElementById("comissoesFilterCliente").value || "").trim());
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const totalValor = list.reduce((s, c) => s + c.valor, 0);
   const recebidas = list.filter(c => c.recebida).length;
