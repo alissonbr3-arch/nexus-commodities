@@ -5539,94 +5539,148 @@ async function toggleFlag(cadastroId, campo) {
   await loadCadastros();
   renderWorkspace();
 }
+// Workspace por grupo/família: produtores do mesmo grupo (só os desta carteira) viram um item só,
+// com volumes, negócios, estrelas e contato somados/agregados; quem não tem grupo fica individual.
+function montarItensWorkspace(clientes) {
+  const porGrupo = new Map(), itens = [];
+  for (const c of clientes) {
+    if (c.grupo_id) {
+      if (!porGrupo.has(c.grupo_id)) { const it = { grupoId: c.grupo_id, membros: [] }; porGrupo.set(c.grupo_id, it); itens.push(it); }
+      porGrupo.get(c.grupo_id).membros.push(c);
+    } else itens.push({ grupoId: null, membros: [c] });
+  }
+  return itens.map(it => {
+    const ms = it.membros;
+    const ids = ms.map(m => m.id);
+    const stats = ms.map(m => statsNegociosProdutor(m.id));
+    const negPorMembro = ms.map(m => volumeNegociadoClienteGrao(m.id, "Soja") + volumeNegociadoClienteGrao(m.id, "Milho"));
+    const principal = ms[negPorMembro.indexOf(Math.max(...negPorMembro))] || ms[0];
+    const ehGrupo = ms.length > 1;
+    const grupo = ehGrupo ? data.grupos.find(g => g.id === it.grupoId) : null;
+    const maxData = arr => arr.filter(Boolean).sort().pop() || null;
+    return {
+      ehGrupo, ids, membros: ms, principal,
+      nome: grupo ? grupo.nome : (ehGrupo ? ms.map(m => m.nome).join(" / ") : principal.nome),
+      volSoja: ms.reduce((s, m) => s + Number(m.volume_anual_soja || 0), 0),
+      volMilho: ms.reduce((s, m) => s + Number(m.volume_anual_milho || 0), 0),
+      negSoja: ids.reduce((s, id) => s + volumeNegociadoClienteGrao(id, "Soja"), 0),
+      negMilho: ids.reduce((s, id) => s + volumeNegociadoClienteGrao(id, "Milho"), 0),
+      negSorgo: ids.reduce((s, id) => s + volumeNegociadoClienteGrao(id, "Sorgo"), 0),
+      qtd: stats.reduce((s, st) => s + st.qtd, 0),
+      ultimaData: maxData(stats.map(st => st.ultimaData)),
+      ultimoContato: maxData(ms.map(m => m.last_contact_date)),
+    };
+  });
+}
+function flagBadgesItemHtml(it) {
+  if (!it.ehGrupo) return flagBadgesHtml(it.principal);
+  return WS_FLAGS.map(f => `<button type="button" class="flag-badge ${f.grupo} ${it.membros.some(m => m[f.campo]) ? "active" : ""}" title="${f.title} (vale pro grupo todo)" onclick="toggleFlagGrupo('${it.ids.join(",")}','${f.campo}')">${f.label}</button>`).join("");
+}
+async function toggleFlagGrupo(idsCsv, campo) {
+  const ids = idsCsv.split(",");
+  const novo = !data.cadastros.some(c => ids.includes(c.id) && c[campo]);
+  await sb.from("nexus_cadastros").update({ [campo]: novo }).in("id", ids);
+  await loadCadastros();
+  renderWorkspace();
+}
+async function toggleContatoItem(idsCsv) {
+  const ids = idsCsv.split(",");
+  const today = todayISO();
+  const membros = data.cadastros.filter(c => ids.includes(c.id));
+  const jaHoje = membros.filter(c => c.last_contact_date === today).map(c => c.id);
+  if (jaHoje.length) await sb.from("nexus_cadastros").update({ last_contact_date: null }).in("id", jaHoje);
+  else await sb.from("nexus_cadastros").update({ last_contact_date: today }).in("id", ids);
+  await loadCadastros(); renderWorkspace(); renderContatos();
+}
 function renderWorkspace() {
   if (!data.equipe.length) return;
   renderPrecoPracaBanner();
   renderWsOwnerSelect();
   const owner = wsOwnerId || currentUserId;
-  const clientes = data.cadastros.filter(c => c.owner_id === owner && c.tipo === "Produtor");
+  const itens = montarItensWorkspace(data.cadastros.filter(c => c.owner_id === owner && c.tipo === "Produtor"));
   const today = todayISO();
 
-  const volumeTotalCadastro = c => Number(c.volume_anual_soja||0) + Number(c.volume_anual_milho||0);
-  const statsPorCliente = new Map(clientes.map(c => [c.id, statsNegociosProdutor(c.id)]));
   const sortKey = document.getElementById("wsSortSelect").value;
-  if (sortKey === "volume") clientes.sort((a, b) => volumeTotalCadastro(b) - volumeTotalCadastro(a));
-  else if (sortKey === "contato") clientes.sort((a, b) => (b.last_contact_date || "").localeCompare(a.last_contact_date || ""));
-  else if (sortKey === "estrelas") clientes.sort((a, b) => statsPorCliente.get(b.id).qtd - statsPorCliente.get(a.id).qtd);
-  else if (sortKey === "negocio") clientes.sort((a, b) => (statsPorCliente.get(b.id).ultimaData || "").localeCompare(statsPorCliente.get(a.id).ultimaData || ""));
-  else clientes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  if (sortKey === "volume") itens.sort((a, b) => (b.volSoja + b.volMilho) - (a.volSoja + a.volMilho));
+  else if (sortKey === "contato") itens.sort((a, b) => (b.ultimoContato || "").localeCompare(a.ultimoContato || ""));
+  else if (sortKey === "estrelas") itens.sort((a, b) => b.qtd - a.qtd);
+  else if (sortKey === "negocio") itens.sort((a, b) => (b.ultimaData || "").localeCompare(a.ultimaData || ""));
+  else itens.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const volumeSojaTotal = clientes.reduce((s,c) => s + Number(c.volume_anual_soja||0), 0);
-  const volumeMilhoTotal = clientes.reduce((s,c) => s + Number(c.volume_anual_milho||0), 0);
-  const negociadoSojaTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Soja"), 0);
-  const negociadoMilhoTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Milho"), 0);
-  const negociadoSorgoTotal = clientes.reduce((s,c) => s + volumeNegociadoClienteGrao(c.id, "Sorgo"), 0);
-  const contatadosHoje = clientes.filter(c => c.last_contact_date === today).length;
+  const volumeSojaTotal = itens.reduce((s, it) => s + it.volSoja, 0);
+  const volumeMilhoTotal = itens.reduce((s, it) => s + it.volMilho, 0);
+  const negociadoSojaTotal = itens.reduce((s, it) => s + it.negSoja, 0);
+  const negociadoMilhoTotal = itens.reduce((s, it) => s + it.negMilho, 0);
+  const negociadoSorgoTotal = itens.reduce((s, it) => s + it.negSorgo, 0);
+  const contatadosHoje = itens.filter(it => it.ultimoContato === today).length;
 
   document.getElementById("wsTotals").innerHTML = `
-    <div class="t"><div class="k">Clientes na carteira</div><div class="v">${clientes.length}</div></div>
+    <div class="t"><div class="k">Clientes na carteira (grupos contam como um)</div><div class="v">${itens.length}</div></div>
     <div class="t"><div class="k">Volume esperado (soja / milho)</div><div class="v">${fmtNum(volumeSojaTotal)} / ${fmtNum(volumeMilhoTotal)} sc</div></div>
     <div class="t"><div class="k">Já negociado (soja / milho / sorgo)</div><div class="v" style="color:var(--gold)">${fmtNum(negociadoSojaTotal)} / ${fmtNum(negociadoMilhoTotal)} / ${fmtNum(negociadoSorgoTotal)} sc</div></div>
-    <div class="t"><div class="k">Contatados hoje</div><div class="v" style="color:var(--green)">${contatadosHoje} / ${clientes.length}</div></div>`;
+    <div class="t"><div class="k">Contatados hoje</div><div class="v" style="color:var(--green)">${contatadosHoje} / ${itens.length}</div></div>`;
+
+  const nomeHtml = it => `${escapeHtml(it.nome)}${it.ehGrupo ? ` <span style="font-size:10.5px;color:var(--gold)">grupo</span>` : ""}`;
+  const membrosHtml = it => it.ehGrupo ? `<div style="font-size:11px;color:var(--ink-soft);font-weight:400;white-space:normal">${it.membros.map(m => escapeHtml(m.nome)).join(", ")}</div>` : "";
 
   const cards = document.getElementById("wsCards");
-  cards.innerHTML = clientes.length === 0 ? `<div class="placeholder-box">Nenhum cliente atribuído a este corretor ainda. Atribua um responsável em Cadastros.</div>` :
-    clientes.map(c => {
-      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho"), negSorgo = volumeNegociadoClienteGrao(c.id, "Sorgo");
-      const esperado = volumeTotalCadastro(c);
-      const pct = esperado > 0 ? Math.min(100, Math.round((negSoja+negMilho) / esperado * 100)) : 0;
-      const contatadoHoje = c.last_contact_date === today;
-      const statsNeg = statsPorCliente.get(c.id);
+  cards.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum cliente atribuído a este corretor ainda. Atribua um responsável em Cadastros.</div>` :
+    itens.map(it => {
+      const c = it.principal;
+      const esperado = it.volSoja + it.volMilho;
+      const pct = esperado > 0 ? Math.min(100, Math.round((it.negSoja + it.negMilho) / esperado * 100)) : 0;
+      const contatadoHoje = it.ultimoContato === today;
+      const idsCsv = it.ids.join(",");
       return `
-      <div class="ws-card ${statsNeg.qtd > 0 ? "ws-tem-negocio" : "ws-sem-negocio"}">
+      <div class="ws-card ${it.qtd > 0 ? "ws-tem-negocio" : "ws-sem-negocio"}">
         <div class="ws-head">
           <div style="display:flex;align-items:center;gap:10px">
             ${avatarThumbHtml(c, 34)}
-            <div class="ws-name">${c.nome}</div>
-            ${estrelasProdutorHtml(statsNeg.qtd)}
+            <div><div class="ws-name">${nomeHtml(it)}</div>${membrosHtml(it)}</div>
+            ${estrelasProdutorHtml(it.qtd)}
           </div>
-          <div style="display:flex;gap:3px;flex-wrap:nowrap">${flagBadgesHtml(c)}</div>
+          <div style="display:flex;gap:3px;flex-wrap:nowrap">${flagBadgesItemHtml(it)}</div>
         </div>
         <div class="ws-metrics">
-          <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_soja)} / ${fmtNum(negSoja)} sc</div></div>
-          <div class="m"><div class="k">Milho — esperado / negociado</div><div class="v">${fmtNum(c.volume_anual_milho)} / ${fmtNum(negMilho)} sc</div></div>
-          ${negSorgo > 0 ? `<div class="m"><div class="k">Sorgo — negociado</div><div class="v">${fmtNum(negSorgo)} sc</div></div>` : ""}
+          <div class="m"><div class="k">Soja — esperado / negociado</div><div class="v">${fmtNum(it.volSoja)} / ${fmtNum(it.negSoja)} sc</div></div>
+          <div class="m"><div class="k">Milho — esperado / negociado</div><div class="v">${fmtNum(it.volMilho)} / ${fmtNum(it.negMilho)} sc</div></div>
+          ${it.negSorgo > 0 ? `<div class="m"><div class="k">Sorgo — negociado</div><div class="v">${fmtNum(it.negSorgo)} sc</div></div>` : ""}
         </div>
         <div class="ws-progress"><div class="bar" style="width:${pct}%"></div></div>
         <div style="display:flex;gap:6px;align-items:center">
           <input type="text" class="ws-reminder-input" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete — clique para anotar" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()">
           <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
-            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:7px 9px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003;" : "&#128222;"}</button>
+            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:7px 9px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContatoItem('${idsCsv}')">${contatadoHoje ? "&#10003;" : "&#128222;"}</button>
           </div>
         </div>
         <div class="ws-foot">
           <div class="ws-phone">&#9742; ${c.telefone || "—"}</div>
           <div style="text-align:right">
-            <div style="font-size:11px;color:var(--ink-soft)">${labelUltimoContato(c.last_contact_date)}</div>
-            <div class="ws-ultimo-negocio">${labelUltimoNegocio(statsNeg.ultimaData)}</div>
+            <div style="font-size:11px;color:var(--ink-soft)">${labelUltimoContato(it.ultimoContato)}</div>
+            <div class="ws-ultimo-negocio">${labelUltimoNegocio(it.ultimaData)}</div>
           </div>
         </div>
       </div>`;
     }).join("");
 
-  document.getElementById("wsListBody").innerHTML = clientes.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
-    clientes.map(c => {
-      const negSoja = volumeNegociadoClienteGrao(c.id, "Soja"), negMilho = volumeNegociadoClienteGrao(c.id, "Milho"), negSorgo = volumeNegociadoClienteGrao(c.id, "Sorgo");
-      const contatadoHoje = c.last_contact_date === today;
-      const statsNeg = statsPorCliente.get(c.id);
-      return `<tr class="${statsNeg.qtd > 0 ? "ws-tem-negocio" : "ws-sem-negocio"}">
-        <td><div style="display:flex;align-items:center;gap:6px">${c.nome} ${estrelasProdutorHtml(statsNeg.qtd)}</div></td>
-        <td style="white-space:nowrap"><div style="display:flex;gap:3px">${flagBadgesHtml(c)}</div></td>
-        <td>${fmtNum(c.volume_anual_soja)}</td>
-        <td>${fmtNum(negSoja)}</td>
-        <td>${fmtNum(c.volume_anual_milho)}</td>
-        <td>${fmtNum(negMilho)}</td>
-        <td>${fmtNum(negSorgo)}</td>
-        <td>${labelUltimoContato(c.last_contact_date)}<div class="ws-ultimo-negocio">${labelUltimoNegocio(statsNeg.ultimaData)}</div></td>
+  document.getElementById("wsListBody").innerHTML = itens.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum cliente atribuído a este corretor ainda.</td></tr>` :
+    itens.map(it => {
+      const c = it.principal;
+      const contatadoHoje = it.ultimoContato === today;
+      const idsCsv = it.ids.join(",");
+      return `<tr class="${it.qtd > 0 ? "ws-tem-negocio" : "ws-sem-negocio"}">
+        <td><div style="display:flex;align-items:center;gap:6px">${nomeHtml(it)} ${estrelasProdutorHtml(it.qtd)}</div>${membrosHtml(it)}</td>
+        <td style="white-space:nowrap"><div style="display:flex;gap:3px">${flagBadgesItemHtml(it)}</div></td>
+        <td>${fmtNum(it.volSoja)}</td>
+        <td>${fmtNum(it.negSoja)}</td>
+        <td>${fmtNum(it.volMilho)}</td>
+        <td>${fmtNum(it.negMilho)}</td>
+        <td>${fmtNum(it.negSorgo)}</td>
+        <td>${labelUltimoContato(it.ultimoContato)}<div class="ws-ultimo-negocio">${labelUltimoNegocio(it.ultimaData)}</div></td>
         <td><input type="text" class="ws-reminder-input" style="width:160px" value="${(c.lembrete||"").replace(/"/g,"&quot;")}" placeholder="Sem lembrete" onblur="salvarLembreteRapido('${c.id}', this.value)" onkeydown="if(event.key==='Enter') this.blur()"></td>
         <td style="white-space:nowrap">
           <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
-            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContato('${c.id}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
+            <button class="contact-toggle ${contatadoHoje?"done":"pending"}" style="padding:5px 8px;font-size:11.5px" title="${contatadoHoje ? "Contatado hoje" : "Marcar contato"}" onclick="toggleContatoItem('${idsCsv}')">${contatadoHoje ? "&#10003; Hoje" : "&#128222;"}</button>
           </div>
         </td>
       </tr>`;
