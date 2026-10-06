@@ -667,7 +667,7 @@
         <div class="panel-head" style="margin-top:20px">
           <h2>Cotações — Bolsas</h2>
           <div class="actions-left">
-            <button class="btn-ghost" id="atualizarCbotBtn">Atualizar CBOT agora</button>
+            <button class="btn-ghost" id="atualizarCbotBtn">Atualizar cotações agora</button>
             <span id="cbotStatus" style="font-size:11.5px;color:var(--ink-soft)"></span>
             <button class="btn-ghost" id="editDolarBtn">Editar dólar</button>
             <button class="btn-primary" id="addCotacaoBtn">+ Nova cotação</button>
@@ -686,7 +686,7 @@
           <tbody id="cotacoesBody"></tbody>
         </table>
         </div>
-        <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar e Milho CBOT atualizam sozinhos via CBOT (Yahoo Finance), de hora em hora em dias úteis. Milho B3 e demais cotações são manuais. PTAX marcado como "auto" vem da tarefa diária do Banco Central.</div>
+        <div class="map-note" style="margin-top:8px;">Soja Set/Nov/Mar, Milho CBOT e o dólar (à vista, Yahoo Finance) atualizam sozinhos de hora em hora em dias úteis, e o PTAX vem direto do Banco Central. Milho B3 e demais cotações são manuais. "Editar dólar" é só um quebra-galho — o próximo ciclo automático sobrescreve.</div>
 
         <div class="panel-card" style="margin-top:16px">
           <h3>Soja &amp; Milho — 5 anos</h3>
@@ -2006,9 +2006,9 @@ function renderDolarStrip() {
   const d = data.dolar || { atual: 0, anterior: 0, variacao: 0, ptax: 0 };
   const hasAuto = d.ptax_auto != null;
   document.getElementById("dolarStrip").innerHTML = `
-    <div class="t"><div class="k">Dólar atual (manual)</div><div class="v">${Number(d.atual).toLocaleString("pt-BR",{minimumFractionDigits:4})}</div></div>
-    <div class="t"><div class="k">Dólar anterior (manual)</div><div class="v">${Number(d.anterior).toLocaleString("pt-BR",{minimumFractionDigits:4})}</div></div>
-    <div class="t"><div class="k">Variação (manual)</div><div class="v">${fmtSigned(d.variacao)}</div></div>
+    <div class="t"><div class="k">Dólar atual (auto · à vista)</div><div class="v">${Number(d.atual).toLocaleString("pt-BR",{minimumFractionDigits:4})}</div></div>
+    <div class="t"><div class="k">Dólar anterior (auto)</div><div class="v">${Number(d.anterior).toLocaleString("pt-BR",{minimumFractionDigits:4})}</div></div>
+    <div class="t"><div class="k">Variação (auto)</div><div class="v">${fmtSigned(d.variacao)}</div></div>
     <div class="t"><div class="k">PTAX (auto · BCB)</div><div class="v">${hasAuto ? Number(d.ptax_auto).toLocaleString("pt-BR",{minimumFractionDigits:4}) : Number(d.ptax).toLocaleString("pt-BR",{minimumFractionDigits:4})}</div>${hasAuto ? `<div class="foot">ref. ${fmtDate(d.ptax_auto_data)}</div>` : ""}</div>`;
 }
 function openDolarModal() {
@@ -2225,7 +2225,7 @@ async function atualizarCbotAgora() {
   } catch (e) {
     status.textContent = "Erro ao atualizar (função indisponível localmente)";
   }
-  btn.disabled = false; btn.textContent = "Atualizar CBOT agora";
+  btn.disabled = false; btn.textContent = "Atualizar cotações agora";
 }
 document.getElementById("atualizarCbotBtn").addEventListener("click", atualizarCbotAgora);
 function openCotacaoModal(id) {

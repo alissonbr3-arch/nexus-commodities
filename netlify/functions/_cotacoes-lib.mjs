@@ -11,6 +11,59 @@ const ATIVOS = [
   { codigo: "ZC=F", produto: "Milho", mes: "CBOT", fatorKg: 25.401 },
 ];
 
+const BCB_PTAX = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)";
+
+function mmddyyyy(d) { return `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}-${d.getUTCFullYear()}`; }
+
+// Atualiza o dólar do painel sozinho: PTAX de venda do Banco Central (fechamento do último dia
+// útil publicado) em ptax_auto, e o dólar à vista (USD/BRL, Yahoo Finance) em atual/anterior/
+// variação — antes eram digitados à mão e o PTAX automático dependia de uma tarefa externa que
+// parou de rodar. Também alimenta a linha "Dólar" da tabela de cotações. Cada fonte falha
+// sozinha, sem derrubar a outra.
+export async function atualizarDolar() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) return { ok: false, erro: "SUPABASE_SERVICE_ROLE_KEY não configurada." };
+  const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
+  const patch = {};
+  const resultado = { ptax: null, spot: null };
+
+  try {
+    const fim = new Date(), ini = new Date(Date.now() - 10 * 86400000);
+    const url = `${BCB_PTAX}?@dataInicial='${mmddyyyy(ini)}'&@dataFinalCotacao='${mmddyyyy(fim)}'&$orderby=dataHoraCotacao%20desc&$top=1&$format=json`;
+    const r = await fetch(url);
+    const linha = (await r.json())?.value?.[0];
+    if (r.ok && linha?.cotacaoVenda) {
+      patch.ptax_auto = Number(linha.cotacaoVenda);
+      patch.ptax_auto_data = String(linha.dataHoraCotacao).slice(0, 10);
+      patch.ptax_auto_updated_at = new Date().toISOString();
+      resultado.ptax = { valor: patch.ptax_auto, data: patch.ptax_auto_data };
+    } else resultado.ptax = { erro: `BCB sem dados (HTTP ${r.status})` };
+  } catch (e) { resultado.ptax = { erro: String(e) }; }
+
+  try {
+    const r = await fetch(`${YAHOO_BASE}${encodeURIComponent("BRL=X")}`, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" } });
+    const meta = (await r.json())?.chart?.result?.[0]?.meta;
+    if (r.ok && meta?.regularMarketPrice != null) {
+      const atual = Number(meta.regularMarketPrice);
+      const anterior = Number(meta.chartPreviousClose ?? meta.previousClose ?? 0);
+      patch.atual = atual;
+      if (anterior) { patch.anterior = anterior; patch.variacao = atual - anterior; }
+      resultado.spot = { atual, anterior };
+      await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?codigo=eq.${encodeURIComponent("USD/BRL")}`, {
+        method: "PATCH", headers: sbHeaders,
+        body: JSON.stringify({ ultima: atual, varr: anterior ? atual - anterior : 0, pct: anterior ? ((atual - anterior) / anterior) * 100 : 0, previa: anterior || atual, updated_at: new Date().toISOString() }),
+      });
+    } else resultado.spot = { erro: `Yahoo sem dados (HTTP ${r.status})` };
+  } catch (e) { resultado.spot = { erro: String(e) }; }
+
+  if (Object.keys(patch).length) {
+    patch.updated_at = new Date().toISOString();
+    const upd = await fetch(`${SUPABASE_URL}/rest/v1/nexus_dolar?id=eq.1`, { method: "PATCH", headers: sbHeaders, body: JSON.stringify(patch) });
+    resultado.gravou = upd.ok;
+  }
+  return { ok: true, ...resultado };
+}
+
 export async function atualizarCotacoes() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) {
@@ -22,6 +75,7 @@ export async function atualizarCotacoes() {
     "Content-Type": "application/json",
   };
 
+  const dolar = await atualizarDolar();
   let cambio = 5.0;
   try {
     const dolarResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_dolar?id=eq.1&select=*`, { headers: sbHeaders });
@@ -82,5 +136,5 @@ export async function atualizarCotacoes() {
     }
   }
 
-  return { ok: true, cambio, atualizadoEm: new Date().toISOString(), resultados };
+  return { ok: true, cambio, dolar, atualizadoEm: new Date().toISOString(), resultados };
 }
