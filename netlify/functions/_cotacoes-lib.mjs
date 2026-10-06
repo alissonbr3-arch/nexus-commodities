@@ -5,7 +5,6 @@ const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 // fatorKg = kg por bushel (soja: 27.2155kg, milho: 25.401kg) — usado pra
 // converter cents/bushel em R$/saca de 60kg.
 const ATIVOS = [
-  { codigo: "ZSU26.CBT", produto: "Soja", mes: "Setembro", fatorKg: 27.2155 },
   { codigo: "ZSX26.CBT", produto: "Soja", mes: "Novembro", fatorKg: 27.2155 },
   { codigo: "ZSH27.CBT", produto: "Soja", mes: "Março", fatorKg: 27.2155 },
   { codigo: "ZC=F", produto: "Milho", mes: "CBOT", fatorKg: 25.401 },

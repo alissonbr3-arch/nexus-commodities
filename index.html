@@ -703,7 +703,7 @@
         <div class="ws-card" style="max-width:420px;margin-top:16px">
           <div class="ws-name" style="margin-bottom:4px">Preço da praça — Soja (São Gabriel do Oeste)</div>
           <div class="ws-sub" style="margin-bottom:16px">Preço praça = CBOT do contrato vigente (R$/saca) + Prêmio (basis) − Taxa portuária/Embarque − Frete, convertidos pro câmbio do dia. Aparece no topo do Workspace.</div>
-          <div class="field"><label>Contrato vigente</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Setembro</option><option>Novembro</option><option>Março</option></select></div>
+          <div class="field"><label>Contrato vigente</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Novembro</option><option>Março</option></select></div>
           <div class="field-row">
             <div class="field"><label>Prêmio / basis (USD/bushel)</label><input type="number" step="0.0001" id="f_cfgPremio" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
             <div class="field"><label>Taxa portuária / Embarque (USD/tonelada)</label><input type="number" step="0.01" id="f_cfgTaxaPortuaria" oninput="atualizarPreviewPrecoPraca()"></div>
@@ -2045,7 +2045,7 @@ function renderCotacoes() {
       <td><button class="btn-edit-text" onclick="openCotacaoModal('${c.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_cotacoes','${c.id}', loadCotacoes, renderCotacoes)">Excluir</button></td>
     </tr>`).join("");
 
-  document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Setembro";
+  document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Novembro";
   document.getElementById("f_cfgPremio").value = data.config.soja_premio_basis || 0;
   document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
@@ -5949,7 +5949,7 @@ const BUSHEL_POR_SACA_SOJA = 60 / 27.2155;
 const TON_POR_SACA = 60 / 1000;
 function dolarAtual() { return Number(data.dolar?.ptax_auto || data.dolar?.atual || data.dolar?.ptax || 0); }
 function calcularPrecoPraca() {
-  const contrato = data.config.soja_contrato_vigente || "Setembro";
+  const contrato = data.config.soja_contrato_vigente || "Novembro";
   const cot = data.cotacoes.find(c => c.produto === "Soja" && c.mes === contrato);
   const cbotSaca = cot ? Number(cot.preco_saca_brl || 0) : 0;
   const dolar = dolarAtual();
