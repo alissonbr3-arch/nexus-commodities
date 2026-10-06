@@ -2543,19 +2543,22 @@ function openNegocioModal(id) {
   renderPagamentosExtraModal();
   showModal();
 }
-// Sincroniza a linha do comprador em "Preço do dia" (Mercado) com o preço do negócio recém
-// salvo — só a coluna "Disponível" (um negócio fechado é preço à vista/spot; a cotação
-// "Futuro" continua manual, é uma referência à parte). Sorgo não tem coluna futura, cai
-// direto no campo único. Não mexe se não tiver comprador cadastrado (contraparte "Outro")
-// ou preço zerado (rascunho).
+// Sincroniza a linha do comprador em "Preço do dia" (Mercado) com o preço LIVRE (líquido) do
+// negócio recém salvo — o mesmo preço líquido que o resto do app usa (o informado no negócio, ou
+// o estimado descontando comissão/Senar/Funrural etc.). Só a coluna "Disponível" (um negócio
+// fechado é preço à vista/spot; a cotação "Futuro" continua manual, é uma referência à parte).
+// Sorgo não tem coluna futura, cai direto no campo único. Não mexe se não tiver comprador
+// cadastrado (contraparte "Outro") ou preço zerado (rascunho).
 async function sincronizarPrecoMercadoComNegocio(n) {
   if (!n.cliente_id || !(Number(n.preco) > 0)) return;
   const campoPorGrao = { Soja: "preco_soja_disponivel", Milho: "preco_milho_disponivel", Sorgo: "preco_sorgo" };
   const campo = campoPorGrao[n.grao];
   if (!campo) return;
-  await sb.from("nexus_cadastros").update({ [campo]: n.preco, preco_mercado_atualizado_em: new Date().toISOString() }).eq("id", n.cliente_id);
+  const precoLivre = Math.round(precoLiquidoNegocio(n).precoLiquido * 100) / 100;
+  if (!(precoLivre > 0)) return;
+  await sb.from("nexus_cadastros").update({ [campo]: precoLivre, preco_mercado_atualizado_em: new Date().toISOString() }).eq("id", n.cliente_id);
   const campoHistorico = { preco_soja_disponivel: "soja_disponivel", preco_milho_disponivel: "milho_disponivel", preco_sorgo: "sorgo" }[campo];
-  await sb.from("nexus_preco_comprador_historico").upsert([{ comprador_id: n.cliente_id, campo: campoHistorico, data: todayISO(), preco: n.preco }], { onConflict: "comprador_id,campo,data" });
+  await sb.from("nexus_preco_comprador_historico").upsert([{ comprador_id: n.cliente_id, campo: campoHistorico, data: todayISO(), preco: precoLivre }], { onConflict: "comprador_id,campo,data" });
 }
 async function saveNegocio(id) {
   const selVal = v("f_clienteSelect");
