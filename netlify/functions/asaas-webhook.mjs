@@ -31,17 +31,26 @@ export default async (req) => {
   const negRows = await negResp.json().catch(() => []);
   if (!Array.isArray(negRows) || negRows.length === 0) return json({ ok: true, ignorado: true });
 
-  const patch = { boleto_comissao_status: pagamento.status };
-  if (tipo === "PAYMENT_RECEIVED" || tipo === "PAYMENT_CONFIRMED") {
-    patch.status = "Pago";
-    patch.comissao_recebida_em = pagamento.paymentDate || pagamento.clientPaymentDate || new Date().toISOString().slice(0, 10);
-  }
-
-  await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}`, {
+  // Sempre guarda o status atual do boleto (PENDING, OVERDUE, RECEIVED...). Quando o pagamento
+  // entra, marca a comissão como recebida — mesmo efeito de "Marcar como pago" em Comissões.
+  // IMPORTANTE: NÃO mexer no campo status do negócio — o banco só aceita Negociação/Fechado/
+  // Finalizado, e tentar gravar "Pago" ali fazia a atualização inteira falhar em silêncio.
+  const statusResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}`, {
     method: "PATCH",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ boleto_comissao_status: pagamento.status }),
   });
+  if (!statusResp.ok) console.log("asaas-webhook: falha ao gravar status do boleto", pagamento.id, statusResp.status, await statusResp.text());
+
+  if (tipo === "PAYMENT_RECEIVED" || tipo === "PAYMENT_CONFIRMED") {
+    const dataPgto = pagamento.paymentDate || pagamento.clientPaymentDate || new Date().toISOString().slice(0, 10);
+    const recResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${pagamento.id}&comissao_recebida_em=is.null`, {
+      method: "PATCH",
+      headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ comissao_recebida_em: dataPgto }),
+    });
+    if (!recResp.ok) console.log("asaas-webhook: falha ao marcar comissão recebida", pagamento.id, recResp.status, await recResp.text());
+  }
 
   return json({ ok: true });
 };

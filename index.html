@@ -4083,11 +4083,13 @@ function renderComissoesPage() {
       const statusLabel = pago ? "Recebido" : vencido ? "Vencido" : "A receber";
       const statusClasse = pago ? "pago" : vencido ? "atrasado" : "agendado";
       const temBoleto = !!c.negocio.boleto_comissao_url;
+      const stBoleto = c.negocio.boleto_comissao_status;
+      const boletoLegenda = !temBoleto ? "" : ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(stBoleto) ? "boleto pago" : stBoleto === "OVERDUE" ? "boleto vencido" : pago ? "" : "boleto aguardando";
       return `<tr>
         <td>${temBoleto ? "" : `<input type="checkbox" onchange="toggleComissaoSelecionado('${c.id}', this.checked)" ${comissoesSelecionados.has(c.id) ? "checked" : ""}>`}</td>
         <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
         <td>${c.pagador}</td>
-        <td><span class="badge ${statusClasse}">${statusLabel}</span></td>
+        <td><span class="badge ${statusClasse}">${statusLabel}</span>${boletoLegenda ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px">${boletoLegenda}</div>` : ""}</td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
           ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a> <button class="btn-edit-text" onclick="enviarBoletoComissao('${c.id}')">Enviar</button>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
