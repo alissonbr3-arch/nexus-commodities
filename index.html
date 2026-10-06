@@ -4093,6 +4093,7 @@ function renderComissoesPage() {
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
           ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a> <button class="btn-edit-text" onclick="enviarBoletoComissao('${c.id}')">Enviar</button>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
+          <button class="btn-edit-text" style="${c.negocio.nota_fiscal_numero ? "color:var(--green)" : ""}" onclick="openNotaFiscalModal('${c.id}')">${c.negocio.nota_fiscal_numero ? "Nota nº " + escapeHtml(c.negocio.nota_fiscal_numero) : "Emitir nota"}</button>
           <button class="btn-edit-text" style="color:${pago ? "var(--green)" : "var(--gold)"}" onclick="toggleComissaoPaga('${c.id}')">${pago ? "&#10003; Pago" : "Marcar como pago"}</button>
         </td>
       </tr>`;
@@ -4208,6 +4209,87 @@ function gerarRelatorioComissoes() {
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
   win.document.open(); win.document.write(html); win.document.close();
+}
+// ---------------- NOTA FISCAL DA COMISSÃO ----------------
+// A nota é emitida à mão no Emissor Nacional (login e senha — sem certificado digital, então não
+// dá pra emitir direto do app). Aqui o app só prepara os dados pra copiar e guarda o número/PDF.
+const EMISSOR_NFSE_URL = "https://www.nfse.gov.br/EmissorNacional/Login?ReturnUrl=%2femissornacional";
+// Negócios cobrados juntos (mesmo boleto) saem numa nota só; sem boleto, é só o próprio negócio.
+function negociosDaNota(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n) return [];
+  if (!n.boleto_comissao_id) return [n];
+  return data.negocios.filter(x => !x.deleted_at && x.boleto_comissao_id === n.boleto_comissao_id);
+}
+function copiarTextoNota(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.dataset.copiar).then(() => { const o = btn.textContent; btn.textContent = "✓ copiado"; setTimeout(() => { btn.textContent = o; }, 1200); });
+}
+function openNotaFiscalModal(negocioId) {
+  const negs = negociosDaNota(negocioId);
+  if (!negs.length) return;
+  const base = negs[0];
+  const pagador = data.cadastros.find(c => c.id === (base.comissao_pagador === "Comprador" ? base.cliente_id : base.produtor_id));
+  const doc = pagador ? (pagador.cpf || pagador.cnpj || "") : "";
+  const valor = negs.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  const contratos = negs.map(n => n.numero_contrato || "—").join(", ");
+  const descricao = `Comissão de intermediação referente ${negs.length === 1 ? "à Confirmação de Negócio" : "às Confirmações de Negócio"} nº ${contratos}`;
+  const jaTem = !!base.nota_fiscal_numero;
+  const linha = (rotulo, exibir, copiar, id) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:0"><div style="font-size:11px;color:var(--ink-soft)">${rotulo}</div><div id="${id}" data-copiar="${escapeHtml(copiar).replace(/"/g, "&quot;")}" style="font-size:13px;word-break:break-word">${escapeHtml(exibir) || "—"}</div></div>
+      <button class="btn-ghost" style="padding:4px 10px;font-size:11px;flex-shrink:0" onclick="copiarTextoNota('${id}', this)">Copiar</button></div>`;
+  document.getElementById("modalContent").innerHTML = `
+    <h3>${jaTem ? "Nota fiscal da comissão" : "Emitir nota fiscal da comissão"}</h3>
+    <div class="hint" style="margin-bottom:8px">Dados pra preencher no Emissor Nacional${negs.length > 1 ? ` (nota única pros ${negs.length} contratos cobrados juntos)` : ""}:</div>
+    ${linha("Tomador (quem paga a comissão)", pagador ? pagador.nome : "—", pagador ? pagador.nome : "", "nf_nome")}
+    ${linha(doc ? tipoCpfCnpj(doc) : "CPF/CNPJ", doc ? formatCpfCnpj(doc) : "", String(doc).replace(/\D/g, ""), "nf_doc")}
+    ${linha("Valor do serviço", fmtMoney(valor), valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), "nf_valor")}
+    ${linha("Descrição do serviço", descricao, descricao, "nf_desc")}
+    <div style="margin:12px 0"><a class="btn-primary" style="display:inline-block;padding:8px 14px;border-radius:7px;text-decoration:none" href="${EMISSOR_NFSE_URL}" target="_blank" rel="noopener">Abrir o Emissor Nacional</a></div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <div class="hint" style="margin-bottom:8px">Depois de emitir, registre aqui:</div>
+      <div class="field-row">
+        <div class="field"><label>Nº da nota</label><input type="text" id="f_nfNumero" value="${escapeHtml(base.nota_fiscal_numero || "")}"></div>
+        <div class="field"><label>Data de emissão</label><input type="date" id="f_nfData" value="${base.nota_fiscal_emitida_em || todayISO()}"></div>
+      </div>
+      <div class="field"><label>PDF da nota (opcional)${base.nota_fiscal_pdf_path ? " — já anexado, enviar outro substitui" : ""}</label><input type="file" id="f_nfPdf" accept="application/pdf"></div>
+    </div>
+    <div class="modal-actions">
+      ${jaTem ? `${base.nota_fiscal_pdf_path ? `<button class="btn-ghost" onclick="verPdfNotaFiscal('${base.id}')">Ver PDF</button>` : ""}<button class="btn-danger-text" onclick="removerNotaFiscal('${base.id}')">Remover nota</button>` : ""}
+      <button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarNotaFiscal('${base.id}')">Salvar</button>
+    </div>`;
+  showModal();
+}
+async function salvarNotaFiscal(negocioId) {
+  const negs = negociosDaNota(negocioId);
+  const numero = v("f_nfNumero");
+  if (!numero) { alert("Informe o número da nota."); return; }
+  let pdfPath = negs[0].nota_fiscal_pdf_path || null;
+  const arq = document.getElementById("f_nfPdf").files[0];
+  if (arq) {
+    const path = `${negs[0].id}/nota-fiscal_${Date.now()}_${arq.name}`;
+    const { error: upErr } = await sb.storage.from("nexus-anexos").upload(path, arq);
+    if (upErr) { alert("Erro ao enviar o PDF: " + upErr.message); return; }
+    pdfPath = path;
+  }
+  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_numero: numero, nota_fiscal_emitida_em: v("f_nfData") || todayISO(), nota_fiscal_pdf_path: pdfPath }).in("id", negs.map(n => n.id));
+  if (error) { alert("Erro ao salvar a nota: " + error.message); return; }
+  await loadNegocios(); closeModal(); renderComissoesPage();
+}
+async function removerNotaFiscal(negocioId) {
+  if (!confirm("Remover o registro desta nota fiscal? (O PDF anexado continua guardado.)")) return;
+  const negs = negociosDaNota(negocioId);
+  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_numero: null, nota_fiscal_emitida_em: null, nota_fiscal_pdf_path: null }).in("id", negs.map(n => n.id));
+  if (error) { alert("Erro ao remover a nota: " + error.message); return; }
+  await loadNegocios(); closeModal(); renderComissoesPage();
+}
+async function verPdfNotaFiscal(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n || !n.nota_fiscal_pdf_path) return;
+  const { data: d, error } = await sb.storage.from("nexus-anexos").createSignedUrl(n.nota_fiscal_pdf_path, 60);
+  if (error) { alert("Erro ao abrir o PDF: " + error.message); return; }
+  window.open(d.signedUrl, "_blank");
 }
 async function chamarGerarBoleto(negocioIds) {
   const { data: { session } } = await sb.auth.getSession();
