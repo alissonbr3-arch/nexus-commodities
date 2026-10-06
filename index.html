@@ -1880,8 +1880,12 @@ function renderDashboardCompradores() {
   document.getElementById("compradoresSub").textContent = `Análise de ${compradores.length} comprador(es) cadastrado(s)`;
   const ativos = stats.filter(s => s.volume > 0).length;
   const top = stats[0];
+  const valorIntermTotal = stats.reduce((s, x) => s + x.valorInterm, 0);
+  const comissaoTotalComp = stats.reduce((s, x) => s + x.comissao, 0);
+  const negociosTotalComp = stats.reduce((s, x) => s + x.negocios, 0);
   document.getElementById("compradoresCards").innerHTML = [
     { label: "Volume total", value: fmtNum(volumeTotal) + " sc", foot: "sacas negociadas", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
+    { label: "Valor intermediado", value: fmtMoney(valorIntermTotal), foot: "soma de todos os compradores", ic: "$", bg: "var(--green-soft)", color: "var(--green)" },
     { label: "Compradores ativos", value: ativos, foot: "com negócios registrados", ic: "&#128101;", bg: "var(--blue-soft)", color: "var(--blue)" },
     { label: "Top comprador", value: top ? top.cadastro.nome : "—", foot: top ? fmtNum(top.volume) + " sc" : "", ic: "&#128722;", bg: "var(--green-soft)", color: "var(--green)", small: true },
     { label: "Maior participação", value: top ? top.participacao.toFixed(2) + "%" : "—", foot: top ? top.cadastro.nome : "", ic: "&#128200;", bg: "var(--orange-soft)", color: "var(--orange)" },
@@ -1913,7 +1917,10 @@ function renderDashboardCompradores() {
       <td>${i+1}</td><td>${s.cadastro.nome}</td><td>${s.cadastro.cidade || "—"}</td>
       <td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.valorInterm)}</td><td>${fmtMoney(s.comissao)}</td><td>${s.negocios}</td>
       <td>${participacaoBarHtml(s.participacao)}</td>
-    </tr>`).join("");
+    </tr>`).join("") + (stats.length === 0 ? "" : `<tr style="font-weight:700;background:var(--card-alt)">
+      <td></td><td>Total</td><td></td>
+      <td>${fmtNum(volumeTotal)}</td><td>${fmtMoney(valorIntermTotal)}</td><td>${fmtMoney(comissaoTotalComp)}</td><td>${negociosTotalComp}</td><td></td>
+    </tr>`);
 }
 
 // ---------------- DASHBOARD PRODUTORES ----------------
