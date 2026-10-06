@@ -590,6 +590,7 @@
           </div>
           <div class="panel-card">
             <h3>Ranking de produtores</h3>
+            <div class="hint">Produtores do mesmo grupo/família somados numa linha só (o grupo é definido no cadastro do produtor).</div>
             <table>
               <thead><tr><th>#</th><th>Produtor</th><th>Cidade/UF</th><th>Corretor</th><th>Volume (sc)</th><th>Comissão</th><th>Negócios</th><th>Fazendas</th><th>Área (ha)</th><th>Part. %</th></tr></thead>
               <tbody id="rankingProdutoresBody"></tbody>
@@ -1930,16 +1931,38 @@ function computeProdutorStats() {
   stats.forEach(s => s.participacao = volumeTotal > 0 ? s.volume / volumeTotal * 100 : 0);
   return { produtores, stats, volumeTotal };
 }
+// Junta os produtores do mesmo grupo/família numa linha só (soma volume, comissão, negócios,
+// fazendas e área) — quem não tem grupo continua aparecendo sozinho.
+function agruparProdutorStats(stats, volumeTotal) {
+  const porChave = new Map();
+  stats.forEach(s => {
+    const chave = s.cadastro.grupo_id || "c:" + s.cadastro.id;
+    if (!porChave.has(chave)) porChave.set(chave, { grupo: s.cadastro.grupo_id ? data.grupos.find(g => g.id === s.cadastro.grupo_id) : null, membros: [], volume: 0, comissao: 0, negocios: 0, fazendas: 0, area: 0 });
+    const g = porChave.get(chave);
+    g.membros.push(s); g.volume += s.volume; g.comissao += s.comissao; g.negocios += s.negocios; g.fazendas += s.fazendas; g.area += s.area;
+  });
+  const linhas = [...porChave.values()].map(g => {
+    g.membros.sort((a,b) => b.volume - a.volume);
+    const unicos = arr => [...new Set(arr.filter(x => x && x !== "—"))];
+    g.nome = g.grupo && g.membros.length > 1 ? g.grupo.nome : g.membros[0].cadastro.nome;
+    g.cidades = unicos(g.membros.map(m => m.cadastro.cidade));
+    g.corretores = unicos(g.membros.map(m => nomeCorretor(m.cadastro.owner_id)));
+    g.participacao = volumeTotal > 0 ? g.volume / volumeTotal * 100 : 0;
+    return g;
+  });
+  return linhas.sort((a,b) => b.volume - a.volume);
+}
 function renderDashboardProdutores() {
   if (!document.getElementById("sub-produtores")) return;
   const { produtores, stats, volumeTotal } = computeProdutorStats();
+  const ranking = agruparProdutorStats(stats, volumeTotal);
   document.getElementById("produtoresSub").textContent = `Visão de ${produtores.length} produtor(es) e ${data.fazendas.length} fazenda(s)`;
-  const top = stats[0];
+  const top = ranking[0];
   document.getElementById("produtoresCards").innerHTML = [
     { label: "Volume total", value: fmtNum(volumeTotal) + " sc", foot: "sacas negociadas", ic: "&#128230;", bg: "var(--gold-soft)", color: "var(--gold)" },
     { label: "Produtores", value: produtores.length, foot: "cadastrados", ic: "&#128101;", bg: "var(--blue-soft)", color: "var(--blue)" },
     { label: "Fazendas", value: data.fazendas.length, foot: fmtNum(data.fazendas.reduce((s,f)=>s+Number(f.area_estimada||0),0)) + " ha", ic: "&#127806;", bg: "var(--green-soft)", color: "var(--green)" },
-    { label: "Top produtor", value: top ? top.cadastro.nome : "—", foot: top ? fmtNum(top.volume) + " sc, " + top.participacao.toFixed(2) + "%" : "", ic: "&#128200;", bg: "var(--orange-soft)", color: "var(--orange)", small: true },
+    { label: "Top produtor/grupo", value: top ? top.nome : "—", foot: top ? fmtNum(top.volume) + " sc, " + top.participacao.toFixed(2) + "%" : "", ic: "&#128200;", bg: "var(--orange-soft)", color: "var(--orange)", small: true },
   ].map(dashCardHtml).join("");
 
   const ufTotais = {};
@@ -1957,11 +1980,13 @@ function renderDashboardProdutores() {
   if (produtorSafraChart) produtorSafraChart.destroy();
   produtorSafraChart = new Chart(ctxS, { type: "bar", data: { labels: safraLabels, datasets: [{ data: safraLabels.map(l=>safraTotais[l]), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 60 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: chartGridColor }, ticks: { color: chartTickColor } }, x: { grid: { display: false }, ticks: { color: chartTickColor } } } } });
 
-  document.getElementById("rankingProdutoresBody").innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum produtor cadastrado.</td></tr>` :
-    stats.map((s,i) => `<tr>
-      <td>${i+1}</td><td>${s.cadastro.nome}</td><td>${s.cadastro.cidade || "—"}</td><td>${nomeCorretor(s.cadastro.owner_id)}</td>
-      <td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.comissao)}</td><td>${s.negocios}</td><td>${s.fazendas}</td><td>${fmtNum(s.area)}</td>
-      <td>${participacaoBarHtml(s.participacao)}</td>
+  document.getElementById("rankingProdutoresBody").innerHTML = ranking.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhum produtor cadastrado.</td></tr>` :
+    ranking.map((g,i) => `<tr>
+      <td>${i+1}</td>
+      <td>${g.membros.length > 1 ? `<strong>${g.nome}</strong><div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${g.membros.map(m => `${m.cadastro.nome} (${fmtNum(m.volume)} sc)`).join(" · ")}</div>` : g.nome}</td>
+      <td>${g.cidades.join(", ") || "—"}</td><td>${g.corretores.join(", ") || "—"}</td>
+      <td>${fmtNum(g.volume)}</td><td>${fmtMoney(g.comissao)}</td><td>${g.negocios}</td><td>${g.fazendas}</td><td>${fmtNum(g.area)}</td>
+      <td>${participacaoBarHtml(g.participacao)}</td>
     </tr>`).join("");
 }
 
