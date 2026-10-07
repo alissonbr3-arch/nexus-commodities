@@ -3801,6 +3801,36 @@ function aplicarCidadeUfNoModal(cidade, uf) {
   if (opt) sel.value = opt.value; else { sel.value = "__outra__"; document.getElementById("f_cidadeOutra").value = cidade; }
   onCidadeSelectChange();
 }
+// CEP "geral" (rural) do município: pega CEPs reais da cidade no ViaCEP e valida o "-000" do menor
+// prefixo no OpenCEP (ex.: São Gabriel do Oeste = 79490-000).
+async function cepRuralDoMunicipio(cidade, uf) {
+  const semAcento = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  try {
+    const lista = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/Rua/json/`)).json();
+    const prefixos = [...new Set((Array.isArray(lista) ? lista : []).map(x => String(x.cep || "").replace(/\D/g, "").slice(0, 5)).filter(p => p.length === 5))].sort();
+    for (const p of prefixos.slice(0, 4)) {
+      const r = await fetch(`https://opencep.com/v1/${p}000`);
+      if (r.ok && (await r.json().catch(() => ({}))).localidade) return `${p}-000`;
+    }
+  } catch {}
+  return null;
+}
+// Produtor: endereço = a própria fazenda (nome, zona rural, s/n) e CEP geral do município dela.
+async function usarFazendaNoEndereco(produtorId) {
+  const fazendas = produtorId ? data.fazendas.filter(f => f.produtor_id === produtorId) : [];
+  if (!fazendas.length) { msgEndereco("Esse produtor ainda não tem fazenda cadastrada (aba de fazendas do cadastro).", true); return; }
+  const f = fazendas[0];
+  msgEndereco("Buscando o CEP do município...");
+  const { cidade, uf } = parseCidadeUf(f.municipio_uf);
+  document.getElementById("f_endereco").value = f.nome;
+  document.getElementById("f_endNumero").value = "S/N";
+  document.getElementById("f_endComplemento").value = "";
+  document.getElementById("f_bairro").value = "Zona Rural";
+  aplicarCidadeUfNoModal(cidade, uf);
+  const cep = await cepRuralDoMunicipio(cidade, uf);
+  if (cep) { document.getElementById("f_cep").value = cep; msgEndereco(`Endereço da fazenda "${f.nome}" com o CEP geral de ${cidade} (${cep}) — confira antes de salvar.`); }
+  else msgEndereco(`Preenchi com a fazenda "${f.nome}", mas não consegui descobrir o CEP geral de ${cidade} — digite o CEP.`, true);
+}
 function preencherCampoSePreciso(id, valor) { const el = document.getElementById(id); if (el && valor) el.value = valor; }
 async function buscarEnderecoPorCep() {
   const cep = v("f_cep").replace(/\D/g, "");
@@ -3888,7 +3918,7 @@ function openContatoModal(id) {
       <div style="margin-top:8px">
         <div class="field-row">
           <div class="field"><label>CEP</label><input type="text" id="f_cep" value="${escapeHtml(item.cep || "")}" placeholder="00000-000" onblur="buscarEnderecoPorCep()"></div>
-          <div class="field"><label>&nbsp;</label><button type="button" class="btn-ghost" onclick="buscarEnderecoPorCnpj()">Preencher pelo CNPJ</button></div>
+          <div class="field"><label>&nbsp;</label><div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn-ghost" onclick="buscarEnderecoPorCnpj()">Pelo CNPJ</button><button type="button" class="btn-ghost" onclick="usarFazendaNoEndereco('${id || ""}')">Usar a fazenda</button></div></div>
         </div>
         <div class="field"><label>Rua / Avenida</label><input type="text" id="f_endereco" value="${escapeHtml(item.endereco || "")}"></div>
         <div class="field-row">
@@ -4362,7 +4392,10 @@ function openNotaFiscalModal(negocioId) {
   const contratos = negs.map(n => n.numero_contrato || "—").join(", ");
   const descricao = `Comissão de intermediação — ${negs.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${data.config.nfse_texto_adicional ? " " + data.config.nfse_texto_adicional : ""}`;
   const cfgOk = !!(data.config.nfse_codigo_servico && data.config.nfse_nome_servico && data.config.nfse_aliquota_iss != null);
-  const endFaltando = pagador ? [String(pagador.cep || "").replace(/\D/g, "").length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean) : ["cadastro do tomador"];
+  const fazendaTomador = pagador && pagador.tipo === "Produtor" ? (data.fazendas.find(f => f.id === base.fazenda_id) || data.fazendas.find(f => f.produtor_id === pagador.id)) : null;
+  let endFaltando = pagador ? [String(pagador.cep || "").replace(/\D/g, "").length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean) : ["cadastro do tomador"];
+  const usaFazenda = !!(fazendaTomador && endFaltando.length);
+  if (usaFazenda) endFaltando = [];
   const linha = (rotulo, exibir, copiar, id) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
       <div style="min-width:0"><div style="font-size:11px;color:var(--ink-soft)">${rotulo}</div><div id="${id}" data-copiar="${escapeHtml(copiar).replace(/"/g, "&quot;")}" style="font-size:13px;word-break:break-word">${escapeHtml(exibir) || "—"}</div></div>
       <button class="btn-ghost" style="padding:4px 10px;font-size:11px;flex-shrink:0" onclick="copiarTextoNota('${id}', this)">Copiar</button></div>`;
@@ -4384,6 +4417,7 @@ function openNotaFiscalModal(negocioId) {
     topo = `${estado === "erro" ? `<div style="padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);margin-bottom:10px;font-size:12.5px"><strong>A última tentativa deu erro:</strong> ${escapeHtml(base.nota_fiscal_erro || "sem detalhe")}</div>` : ""}
       ${resumo}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
+      ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP geral de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
       ${endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
       <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}')">Emitir nota agora (Asaas)</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
   }

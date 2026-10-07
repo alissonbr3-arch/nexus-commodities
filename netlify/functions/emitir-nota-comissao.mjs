@@ -6,6 +6,25 @@ function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 function somenteDigitos(s) { return String(s || "").replace(/\D/g, ""); }
+function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+
+// CEP "geral" (rural) do município: pega os CEPs reais da cidade no ViaCEP, e testa o "-000" do
+// menor prefixo numa base pública (OpenCEP) — ex.: São Gabriel do Oeste = 79490-000.
+async function cepRuralDoMunicipio(cidade, uf) {
+  try {
+    const lista = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/Rua/json/`)).json();
+    const prefixos = [...new Set((Array.isArray(lista) ? lista : []).map(x => String(x.cep || "").replace(/\D/g, "").slice(0, 5)).filter(p => p.length === 5))].sort();
+    for (const p of prefixos.slice(0, 4)) {
+      const r = await fetch(`https://opencep.com/v1/${p}000`);
+      if (r.ok && (await r.json().catch(() => ({}))).localidade) return `${p}000`;
+    }
+  } catch {}
+  return null;
+}
+function parseMunicipioUf(str) {
+  const m = String(str || "").trim().match(/^(.*?)\s*[\/\-–]\s*([A-Za-z]{2})$/);
+  return m ? { cidade: m[1].trim(), uf: m[2].toUpperCase() } : { cidade: String(str || "").trim(), uf: "MS" };
+}
 function erroAsaas(data, resp) { return data?.errors?.[0]?.description || data?.message || `Asaas retornou ${resp.status}`; }
 
 // Status em que a nota ainda vale (em emissão ou emitida) — nesses não deixa emitir de novo.
@@ -61,17 +80,33 @@ export default async (req) => {
 
   const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
   if (pagadorIds.size !== 1 || ![...pagadorIds][0]) return json({ ok: false, erro: "Os negócios têm pagadores diferentes ou sem pagador definido." }, 400);
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro`, { headers: adminHeaders });
   const pagador = (await cadResp.json())[0];
   if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
   const cpfCnpj = somenteDigitos(pagador.cpf || pagador.cnpj);
   if (!cpfCnpj) return json({ ok: false, erro: `Cadastre o CPF/CNPJ de ${pagador.nome} antes de emitir a nota.` }, 400);
 
   // A prefeitura exige endereço completo do tomador — sem isso a nota volta com "Erro na emissão".
-  const cepDigitos = somenteDigitos(pagador.cep);
-  const faltando = [cepDigitos.length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean);
+  // Produtor sem endereço próprio: usa a fazenda (rua = nome da fazenda, zona rural, CEP geral do
+  // município da fazenda).
+  let endCep = somenteDigitos(pagador.cep), endRua = pagador.endereco, endNum = pagador.endereco_numero, endBairro = pagador.bairro;
+  if (pagador.tipo === "Produtor" && (endCep.length !== 8 || !endRua || !endNum || !endBairro)) {
+    const fResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?produtor_id=eq.${pagador.id}&select=id,nome,municipio_uf`, { headers: adminHeaders });
+    const fazendas = await fResp.json().catch(() => []);
+    const fazenda = (Array.isArray(fazendas) ? fazendas : []).find(f => f.id === base.fazenda_id) || (Array.isArray(fazendas) ? fazendas[0] : null);
+    if (fazenda) {
+      endRua = endRua || fazenda.nome;
+      endNum = endNum || "S/N";
+      endBairro = endBairro || "Zona Rural";
+      if (endCep.length !== 8) {
+        const { cidade, uf } = parseMunicipioUf(fazenda.municipio_uf || pagador.cidade);
+        endCep = (await cepRuralDoMunicipio(cidade, uf)) || "";
+      }
+    }
+  }
+  const faltando = [endCep.length === 8 ? null : "CEP", endRua ? null : "rua", endNum ? null : "número", endBairro ? null : "bairro"].filter(Boolean);
   if (faltando.length) return json({ ok: false, erro: `Complete o endereço de ${pagador.nome} em Cadastros antes de emitir (faltando: ${faltando.join(", ")}).` }, 400);
-  const enderecoAsaas = { postalCode: cepDigitos, address: pagador.endereco, addressNumber: pagador.endereco_numero, complement: pagador.complemento || undefined, province: pagador.bairro };
+  const enderecoAsaas = { postalCode: endCep, address: endRua, addressNumber: endNum, complement: pagador.complemento || undefined, province: endBairro };
 
   const valorTotal = Math.round(negocios.reduce((s, n) => s + Number(n.comissao), 0) * 100) / 100;
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
