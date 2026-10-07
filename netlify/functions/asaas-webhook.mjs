@@ -1,5 +1,18 @@
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 
+// Campos da nota fiscal no negócio a partir do objeto invoice do Asaas (webhook ou consulta direta).
+function patchDaNota(inv) {
+  const patch = { nota_fiscal_status: inv.status };
+  if (inv.number) patch.nota_fiscal_numero = String(inv.number);
+  if (inv.pdfUrl) patch.nota_fiscal_url = inv.pdfUrl;
+  if (inv.status === "AUTHORIZED") {
+    patch.nota_fiscal_emitida_em = inv.effectiveDate || new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    patch.nota_fiscal_erro = null;
+  }
+  if (inv.status === "ERROR") patch.nota_fiscal_erro = inv.statusDescription || "Erro na emissão da nota — veja o detalhe no painel do Asaas.";
+  return patch;
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -21,6 +34,18 @@ export default async (req) => {
   try { evento = await req.json(); } catch { return json({ ok: true }); }
 
   const tipo = evento.event;
+
+  // Eventos de nota fiscal (INVOICE_AUTHORIZED, INVOICE_ERROR...): atualiza o negócio dono da nota.
+  if (String(tipo).startsWith("INVOICE_") && evento.invoice?.id) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?nota_fiscal_asaas_id=eq.${evento.invoice.id}`, {
+      method: "PATCH",
+      headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patchDaNota(evento.invoice)),
+    });
+    if (!r.ok) console.log("asaas-webhook: falha ao gravar nota", evento.invoice.id, r.status, await r.text());
+    return json({ ok: true });
+  }
+
   const pagamento = evento.payment;
   if (!pagamento?.id) return json({ ok: true, ignorado: true });
 

@@ -5,6 +5,19 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
+// Campos da nota fiscal no negócio a partir do objeto invoice do Asaas (webhook ou consulta direta).
+function patchDaNota(inv) {
+  const patch = { nota_fiscal_status: inv.status };
+  if (inv.number) patch.nota_fiscal_numero = String(inv.number);
+  if (inv.pdfUrl) patch.nota_fiscal_url = inv.pdfUrl;
+  if (inv.status === "AUTHORIZED") {
+    patch.nota_fiscal_emitida_em = inv.effectiveDate || new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    patch.nota_fiscal_erro = null;
+  }
+  if (inv.status === "ERROR") patch.nota_fiscal_erro = inv.statusDescription || "Erro na emissão da nota — veja o detalhe no painel do Asaas.";
+  return patch;
+}
+
 const STATUS_PAGOS = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 
 // Rede de segurança do webhook do Asaas: a cada 30 minutos pergunta direto ao Asaas o status dos
@@ -22,8 +35,8 @@ export default async () => {
     `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&boleto_comissao_id=not.is.null&comissao_recebida_em=is.null&select=boleto_comissao_id,boleto_comissao_status`,
     { headers: adminHeaders }
   );
-  const pendentes = await pendResp.json().catch(() => []);
-  if (!Array.isArray(pendentes) || pendentes.length === 0) return json({ ok: true, consultados: 0 });
+  const pendentesRaw = await pendResp.json().catch(() => []);
+  const pendentes = Array.isArray(pendentesRaw) ? pendentesRaw : [];
 
   const boletos = new Map();
   for (const n of pendentes) boletos.set(n.boleto_comissao_id, n.boleto_comissao_status);
@@ -63,7 +76,27 @@ export default async () => {
   }
   if (falhas.length) console.log("sincronizar-boletos-asaas falhas:", falhas.join(" | "));
 
-  return json({ ok: true, consultados: boletos.size, pagos: pagos.length, atualizados, falhas });
+  // Notas fiscais ainda em emissão: pergunta direto ao Asaas (rede de segurança do webhook de nota).
+  const notasResp = await fetch(
+    `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&nota_fiscal_asaas_id=not.is.null&nota_fiscal_status=in.(SCHEDULED,SYNCHRONIZED,PROCESSING_CANCELLATION)&select=nota_fiscal_asaas_id`,
+    { headers: adminHeaders }
+  );
+  const notasRaw = await notasResp.json().catch(() => []);
+  const notasIds = [...new Set((Array.isArray(notasRaw) ? notasRaw : []).map(n => n.nota_fiscal_asaas_id))];
+  const notasAtualizadas = [];
+  for (const invId of notasIds) {
+    try {
+      const resp = await fetch(`${ASAAS_BASE_URL}/invoices/${invId}`, { headers: { access_token: ASAAS_API_KEY } });
+      const inv = await resp.json().catch(() => ({}));
+      if (!resp.ok || !inv.status) { falhas.push(`nota ${invId}: ${inv.errors?.[0]?.description || resp.status}`); continue; }
+      await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?nota_fiscal_asaas_id=eq.${invId}`, {
+        method: "PATCH", headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(patchDaNota(inv)),
+      });
+      notasAtualizadas.push(`${invId}: ${inv.status}`);
+    } catch (e) { falhas.push(`nota ${invId}: ${String(e.message || e)}`); }
+  }
+
+  return json({ ok: true, consultados: boletos.size, pagos: pagos.length, atualizados, notasAtualizadas, falhas });
 };
 
 export const config = { schedule: "*/30 * * * *" };
