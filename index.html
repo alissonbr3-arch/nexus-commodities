@@ -1365,7 +1365,7 @@ function calcularNotificacoes() {
   const alerts = [];
   data.negocios.filter(n => n.data_fim_embarque && n.data_fim_embarque < hoje && !n.embarque_finalizado).forEach(n => {
     const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
-    alerts.push({ nivel: "red", titulo: `Embarque atrasado — ${n.grao || "—"} · ${comprador}`, detalhe: `Previsto até ${fmtDate(n.data_fim_embarque)}`, negocioId: n.id });
+    alerts.push({ nivel: "red", titulo: `Embarque atrasado — ${n.grao || "—"} · ${comprador}`, detalhe: `Previsto até ${fmtDate(n.data_fim_embarque)}`, negocioId: n.id, chave: `emb:${n.id}:${n.data_fim_embarque}` });
   });
   data.negocios.filter(n => !n.comissao_recebida_em && n.data_pagamento).forEach(n => {
     const venc = dia10MesSeguinte(n.data_pagamento);
@@ -1373,26 +1373,49 @@ function calcularNotificacoes() {
     const dias = Math.round((new Date(venc) - new Date(hoje)) / 86400000);
     if (dias <= 7) {
       const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
-      alerts.push({ nivel: dias < 0 ? "red" : "gold", titulo: `Comissão ${dias < 0 ? "vencida" : "vencendo"} — ${comprador}`, detalhe: `Vencimento ${fmtDate(venc)} · ${fmtMoney(n.comissao)}`, negocioId: n.id });
+      alerts.push({ nivel: dias < 0 ? "red" : "gold", titulo: `Comissão ${dias < 0 ? "vencida" : "vencendo"} — ${comprador}`, detalhe: `Vencimento ${fmtDate(venc)} · ${fmtMoney(n.comissao)}`, negocioId: n.id, chave: `com:${n.id}:${venc}:${dias < 0 ? "vencida" : "vencendo"}` });
     }
   });
   (data.cotacoes || []).filter(c => Math.abs(Number(c.pct || 0)) >= 3).forEach(c => {
-    alerts.push({ nivel: "blue", titulo: `${c.produto} ${c.mes || ""} variou ${fmtSigned(c.pct)}%`, detalhe: `Última: ${Number(c.ultima).toLocaleString("pt-BR",{minimumFractionDigits:2})}` });
+    alerts.push({ nivel: "blue", titulo: `${c.produto} ${c.mes || ""} variou ${fmtSigned(c.pct)}%`, detalhe: `Última: ${Number(c.ultima).toLocaleString("pt-BR",{minimumFractionDigits:2})}`, chave: `cot:${c.produto}:${c.mes || ""}:${todayISO()}` });
   });
   return alerts;
+}
+// Os alertas são calculados do estado dos negócios (não ficam guardados), então "limpar" = esconder
+// neste aparelho. Um alerta dispensado volta se mudar de situação (ex.: de "vencendo" pra "vencida").
+function notifDispensadas() { try { return new Set(JSON.parse(localStorage.getItem("nexus_notif_dispensadas") || "[]")); } catch { return new Set(); } }
+function salvarNotifDispensadas(set) { try { localStorage.setItem("nexus_notif_dispensadas", JSON.stringify([...set])); } catch {} }
+function dispensarNotificacao(chave, ev) {
+  if (ev) ev.stopPropagation();
+  const set = notifDispensadas(); set.add(chave); salvarNotifDispensadas(set);
+  renderNotificacoes();
+}
+function limparNotificacoes() {
+  const set = notifDispensadas();
+  calcularNotificacoes().forEach(a => set.add(a.chave));
+  salvarNotifDispensadas(set);
+  renderNotificacoes();
 }
 function renderNotificacoes() {
   const badge = document.getElementById("notifBadge");
   const panel = document.getElementById("notifPanel");
   if (!badge || !panel) return;
-  const alerts = calcularNotificacoes();
+  const todos = calcularNotificacoes();
+  const dispensadas = notifDispensadas();
+  // Esquece as dispensas de alertas que já não existem (mantém a lista pequena).
+  const vivas = new Set(todos.map(a => a.chave));
+  const podadas = new Set([...dispensadas].filter(k => vivas.has(k)));
+  if (podadas.size !== dispensadas.size) salvarNotifDispensadas(podadas);
+  const alerts = todos.filter(a => !podadas.has(a.chave));
   badge.style.display = alerts.length > 0 ? "flex" : "none";
   badge.textContent = alerts.length > 9 ? "9+" : alerts.length;
   const cores = { red: "var(--red)", gold: "var(--gold)", blue: "var(--blue)" };
   panel.innerHTML = alerts.length === 0 ? `<div class="notif-item" style="text-align:center;color:var(--ink-soft)">Nenhum alerta no momento.</div>` :
-    alerts.map(a => `<div class="notif-item" ${a.negocioId ? `style="cursor:pointer" onclick="abrirNegocioDeNotificacao('${a.negocioId}')"` : ""}>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-soft)"><span>${alerts.length} alerta${alerts.length > 1 ? "s" : ""}</span><button class="btn-edit-text" onclick="limparNotificacoes()">Limpar todas</button></div>` +
+    alerts.map(a => `<div class="notif-item" style="position:relative;padding-right:34px;${a.negocioId ? "cursor:pointer" : ""}" ${a.negocioId ? `onclick="abrirNegocioDeNotificacao('${a.negocioId}')"` : ""}>
       <div class="t" style="color:${cores[a.nivel] || "var(--ink)"}">${a.titulo}</div>
       <div class="d">${a.detalhe}</div>
+      <button title="Dispensar" onclick="dispensarNotificacao('${a.chave}', event)" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--ink-soft);font-size:16px;line-height:1;cursor:pointer;padding:2px 6px">&times;</button>
     </div>`).join("");
 }
 function toggleNotifPanel() {
