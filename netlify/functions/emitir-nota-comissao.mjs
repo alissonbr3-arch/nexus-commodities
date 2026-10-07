@@ -61,11 +61,17 @@ export default async (req) => {
 
   const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
   if (pagadorIds.size !== 1 || ![...pagadorIds][0]) return json({ ok: false, erro: "Os negócios têm pagadores diferentes ou sem pagador definido." }, 400);
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,cpf,cnpj,email,telefone,asaas_customer_id`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro`, { headers: adminHeaders });
   const pagador = (await cadResp.json())[0];
   if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
   const cpfCnpj = somenteDigitos(pagador.cpf || pagador.cnpj);
   if (!cpfCnpj) return json({ ok: false, erro: `Cadastre o CPF/CNPJ de ${pagador.nome} antes de emitir a nota.` }, 400);
+
+  // A prefeitura exige endereço completo do tomador — sem isso a nota volta com "Erro na emissão".
+  const cepDigitos = somenteDigitos(pagador.cep);
+  const faltando = [cepDigitos.length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean);
+  if (faltando.length) return json({ ok: false, erro: `Complete o endereço de ${pagador.nome} em Cadastros antes de emitir (faltando: ${faltando.join(", ")}).` }, 400);
+  const enderecoAsaas = { postalCode: cepDigitos, address: pagador.endereco, addressNumber: pagador.endereco_numero, complement: pagador.complemento || undefined, province: pagador.bairro };
 
   const valorTotal = Math.round(negocios.reduce((s, n) => s + Number(n.comissao), 0) * 100) / 100;
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
@@ -84,22 +90,25 @@ export default async (req) => {
     taxes: { retainIss: !!cfg.nfse_iss_retido, iss: Number(cfg.nfse_aliquota_iss), pis: 0, cofins: 0, csll: 0, inss: 0, ir: 0 },
   };
 
-  if (base.boleto_comissao_id) {
-    corpo.payment = base.boleto_comissao_id;
+  // Garante o cliente no Asaas com o endereço atualizado (a nota, com ou sem boleto, usa esse cadastro).
+  let customerId = pagador.asaas_customer_id;
+  if (!customerId) {
+    const cResp = await fetch(`${ASAAS_BASE_URL}/customers`, {
+      method: "POST", headers: asaasHeaders,
+      body: JSON.stringify({ name: pagador.nome, cpfCnpj, email: pagador.email || undefined, mobilePhone: somenteDigitos(pagador.telefone) || undefined, externalReference: pagador.id, ...enderecoAsaas }),
+    });
+    const c = await cResp.json().catch(() => ({}));
+    if (!cResp.ok || !c.id) return json({ ok: false, erro: `Erro ao cadastrar ${pagador.nome} no Asaas: ${erroAsaas(c, cResp)}` }, 500);
+    customerId = c.id;
+    await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${pagador.id}`, { method: "PATCH", headers: patchHeaders, body: JSON.stringify({ asaas_customer_id: customerId }) });
   } else {
-    let customerId = pagador.asaas_customer_id;
-    if (!customerId) {
-      const cResp = await fetch(`${ASAAS_BASE_URL}/customers`, {
-        method: "POST", headers: asaasHeaders,
-        body: JSON.stringify({ name: pagador.nome, cpfCnpj, email: pagador.email || undefined, mobilePhone: somenteDigitos(pagador.telefone) || undefined, externalReference: pagador.id }),
-      });
-      const c = await cResp.json().catch(() => ({}));
-      if (!cResp.ok || !c.id) return json({ ok: false, erro: `Erro ao cadastrar ${pagador.nome} no Asaas: ${erroAsaas(c, cResp)}` }, 500);
-      customerId = c.id;
-      await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${pagador.id}`, { method: "PATCH", headers: patchHeaders, body: JSON.stringify({ asaas_customer_id: customerId }) });
+    const uResp = await fetch(`${ASAAS_BASE_URL}/customers/${customerId}`, { method: "PUT", headers: asaasHeaders, body: JSON.stringify(enderecoAsaas) });
+    if (!uResp.ok) {
+      const u = await uResp.json().catch(() => ({}));
+      return json({ ok: false, erro: `Erro ao atualizar o endereço de ${pagador.nome} no Asaas: ${erroAsaas(u, uResp)}` }, 500);
     }
-    corpo.customer = customerId;
   }
+  if (base.boleto_comissao_id) corpo.payment = base.boleto_comissao_id; else corpo.customer = customerId;
 
   const invResp = await fetch(`${ASAAS_BASE_URL}/invoices`, { method: "POST", headers: asaasHeaders, body: JSON.stringify(corpo) });
   const inv = await invResp.json().catch(() => ({}));
