@@ -96,10 +96,27 @@ export default async (req) => {
   }
 
   const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
-  if (pagadorIds.size !== 1 || ![...pagadorIds][0]) return json({ ok: false, erro: "Os negócios têm pagadores diferentes ou sem pagador definido." }, 400);
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro,inscricao_estadual`, { headers: adminHeaders });
-  const pagador = (await cadResp.json())[0];
+  if ([...pagadorIds].some(x => !x)) return json({ ok: false, erro: "Algum negócio está sem pagador definido." }, 400);
+  const tomadorId = typeof payload?.tomador_id === "string" && /^[0-9a-f-]{36}$/i.test(payload.tomador_id) ? payload.tomador_id : null;
+  const idsCad = [...new Set([...pagadorIds, ...(tomadorId ? [tomadorId] : [])])];
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCad.join(",")})&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro,inscricao_estadual,grupo_id`, { headers: adminHeaders });
+  const cads = await cadResp.json().catch(() => []);
+  if (!Array.isArray(cads) || cads.length !== idsCad.length) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
+  // Vários pagadores (ou tomador escolhido diferente do pagador) só se forem todos do mesmo grupo.
+  let tomadorDiferente = false;
+  let pagador;
+  if (pagadorIds.size === 1 && (!tomadorId || tomadorId === [...pagadorIds][0])) {
+    pagador = cads.find(c => c.id === [...pagadorIds][0]);
+  } else {
+    const grupos = new Set(cads.map(c => c.grupo_id || ""));
+    if (grupos.size !== 1 || !cads[0].grupo_id) return json({ ok: false, erro: "Os negócios têm pagadores diferentes que não são do mesmo grupo." }, 400);
+    pagador = tomadorId ? cads.find(c => c.id === tomadorId) : null;
+    if (!pagador) return json({ ok: false, erro: "Escolha em nome de quem a nota vai sair (os negócios são de pagadores diferentes do grupo)." }, 400);
+    tomadorDiferente = true;
+  }
   if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
+  // Nota em nome de outro membro do grupo não pode ficar ligada ao boleto do pagador original.
+  if (tomadorDiferente) notaAvulsa = true;
   const cpfCnpj = somenteDigitos(pagador.cpf || pagador.cnpj);
   if (!cpfCnpj) return json({ ok: false, erro: `Cadastre o CPF/CNPJ de ${pagador.nome} antes de emitir a nota.` }, 400);
 
@@ -190,7 +207,7 @@ export default async (req) => {
   await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=in.(${negocios.map(n => n.id).join(",")})`, {
     method: "PATCH", headers: patchHeaders,
     body: JSON.stringify({
-      nota_fiscal_asaas_id: inv.id, nota_fiscal_status: inv.status || "SCHEDULED", nota_fiscal_erro: null,
+      nota_fiscal_asaas_id: inv.id, nota_fiscal_status: inv.status || "SCHEDULED", nota_fiscal_erro: null, nota_fiscal_tomador_id: pagador.id,
       nota_fiscal_numero: inv.number ? String(inv.number) : null, nota_fiscal_url: inv.pdfUrl || null,
       nota_fiscal_emitida_em: inv.status === "AUTHORIZED" ? hojeBR : null,
     }),

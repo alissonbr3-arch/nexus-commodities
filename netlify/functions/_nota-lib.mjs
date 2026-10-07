@@ -71,7 +71,8 @@ export async function enviarEmailDaNota(inv, { forcar = false, enviadoPor = null
   };
 
   const base = negocios[0];
-  const pagadorId = base.comissao_pagador === "Comprador" ? base.cliente_id : base.produtor_id;
+  // Nota em nome de outro membro do grupo: o e-mail vai pro tomador escolhido, não pro pagador do negócio.
+  const pagadorId = base.nota_fiscal_tomador_id || (base.comissao_pagador === "Comprador" ? base.cliente_id : base.produtor_id);
   const cad = (await (await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${pagadorId}&select=nome,email,emails_extra`, { headers: headersAdmin() })).json().catch(() => []))[0];
   if (!cad) return liberar("Não encontrei o cadastro de quem recebe a nota.");
   const destinatarios = [...new Set([cad.email, ...(cad.emails_extra || [])].filter(Boolean))];
