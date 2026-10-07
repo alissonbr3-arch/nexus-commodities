@@ -8,17 +8,21 @@ function json(body, status) {
 function somenteDigitos(s) { return String(s || "").replace(/\D/g, ""); }
 function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 
-// CEP "geral" (rural) do município: pega os CEPs reais da cidade no ViaCEP, e testa o "-000" do
-// menor prefixo numa base pública (OpenCEP) — ex.: São Gabriel do Oeste = 79490-000.
+// CEP de uma fazenda: um CEP REAL do município, preferindo os de rodovia/estrada (rural) e, se não
+// houver, o menor CEP da cidade. (O Portal Nacional valida o CEP no Correios e recusa "-000"
+// genérico que não exista lá — E0240 —, como o 79490-000 de São Gabriel do Oeste.)
 async function cepRuralDoMunicipio(cidade, uf) {
-  try {
-    const lista = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/Rua/json/`)).json();
-    const prefixos = [...new Set((Array.isArray(lista) ? lista : []).map(x => String(x.cep || "").replace(/\D/g, "").slice(0, 5)).filter(p => p.length === 5))].sort();
-    for (const p of prefixos.slice(0, 4)) {
-      const r = await fetch(`https://opencep.com/v1/${p}000`);
-      if (r.ok && (await r.json().catch(() => ({}))).localidade) return `${p}000`;
-    }
-  } catch {}
+  const norm = t => semAcento(t).toLowerCase().trim();
+  const buscar = async (termo) => {
+    try {
+      const l = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/${termo}/json/`)).json();
+      return (Array.isArray(l) ? l : []).filter(x => x.cep && norm(x.localidade) === norm(cidade));
+    } catch { return []; }
+  };
+  for (const termos of [["Rodovia", "Estrada"], ["Avenida", "Rua"]]) {
+    const achados = (await Promise.all(termos.map(buscar))).flat().map(x => String(x.cep).replace(/\D/g, "")).sort();
+    if (achados.length) return achados[0];
+  }
   return null;
 }
 function parseMunicipioUf(str) {
@@ -87,7 +91,7 @@ export default async (req) => {
   if (!cpfCnpj) return json({ ok: false, erro: `Cadastre o CPF/CNPJ de ${pagador.nome} antes de emitir a nota.` }, 400);
 
   // A prefeitura exige endereço completo do tomador — sem isso a nota volta com "Erro na emissão".
-  // Produtor sem endereço próprio: usa a fazenda (rua = nome da fazenda, zona rural, CEP geral do
+  // Produtor sem endereço próprio: usa a fazenda (rua = nome da fazenda, zona rural, CEP rural do
   // município da fazenda).
   let endCep = somenteDigitos(pagador.cep), endRua = pagador.endereco, endNum = pagador.endereco_numero, endBairro = pagador.bairro;
   if (pagador.tipo === "Produtor" && (endCep.length !== 8 || !endRua || !endNum || !endBairro)) {

@@ -3801,21 +3801,25 @@ function aplicarCidadeUfNoModal(cidade, uf) {
   if (opt) sel.value = opt.value; else { sel.value = "__outra__"; document.getElementById("f_cidadeOutra").value = cidade; }
   onCidadeSelectChange();
 }
-// CEP "geral" (rural) do município: pega CEPs reais da cidade no ViaCEP e valida o "-000" do menor
-// prefixo no OpenCEP (ex.: São Gabriel do Oeste = 79490-000).
+// CEP de uma fazenda: um CEP REAL do município, preferindo os de rodovia/estrada (rural) e, se não
+// houver, o menor CEP da cidade. (O Portal Nacional valida no Correios e recusa CEP "-000" genérico
+// que não exista lá — erro E0240.)
 async function cepRuralDoMunicipio(cidade, uf) {
   const semAcento = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  try {
-    const lista = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/Rua/json/`)).json();
-    const prefixos = [...new Set((Array.isArray(lista) ? lista : []).map(x => String(x.cep || "").replace(/\D/g, "").slice(0, 5)).filter(p => p.length === 5))].sort();
-    for (const p of prefixos.slice(0, 4)) {
-      const r = await fetch(`https://opencep.com/v1/${p}000`);
-      if (r.ok && (await r.json().catch(() => ({}))).localidade) return `${p}-000`;
-    }
-  } catch {}
+  const norm = t => semAcento(t).toLowerCase().trim();
+  const buscar = async (termo) => {
+    try {
+      const l = await (await fetch(`https://viacep.com.br/ws/${uf}/${encodeURIComponent(semAcento(cidade))}/${termo}/json/`)).json();
+      return (Array.isArray(l) ? l : []).filter(x => x.cep && norm(x.localidade) === norm(cidade));
+    } catch { return []; }
+  };
+  for (const termos of [["Rodovia", "Estrada"], ["Avenida", "Rua"]]) {
+    const achados = (await Promise.all(termos.map(buscar))).flat().map(x => String(x.cep).replace(/\D/g, "")).sort();
+    if (achados.length) return `${achados[0].slice(0, 5)}-${achados[0].slice(5)}`;
+  }
   return null;
 }
-// Produtor: endereço = a própria fazenda (nome, zona rural, s/n) e CEP geral do município dela.
+// Produtor: endereço = a própria fazenda (nome, zona rural, s/n) e um CEP rural do município dela.
 async function usarFazendaNoEndereco(produtorId) {
   const fazendas = produtorId ? data.fazendas.filter(f => f.produtor_id === produtorId) : [];
   if (!fazendas.length) { msgEndereco("Esse produtor ainda não tem fazenda cadastrada (aba de fazendas do cadastro).", true); return; }
@@ -3828,8 +3832,8 @@ async function usarFazendaNoEndereco(produtorId) {
   document.getElementById("f_bairro").value = "Zona Rural";
   aplicarCidadeUfNoModal(cidade, uf);
   const cep = await cepRuralDoMunicipio(cidade, uf);
-  if (cep) { document.getElementById("f_cep").value = cep; msgEndereco(`Endereço da fazenda "${f.nome}" com o CEP geral de ${cidade} (${cep}) — confira antes de salvar.`); }
-  else msgEndereco(`Preenchi com a fazenda "${f.nome}", mas não consegui descobrir o CEP geral de ${cidade} — digite o CEP.`, true);
+  if (cep) { document.getElementById("f_cep").value = cep; msgEndereco(`Endereço da fazenda "${f.nome}" com um CEP rural de ${cidade} (${cep}) — confira antes de salvar.`); }
+  else msgEndereco(`Preenchi com a fazenda "${f.nome}", mas não consegui descobrir um CEP de ${cidade} — digite o CEP.`, true);
 }
 function preencherCampoSePreciso(id, valor) { const el = document.getElementById(id); if (el && valor) el.value = valor; }
 async function buscarEnderecoPorCep() {
@@ -4417,7 +4421,7 @@ function openNotaFiscalModal(negocioId) {
     topo = `${estado === "erro" ? `<div style="padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);margin-bottom:10px;font-size:12.5px"><strong>A última tentativa deu erro:</strong> ${escapeHtml(base.nota_fiscal_erro || "sem detalhe")}${/L147|não está autorizado a utilizar RPS/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> a prefeitura não autoriza a emissão por sistema nesse formato. No Asaas, vá em <em>Notas Fiscais &gt; Configurações &gt; Informações Fiscais</em> e mude "Emito NFS-e pelo Portal Nacional" para <strong>Sim</strong> (obrigatório pro Simples Nacional até 01/11/2026). Depois é só emitir de novo aqui.</div>` : ""}${/endere[cç]o do cliente|CEP/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> complete o endereço (CEP, rua, número, bairro) no cadastro de quem paga e emita de novo.</div>` : ""}</div>` : ""}
       ${resumo}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
-      ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP geral de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
+      ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
       ${endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
       <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}')">Emitir nota agora (Asaas)</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
   }
