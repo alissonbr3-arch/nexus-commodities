@@ -1,21 +1,10 @@
+import { sincronizarNotaDoAsaas } from "./_nota-lib.mjs";
+
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const ASAAS_BASE_URL = "https://api.asaas.com/v3";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
-
-// Campos da nota fiscal no negócio a partir do objeto invoice do Asaas (webhook ou consulta direta).
-function patchDaNota(inv) {
-  const patch = { nota_fiscal_status: inv.status };
-  if (inv.number) patch.nota_fiscal_numero = String(inv.number);
-  if (inv.pdfUrl) patch.nota_fiscal_url = inv.pdfUrl;
-  if (inv.status === "AUTHORIZED") {
-    patch.nota_fiscal_emitida_em = inv.effectiveDate || new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-    patch.nota_fiscal_erro = null;
-  }
-  if (inv.status === "ERROR") patch.nota_fiscal_erro = inv.statusDescription || "Erro na emissão da nota — veja o detalhe no painel do Asaas.";
-  return patch;
 }
 
 const STATUS_PAGOS = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
@@ -86,13 +75,9 @@ export default async () => {
   const notasAtualizadas = [];
   for (const invId of notasIds) {
     try {
-      const resp = await fetch(`${ASAAS_BASE_URL}/invoices/${invId}`, { headers: { access_token: ASAAS_API_KEY } });
-      const inv = await resp.json().catch(() => ({}));
-      if (!resp.ok || !inv.status) { falhas.push(`nota ${invId}: ${inv.errors?.[0]?.description || resp.status}`); continue; }
-      await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?nota_fiscal_asaas_id=eq.${invId}`, {
-        method: "PATCH", headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(patchDaNota(inv)),
-      });
-      notasAtualizadas.push(`${invId}: ${inv.status}`);
+      const r = await sincronizarNotaDoAsaas(invId);
+      if (r.ok) notasAtualizadas.push(`${invId}: ${r.status}${r.email && r.email.destinatarios ? " (e-mail enviado)" : ""}`);
+      else falhas.push(`nota ${invId}: ${r.erro}`);
     } catch (e) { falhas.push(`nota ${invId}: ${String(e.message || e)}`); }
   }
 
