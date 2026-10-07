@@ -138,7 +138,13 @@ export default async (req) => {
     effectiveDate: hojeBR,
     municipalServiceCode: cfg.nfse_codigo_servico,
     municipalServiceName: cfg.nfse_nome_servico,
-    taxes: { retainIss: !!cfg.nfse_iss_retido, iss: Number(cfg.nfse_aliquota_iss), pis: 0, cofins: 0, csll: 0, inss: 0, ir: 0 },
+    // IBS/CBS (Reforma Tributária) — mesmos códigos das notas emitidas à mão no Portal Nacional:
+    // NBS 1.1806.40.00, CST 000 (tributação integral), cClassTrib 000001 e indicador de operação
+    // 030103. As alíquotas (IBS estadual 0,10% + CBS 0,90% em 2026) o Asaas calcula pela classificação.
+    taxes: {
+      retainIss: !!cfg.nfse_iss_retido, iss: Number(cfg.nfse_aliquota_iss), pis: 0, cofins: 0, csll: 0, inss: 0, ir: 0,
+      nbsCode: "1.1806.40.00", taxSituationCode: "000", taxClassificationCode: "000001", operationIndicatorCode: "030103",
+    },
   };
 
   // Garante o cliente no Asaas com o endereço atualizado (a nota, com ou sem boleto, usa esse cadastro).
