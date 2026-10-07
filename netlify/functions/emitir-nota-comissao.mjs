@@ -128,12 +128,19 @@ export default async (req) => {
   // município) e a inscrição estadual da nota. "cadastro" = usa o endereço do próprio cadastro.
   let fazenda = null;
   if (pagador.tipo === "Produtor" && fazendaEscolhida !== "cadastro") {
-    const fResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?produtor_id=eq.${pagador.id}&select=id,nome,municipio_uf,inscricao_estadual`, { headers: adminHeaders });
+    // Fazendas do tomador (primeiro) e, se ele é de um grupo, as dos outros membros.
+    let donos = [pagador.id];
+    if (pagador.grupo_id) {
+      const gResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${pagador.grupo_id}&select=id`, { headers: adminHeaders });
+      const g = await gResp.json().catch(() => []);
+      donos = [pagador.id, ...(Array.isArray(g) ? g.map(x => x.id).filter(id => id !== pagador.id) : [])];
+    }
+    const fResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?produtor_id=in.(${donos.join(",")})&select=id,nome,municipio_uf,inscricao_estadual,produtor_id`, { headers: adminHeaders });
     const fazendas = await fResp.json().catch(() => []);
-    const lista = Array.isArray(fazendas) ? fazendas : [];
+    const lista = (Array.isArray(fazendas) ? fazendas : []).sort((a, b) => donos.indexOf(a.produtor_id) - donos.indexOf(b.produtor_id));
     if (fazendaEscolhida) {
       fazenda = lista.find(f => f.id === fazendaEscolhida) || null;
-      if (!fazenda) return json({ ok: false, erro: "A fazenda escolhida não pertence a este produtor." }, 400);
+      if (!fazenda) return json({ ok: false, erro: "A fazenda escolhida não pertence a este produtor nem ao grupo dele." }, 400);
     } else if (endCep.length !== 8 || !endRua || !endNum || !endBairro) {
       fazenda = lista.find(f => f.id === base.fazenda_id) || lista[0] || null;
     }
