@@ -141,7 +141,7 @@ export default async (req) => {
     // Mesmo padrão das notas emitidas à mão: contratos + dados bancários (texto em Configurações).
     serviceDescription: `Comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${cfg.nfse_texto_adicional ? " " + cfg.nfse_texto_adicional : ""}`,
     observations: `Contrato(s): ${contratos}${fazenda ? ` — Fazenda ${fazenda.nome}` : ""}${ieNota ? ` — Inscrição Estadual ${ieNota}` : ""}`,
-    externalReference: negocios.map(n => n.id).join(","),
+    externalReference: `nexus:${contratos}`.slice(0, 100), // o Asaas aceita no máximo 100 caracteres; a nota é achada pelo nota_fiscal_asaas_id
     value: valorTotal,
     deductions: 0,
     effectiveDate: hojeBR,
