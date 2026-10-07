@@ -71,14 +71,17 @@ export default async (req) => {
     const gResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${base.boleto_comissao_id}&deleted_at=is.null&select=*`, { headers: adminHeaders });
     const g = await gResp.json();
     if (Array.isArray(g) && g.length) negocios = g;
-  } else if (extraIds.length) {
-    // Vários negócios do mesmo pagador numa nota só (sem boleto): confere que todos existem e não
-    // estão em boleto. A conferência de "mesmo pagador" vem logo abaixo.
+  }
+  let notaAvulsa = false;
+  if (extraIds.length) {
+    // Vários negócios do mesmo pagador numa nota só. Se algum tem boleto próprio, a nota sai avulsa
+    // (em nome do cliente, sem ligação com um boleto específico). "Mesmo pagador" é conferido abaixo.
     const eResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=in.(${extraIds.join(",")})&deleted_at=is.null&select=*`, { headers: adminHeaders });
     const extras = await eResp.json().catch(() => []);
     if (!Array.isArray(extras) || extras.length !== extraIds.length) return json({ ok: false, erro: "Algum dos negócios selecionados não foi encontrado." }, 404);
-    if (extras.some(n => n.boleto_comissao_id)) return json({ ok: false, erro: "Negócios que já têm boleto não podem entrar numa nota avulsa — a nota deles segue o boleto." }, 400);
-    negocios = [base, ...extras];
+    const jaNoGrupo = new Set(negocios.map(n => n.id));
+    negocios = [...negocios, ...extras.filter(n => !jaNoGrupo.has(n.id))];
+    notaAvulsa = new Set(negocios.map(n => n.boleto_comissao_id || "")).size > 1;
   }
   if (negocios.some(n => n.nota_fiscal_asaas_id && STATUS_VIVOS.includes(n.nota_fiscal_status))) {
     return json({ ok: false, erro: "Este negócio já tem uma nota fiscal emitida ou em emissão." }, 400);
@@ -156,7 +159,7 @@ export default async (req) => {
       return json({ ok: false, erro: `Erro ao atualizar o endereço de ${pagador.nome} no Asaas: ${erroAsaas(u, uResp)}` }, 500);
     }
   }
-  if (base.boleto_comissao_id) corpo.payment = base.boleto_comissao_id; else corpo.customer = customerId;
+  if (base.boleto_comissao_id && !notaAvulsa) corpo.payment = base.boleto_comissao_id; else corpo.customer = customerId;
 
   const invResp = await fetch(`${ASAAS_BASE_URL}/invoices`, { method: "POST", headers: asaasHeaders, body: JSON.stringify(corpo) });
   const inv = await invResp.json().catch(() => ({}));

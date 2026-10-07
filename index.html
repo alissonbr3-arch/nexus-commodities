@@ -4375,12 +4375,13 @@ function negociosDaNota(negocioId) {
   return data.negocios.filter(x => !x.deleted_at && x.boleto_comissao_id === n.boleto_comissao_id);
 }
 function pagadorIdDoNegocio(n) { return n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id; }
-// Outros negócios do mesmo pagador que podem entrar na mesma nota: sem boleto, sem nota (viva ou
-// registrada à mão) e com comissão. Só vale quando o negócio-base também não tem boleto.
+// Outros negócios do mesmo pagador que podem entrar na mesma nota: sem nota (viva ou registrada à
+// mão) e com comissão. Se algum tiver boleto próprio, a nota sai avulsa (sem ligação com o boleto).
 function negociosExtrasParaNota(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
-  if (!n || n.boleto_comissao_id || !pagadorIdDoNegocio(n)) return [];
-  return data.negocios.filter(x => x.id !== n.id && !x.deleted_at && !x.boleto_comissao_id && pagadorIdDoNegocio(x) === pagadorIdDoNegocio(n)
+  if (!n || !pagadorIdDoNegocio(n)) return [];
+  const grupo = new Set(negociosDaNota(negocioId).map(x => x.id));
+  return data.negocios.filter(x => !grupo.has(x.id) && !x.deleted_at && pagadorIdDoNegocio(x) === pagadorIdDoNegocio(n)
     && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !x.nota_fiscal_numero && Number(x.comissao) > 0);
 }
 let notaExtrasSel = { base: null, ids: new Set() };
@@ -4444,7 +4445,7 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
   } else {
     topo = `${estado === "erro" ? `<div style="padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);margin-bottom:10px;font-size:12.5px"><strong>A última tentativa deu erro:</strong> ${escapeHtml(base.nota_fiscal_erro || "sem detalhe")}${/L147|não está autorizado a utilizar RPS/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> a prefeitura não autoriza a emissão por sistema nesse formato. No Asaas, vá em <em>Notas Fiscais &gt; Configurações &gt; Informações Fiscais</em> e mude "Emito NFS-e pelo Portal Nacional" para <strong>Sim</strong> (obrigatório pro Simples Nacional até 01/11/2026). Depois é só emitir de novo aqui.</div>` : ""}${/endere[cç]o do cliente|CEP/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> complete o endereço (CEP, rua, número, bairro) no cadastro de quem paga e emita de novo.</div>` : ""}</div>` : ""}
       ${resumo}
-      ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}</label>`).join("")}</div>` : ""}
+      ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}${x.boleto_comissao_id ? " · tem boleto próprio" : ""}</label>`).join("")}${(base.boleto_comissao_id || extrasSel.some(x => x.boleto_comissao_id)) && extrasSel.length ? `<div class="hint" style="margin-top:6px">Com boletos diferentes, a nota sai <strong>avulsa</strong> em nome do pagador, sem ligação com um boleto específico.</div>` : ""}</div>` : ""}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
       ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
       ${endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
