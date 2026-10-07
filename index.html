@@ -4369,8 +4369,24 @@ const EMISSOR_NFSE_URL = "https://www.nfse.gov.br/EmissorNacional/Login?ReturnUr
 function negociosDaNota(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return [];
+  // Nota já emitida pelo Asaas: todos os negócios que entraram nela (podem ser de contratos/boletos diferentes).
+  if (n.nota_fiscal_asaas_id) return data.negocios.filter(x => !x.deleted_at && x.nota_fiscal_asaas_id === n.nota_fiscal_asaas_id);
   if (!n.boleto_comissao_id) return [n];
   return data.negocios.filter(x => !x.deleted_at && x.boleto_comissao_id === n.boleto_comissao_id);
+}
+function pagadorIdDoNegocio(n) { return n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id; }
+// Outros negócios do mesmo pagador que podem entrar na mesma nota: sem boleto, sem nota (viva ou
+// registrada à mão) e com comissão. Só vale quando o negócio-base também não tem boleto.
+function negociosExtrasParaNota(negocioId) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  if (!n || n.boleto_comissao_id || !pagadorIdDoNegocio(n)) return [];
+  return data.negocios.filter(x => x.id !== n.id && !x.deleted_at && !x.boleto_comissao_id && pagadorIdDoNegocio(x) === pagadorIdDoNegocio(n)
+    && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !x.nota_fiscal_numero && Number(x.comissao) > 0);
+}
+let notaExtrasSel = { base: null, ids: new Set() };
+function toggleNotaExtra(baseId, id) {
+  if (notaExtrasSel.ids.has(id)) notaExtrasSel.ids.delete(id); else notaExtrasSel.ids.add(id);
+  openNotaFiscalModal(baseId, true);
 }
 function copiarTextoNota(id, btn) {
   const el = document.getElementById(id);
@@ -4385,16 +4401,23 @@ function estadoNotaDoNegocio(n) {
   if (n.nota_fiscal_status === "ERROR") return "erro";
   return "nenhuma";
 }
-function openNotaFiscalModal(negocioId) {
-  const negs = negociosDaNota(negocioId);
-  if (!negs.length) return;
-  const base = negs[0];
+function openNotaFiscalModal(negocioId, manterSelecao) {
+  const negsBase = negociosDaNota(negocioId);
+  if (!negsBase.length) return;
+  const base = negsBase[0];
   const estado = estadoNotaDoNegocio(base);
+  // Em nota ainda não emitida, dá pra juntar outros negócios do mesmo pagador (começa com todos marcados).
+  const extrasDisp = ["nenhuma", "erro"].includes(estado) ? negociosExtrasParaNota(base.id) : [];
+  if (!manterSelecao || notaExtrasSel.base !== base.id) notaExtrasSel = { base: base.id, ids: new Set(extrasDisp.map(x => x.id)) };
+  const extrasSel = extrasDisp.filter(x => notaExtrasSel.ids.has(x.id));
+  const negs = [...negsBase, ...extrasSel];
   const pagador = data.cadastros.find(c => c.id === (base.comissao_pagador === "Comprador" ? base.cliente_id : base.produtor_id));
   const doc = pagador ? (pagador.cpf || pagador.cnpj || "") : "";
   const valor = negs.reduce((s, n) => s + Number(n.comissao || 0), 0);
   const contratos = negs.map(n => n.numero_contrato || "—").join(", ");
   const descricao = `Comissão de intermediação — ${negs.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${data.config.nfse_texto_adicional ? " " + data.config.nfse_texto_adicional : ""}`;
+  const valorBase = negsBase.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  const descricaoBase = `Comissão de intermediação — ${negsBase.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${negsBase.map(n => n.numero_contrato || "—").join(", ")}.${data.config.nfse_texto_adicional ? " " + data.config.nfse_texto_adicional : ""}`;
   const cfgOk = !!(data.config.nfse_codigo_servico && data.config.nfse_nome_servico && data.config.nfse_aliquota_iss != null);
   const fazendaTomador = pagador && pagador.tipo === "Produtor" ? (data.fazendas.find(f => f.id === base.fazenda_id) || data.fazendas.find(f => f.produtor_id === pagador.id)) : null;
   let endFaltando = pagador ? [String(pagador.cep || "").replace(/\D/g, "").length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean) : ["cadastro do tomador"];
@@ -4405,7 +4428,7 @@ function openNotaFiscalModal(negocioId) {
       <button class="btn-ghost" style="padding:4px 10px;font-size:11px;flex-shrink:0" onclick="copiarTextoNota('${id}', this)">Copiar</button></div>`;
   const resumo = `
     <div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;color:var(--ink-soft)">Tomador (quem paga a comissão)</div><div style="font-size:13px">${escapeHtml(pagador ? pagador.nome : "—")} ${doc ? `<span style="color:var(--ink-soft)">· ${tipoCpfCnpj(doc)} ${formatCpfCnpj(doc)}</span>` : ""}</div></div>
-    <div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;color:var(--ink-soft)">Valor do serviço${negs.length > 1 ? ` (nota única pros ${negs.length} contratos cobrados juntos)` : ""}</div><div style="font-size:13px">${fmtMoney(valor)}</div></div>
+    <div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;color:var(--ink-soft)">Valor do serviço${negs.length > 1 ? ` (nota única pros ${negs.length} contratos: ${escapeHtml(contratos)})` : ""}</div><div style="font-size:13px">${fmtMoney(valor)}</div></div>
     <div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;color:var(--ink-soft)">Descrição na nota</div><div style="font-size:12.5px;word-break:break-word">${escapeHtml(descricao)}</div></div>`;
 
   let topo = "";
@@ -4421,10 +4444,11 @@ function openNotaFiscalModal(negocioId) {
   } else {
     topo = `${estado === "erro" ? `<div style="padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);margin-bottom:10px;font-size:12.5px"><strong>A última tentativa deu erro:</strong> ${escapeHtml(base.nota_fiscal_erro || "sem detalhe")}${/L147|não está autorizado a utilizar RPS/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> a prefeitura não autoriza a emissão por sistema nesse formato. No Asaas, vá em <em>Notas Fiscais &gt; Configurações &gt; Informações Fiscais</em> e mude "Emito NFS-e pelo Portal Nacional" para <strong>Sim</strong> (obrigatório pro Simples Nacional até 01/11/2026). Depois é só emitir de novo aqui.</div>` : ""}${/endere[cç]o do cliente|CEP/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> complete o endereço (CEP, rua, número, bairro) no cadastro de quem paga e emita de novo.</div>` : ""}</div>` : ""}
       ${resumo}
+      ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}</label>`).join("")}</div>` : ""}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
       ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
       ${endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
-      <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}')">Emitir nota agora (Asaas)</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
+      <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}')">${negs.length > 1 ? `Emitir nota única de ${negs.length} contratos — ${fmtMoney(valor)}` : "Emitir nota agora (Asaas)"}</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
   }
 
   const registroManual = `
@@ -4433,8 +4457,8 @@ function openNotaFiscalModal(negocioId) {
       <div class="hint" style="margin:8px 0">Dados pra copiar no Emissor Nacional:</div>
       ${linha("Tomador", pagador ? pagador.nome : "", pagador ? pagador.nome : "", "nf_nome")}
       ${linha(doc ? tipoCpfCnpj(doc) : "CPF/CNPJ", doc ? formatCpfCnpj(doc) : "", String(doc).replace(/\D/g, ""), "nf_doc")}
-      ${linha("Valor do serviço", fmtMoney(valor), valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), "nf_valor")}
-      ${linha("Descrição do serviço", descricao, descricao, "nf_desc")}
+      ${linha("Valor do serviço", fmtMoney(valorBase), valorBase.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), "nf_valor")}
+      ${linha("Descrição do serviço", descricaoBase, descricaoBase, "nf_desc")}
       <div style="margin:10px 0"><a class="btn-ghost" style="display:inline-block;padding:7px 12px;border-radius:7px;text-decoration:none" href="${EMISSOR_NFSE_URL}" target="_blank" rel="noopener">Abrir o Emissor Nacional</a></div>
       <div class="field-row">
         <div class="field"><label>Nº da nota</label><input type="text" id="f_nfNumero" value="${escapeHtml(base.nota_fiscal_numero || "")}"></div>
@@ -4490,7 +4514,7 @@ async function emitirNotaComissao(negocioId) {
     const resp = await fetch("/.netlify/functions/emitir-nota-comissao", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token }),
+      body: JSON.stringify({ negocio_id: negocioId, negocio_ids_extras: notaExtrasSel.base === negocioId ? [...notaExtrasSel.ids].filter(id => negociosExtrasParaNota(negocioId).some(x => x.id === id)) : [], access_token: session.access_token }),
     });
     const j = await resp.json();
     if (!j.ok) alert("Erro: " + j.erro);

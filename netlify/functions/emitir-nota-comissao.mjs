@@ -44,6 +44,7 @@ export default async (req) => {
   let payload;
   try { payload = await req.json(); } catch { return json({ ok: false, erro: "Corpo da requisição inválido." }, 400); }
   const { negocio_id, access_token } = payload || {};
+  const extraIds = [...new Set((Array.isArray(payload?.negocio_ids_extras) ? payload.negocio_ids_extras : []).filter(x => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x) && x !== negocio_id))];
   if (!negocio_id || !access_token) return json({ ok: false, erro: "Dados incompletos (negocio_id e access_token são obrigatórios)." }, 400);
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -70,6 +71,14 @@ export default async (req) => {
     const gResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?boleto_comissao_id=eq.${base.boleto_comissao_id}&deleted_at=is.null&select=*`, { headers: adminHeaders });
     const g = await gResp.json();
     if (Array.isArray(g) && g.length) negocios = g;
+  } else if (extraIds.length) {
+    // Vários negócios do mesmo pagador numa nota só (sem boleto): confere que todos existem e não
+    // estão em boleto. A conferência de "mesmo pagador" vem logo abaixo.
+    const eResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=in.(${extraIds.join(",")})&deleted_at=is.null&select=*`, { headers: adminHeaders });
+    const extras = await eResp.json().catch(() => []);
+    if (!Array.isArray(extras) || extras.length !== extraIds.length) return json({ ok: false, erro: "Algum dos negócios selecionados não foi encontrado." }, 404);
+    if (extras.some(n => n.boleto_comissao_id)) return json({ ok: false, erro: "Negócios que já têm boleto não podem entrar numa nota avulsa — a nota deles segue o boleto." }, 400);
+    negocios = [base, ...extras];
   }
   if (negocios.some(n => n.nota_fiscal_asaas_id && STATUS_VIVOS.includes(n.nota_fiscal_status))) {
     return json({ ok: false, erro: "Este negócio já tem uma nota fiscal emitida ou em emissão." }, 400);
