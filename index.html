@@ -4405,10 +4405,18 @@ function negociosExtrasParaNota(negocioId) {
   if (!n || !pagadorIdDoNegocio(n)) return [];
   const grupo = new Set(negociosDaNota(negocioId).map(x => x.id));
   return data.negocios.filter(x => !grupo.has(x.id) && !x.deleted_at && pagadorIdDoNegocio(x) === pagadorIdDoNegocio(n)
-    && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !x.nota_fiscal_numero && Number(x.comissao) > 0);
+    && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !x.nota_fiscal_numero && !x.nota_fiscal_externa && Number(x.comissao) > 0);
 }
 let notaExtrasSel = { base: null, ids: new Set() };
 let notaFazendaSel = { base: null, val: null };
+async function marcarNotaExterna(baseId, id) {
+  const x = data.negocios.find(n => n.id === id);
+  if (!x || !confirm(`Marcar que a nota do contrato ${x.numero_contrato || ""} já foi emitida fora do app? Ele deixa de aparecer na lista de notas a emitir.`)) return;
+  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_externa: true }).eq("id", id);
+  if (error) { alert("Erro ao marcar: " + error.message); return; }
+  notaExtrasSel.ids.delete(id);
+  await loadNegocios(); renderComissoesPage(); openNotaFiscalModal(baseId, true);
+}
 function escolherFazendaNota(baseId, val) { notaFazendaSel = { base: baseId, val }; openNotaFiscalModal(baseId, true); }
 function toggleNotaExtra(baseId, id) {
   if (notaExtrasSel.ids.has(id)) notaExtrasSel.ids.delete(id); else notaExtrasSel.ids.add(id);
@@ -4423,7 +4431,7 @@ const NOTA_STATUS_EM_EMISSAO = ["SCHEDULED", "SYNCHRONIZED", "PROCESSING_CANCELL
 // nenhuma | emitindo | emitida (pelo Asaas ou registrada à mão) | erro
 function estadoNotaDoNegocio(n) {
   if (n.nota_fiscal_asaas_id && NOTA_STATUS_EM_EMISSAO.includes(n.nota_fiscal_status)) return "emitindo";
-  if (n.nota_fiscal_status === "AUTHORIZED" || (n.nota_fiscal_numero && !n.nota_fiscal_asaas_id)) return "emitida";
+  if (n.nota_fiscal_status === "AUTHORIZED" || (n.nota_fiscal_numero && !n.nota_fiscal_asaas_id) || n.nota_fiscal_externa) return "emitida";
   if (n.nota_fiscal_status === "ERROR") return "erro";
   return "nenhuma";
 }
@@ -4476,7 +4484,7 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
   } else {
     topo = `${estado === "erro" ? `<div style="padding:10px 12px;border-radius:8px;background:var(--red-soft);color:var(--red);margin-bottom:10px;font-size:12.5px"><strong>A última tentativa deu erro:</strong> ${escapeHtml(base.nota_fiscal_erro || "sem detalhe")}${/L147|não está autorizado a utilizar RPS/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> a prefeitura não autoriza a emissão por sistema nesse formato. No Asaas, vá em <em>Notas Fiscais &gt; Configurações &gt; Informações Fiscais</em> e mude "Emito NFS-e pelo Portal Nacional" para <strong>Sim</strong> (obrigatório pro Simples Nacional até 01/11/2026). Depois é só emitir de novo aqui.</div>` : ""}${/endere[cç]o do cliente|CEP/i.test(base.nota_fiscal_erro || "") ? `<div style="margin-top:8px;color:var(--ink)"><strong>Como resolver:</strong> complete o endereço (CEP, rua, número, bairro) no cadastro de quem paga e emita de novo.</div>` : ""}</div>` : ""}
       ${resumo}
-      ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}${x.boleto_comissao_id ? " · tem boleto próprio" : ""}</label>`).join("")}${(base.boleto_comissao_id || extrasSel.some(x => x.boleto_comissao_id)) && extrasSel.length ? `<div class="hint" style="margin-top:6px">Com boletos diferentes, a nota sai <strong>avulsa</strong> em nome do pagador, sem ligação com um boleto específico.</div>` : ""}</div>` : ""}
+      ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<div style="display:flex;align-items:center;gap:8px"><label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}${x.boleto_comissao_id ? " · tem boleto próprio" : ""}</label><button type="button" class="btn-edit-text" style="font-size:11px;margin-left:auto" title="Marcar que a nota deste contrato já foi emitida fora do app — ele sai desta lista" onclick="marcarNotaExterna('${base.id}','${x.id}')">já emitida fora</button></div>`).join("")}${(base.boleto_comissao_id || extrasSel.some(x => x.boleto_comissao_id)) && extrasSel.length ? `<div class="hint" style="margin-top:6px">Com boletos diferentes, a nota sai <strong>avulsa</strong> em nome do pagador, sem ligação com um boleto específico.</div>` : ""}</div>` : ""}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
       ${fazendasTomador.length ? `<div class="field" style="margin-top:10px"><label>Fazenda / inscrição estadual da nota</label><select onchange="escolherFazendaNota('${base.id}', this.value)">${fazendasTomador.map(f => `<option value="${f.id}" ${f.id === fazSel ? "selected" : ""}>${escapeHtml(f.nome)}${f.municipio_uf ? " — " + escapeHtml(f.municipio_uf) : ""}${f.inscricao_estadual ? " — IE " + escapeHtml(f.inscricao_estadual) : " — sem IE cadastrada"}</option>`).join("")}<option value="cadastro" ${fazSel === "cadastro" ? "selected" : ""}>Endereço do próprio cadastro${cadEndFaltando.length ? " (incompleto)" : ""}${pagador && pagador.inscricao_estadual ? " — IE " + escapeHtml(pagador.inscricao_estadual) : ""}</option></select></div>` : ""}
       ${usaFazenda ? `<div class="hint" style="margin-top:6px">A nota vai com a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> como endereço (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")})${ieNota ? ` e inscrição estadual <strong>${escapeHtml(ieNota)}</strong>` : ""}.</div>` : (ieNota ? `<div class="hint" style="margin-top:6px">Inscrição estadual na nota: <strong>${escapeHtml(ieNota)}</strong>.</div>` : "")}
