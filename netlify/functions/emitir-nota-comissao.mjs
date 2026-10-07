@@ -44,6 +44,7 @@ export default async (req) => {
   let payload;
   try { payload = await req.json(); } catch { return json({ ok: false, erro: "Corpo da requisição inválido." }, 400); }
   const { negocio_id, access_token } = payload || {};
+  const fazendaEscolhida = typeof payload?.fazenda_id === "string" ? payload.fazenda_id : null; // id da fazenda, "cadastro" ou nada
   const extraIds = [...new Set((Array.isArray(payload?.negocio_ids_extras) ? payload.negocio_ids_extras : []).filter(x => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x) && x !== negocio_id))];
   if (!negocio_id || !access_token) return json({ ok: false, erro: "Dados incompletos (negocio_id e access_token são obrigatórios)." }, 400);
 
@@ -96,7 +97,7 @@ export default async (req) => {
 
   const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
   if (pagadorIds.size !== 1 || ![...pagadorIds][0]) return json({ ok: false, erro: "Os negócios têm pagadores diferentes ou sem pagador definido." }, 400);
-  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro`, { headers: adminHeaders });
+  const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${[...pagadorIds][0]}&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro,inscricao_estadual`, { headers: adminHeaders });
   const pagador = (await cadResp.json())[0];
   if (!pagador) return json({ ok: false, erro: "Não encontrei o cadastro de quem paga a comissão." }, 400);
   const cpfCnpj = somenteDigitos(pagador.cpf || pagador.cnpj);
@@ -105,24 +106,32 @@ export default async (req) => {
   // A prefeitura exige endereço completo do tomador — sem isso a nota volta com "Erro na emissão".
   // Produtor sem endereço próprio: usa a fazenda (rua = nome da fazenda, zona rural, CEP rural do
   // município da fazenda).
-  let endCep = somenteDigitos(pagador.cep), endRua = pagador.endereco, endNum = pagador.endereco_numero, endBairro = pagador.bairro;
-  if (pagador.tipo === "Produtor" && (endCep.length !== 8 || !endRua || !endNum || !endBairro)) {
-    const fResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?produtor_id=eq.${pagador.id}&select=id,nome,municipio_uf`, { headers: adminHeaders });
+  let endCep = somenteDigitos(pagador.cep), endRua = pagador.endereco, endNum = pagador.endereco_numero, endBairro = pagador.bairro, endComplemento = pagador.complemento || "";
+  // A fazenda escolhida no painel dá o endereço (rua = nome da fazenda, zona rural, CEP rural do
+  // município) e a inscrição estadual da nota. "cadastro" = usa o endereço do próprio cadastro.
+  let fazenda = null;
+  if (pagador.tipo === "Produtor" && fazendaEscolhida !== "cadastro") {
+    const fResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?produtor_id=eq.${pagador.id}&select=id,nome,municipio_uf,inscricao_estadual`, { headers: adminHeaders });
     const fazendas = await fResp.json().catch(() => []);
-    const fazenda = (Array.isArray(fazendas) ? fazendas : []).find(f => f.id === base.fazenda_id) || (Array.isArray(fazendas) ? fazendas[0] : null);
-    if (fazenda) {
-      endRua = endRua || fazenda.nome;
-      endNum = endNum || "S/N";
-      endBairro = endBairro || "Zona Rural";
-      if (endCep.length !== 8) {
-        const { cidade, uf } = parseMunicipioUf(fazenda.municipio_uf || pagador.cidade);
-        endCep = (await cepRuralDoMunicipio(cidade, uf)) || "";
-      }
+    const lista = Array.isArray(fazendas) ? fazendas : [];
+    if (fazendaEscolhida) {
+      fazenda = lista.find(f => f.id === fazendaEscolhida) || null;
+      if (!fazenda) return json({ ok: false, erro: "A fazenda escolhida não pertence a este produtor." }, 400);
+    } else if (endCep.length !== 8 || !endRua || !endNum || !endBairro) {
+      fazenda = lista.find(f => f.id === base.fazenda_id) || lista[0] || null;
     }
   }
+  if (fazenda) {
+    endRua = fazenda.nome; endNum = "S/N"; endBairro = "Zona Rural";
+    const { cidade, uf } = parseMunicipioUf(fazenda.municipio_uf || pagador.cidade);
+    endCep = (await cepRuralDoMunicipio(cidade, uf)) || "";
+    endComplemento = "";
+  }
+  const ieNota = String((fazenda ? fazenda.inscricao_estadual : pagador.inscricao_estadual) || "").trim();
+  const ieAsaas = /^[\d.\-\/ ]+$/.test(ieNota) ? ieNota.replace(/\D/g, "") : ieNota;
   const faltando = [endCep.length === 8 ? null : "CEP", endRua ? null : "rua", endNum ? null : "número", endBairro ? null : "bairro"].filter(Boolean);
   if (faltando.length) return json({ ok: false, erro: `Complete o endereço de ${pagador.nome} em Cadastros antes de emitir (faltando: ${faltando.join(", ")}).` }, 400);
-  const enderecoAsaas = { postalCode: endCep, address: endRua, addressNumber: endNum, complement: pagador.complemento || undefined, province: endBairro };
+  const enderecoAsaas = { postalCode: endCep, address: endRua, addressNumber: endNum, complement: endComplemento || undefined, province: endBairro };
 
   const valorTotal = Math.round(negocios.reduce((s, n) => s + Number(n.comissao), 0) * 100) / 100;
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
@@ -131,7 +140,7 @@ export default async (req) => {
   const corpo = {
     // Mesmo padrão das notas emitidas à mão: contratos + dados bancários (texto em Configurações).
     serviceDescription: `Comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${cfg.nfse_texto_adicional ? " " + cfg.nfse_texto_adicional : ""}`,
-    observations: `Contrato(s): ${contratos}`,
+    observations: `Contrato(s): ${contratos}${fazenda ? ` — Fazenda ${fazenda.nome}` : ""}${ieNota ? ` — Inscrição Estadual ${ieNota}` : ""}`,
     externalReference: negocios.map(n => n.id).join(","),
     value: valorTotal,
     deductions: 0,
@@ -152,14 +161,14 @@ export default async (req) => {
   if (!customerId) {
     const cResp = await fetch(`${ASAAS_BASE_URL}/customers`, {
       method: "POST", headers: asaasHeaders,
-      body: JSON.stringify({ name: pagador.nome, cpfCnpj, email: pagador.email || undefined, mobilePhone: somenteDigitos(pagador.telefone) || undefined, externalReference: pagador.id, ...enderecoAsaas }),
+      body: JSON.stringify({ name: pagador.nome, cpfCnpj, email: pagador.email || undefined, mobilePhone: somenteDigitos(pagador.telefone) || undefined, externalReference: pagador.id, stateInscription: ieAsaas || undefined, ...enderecoAsaas }),
     });
     const c = await cResp.json().catch(() => ({}));
     if (!cResp.ok || !c.id) return json({ ok: false, erro: `Erro ao cadastrar ${pagador.nome} no Asaas: ${erroAsaas(c, cResp)}` }, 500);
     customerId = c.id;
     await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${pagador.id}`, { method: "PATCH", headers: patchHeaders, body: JSON.stringify({ asaas_customer_id: customerId }) });
   } else {
-    const uResp = await fetch(`${ASAAS_BASE_URL}/customers/${customerId}`, { method: "PUT", headers: asaasHeaders, body: JSON.stringify(enderecoAsaas) });
+    const uResp = await fetch(`${ASAAS_BASE_URL}/customers/${customerId}`, { method: "PUT", headers: asaasHeaders, body: JSON.stringify({ ...enderecoAsaas, ...(ieAsaas ? { stateInscription: ieAsaas } : {}) }) });
     if (!uResp.ok) {
       const u = await uResp.json().catch(() => ({}));
       return json({ ok: false, erro: `Erro ao atualizar o endereço de ${pagador.nome} no Asaas: ${erroAsaas(u, uResp)}` }, 500);

@@ -4385,6 +4385,8 @@ function negociosExtrasParaNota(negocioId) {
     && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !x.nota_fiscal_numero && Number(x.comissao) > 0);
 }
 let notaExtrasSel = { base: null, ids: new Set() };
+let notaFazendaSel = { base: null, val: null };
+function escolherFazendaNota(baseId, val) { notaFazendaSel = { base: baseId, val }; openNotaFiscalModal(baseId, true); }
 function toggleNotaExtra(baseId, id) {
   if (notaExtrasSel.ids.has(id)) notaExtrasSel.ids.delete(id); else notaExtrasSel.ids.add(id);
   openNotaFiscalModal(baseId, true);
@@ -4409,6 +4411,7 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
   const estado = estadoNotaDoNegocio(base);
   // Em nota ainda não emitida, dá pra juntar outros negócios do mesmo pagador (começa com todos marcados).
   const extrasDisp = ["nenhuma", "erro"].includes(estado) ? negociosExtrasParaNota(base.id) : [];
+  if (!manterSelecao && notaFazendaSel.base === base.id) notaFazendaSel = { base: null, val: null };
   if (!manterSelecao || notaExtrasSel.base !== base.id) notaExtrasSel = { base: base.id, ids: new Set(extrasDisp.map(x => x.id)) };
   const extrasSel = extrasDisp.filter(x => notaExtrasSel.ids.has(x.id));
   const negs = [...negsBase, ...extrasSel];
@@ -4420,10 +4423,15 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
   const valorBase = negsBase.reduce((s, n) => s + Number(n.comissao || 0), 0);
   const descricaoBase = `Comissão de intermediação — ${negsBase.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${negsBase.map(n => n.numero_contrato || "—").join(", ")}.${data.config.nfse_texto_adicional ? " " + data.config.nfse_texto_adicional : ""}`;
   const cfgOk = !!(data.config.nfse_codigo_servico && data.config.nfse_nome_servico && data.config.nfse_aliquota_iss != null);
-  const fazendaTomador = pagador && pagador.tipo === "Produtor" ? (data.fazendas.find(f => f.id === base.fazenda_id) || data.fazendas.find(f => f.produtor_id === pagador.id)) : null;
-  let endFaltando = pagador ? [String(pagador.cep || "").replace(/\D/g, "").length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean) : ["cadastro do tomador"];
-  const usaFazenda = !!(fazendaTomador && endFaltando.length);
-  if (usaFazenda) endFaltando = [];
+  // Produtor: escolhe a fazenda (endereço + inscrição estadual) que vai na nota; padrão = fazenda do negócio.
+  const fazendasTomador = pagador && pagador.tipo === "Produtor" ? data.fazendas.filter(f => f.produtor_id === pagador.id) : [];
+  const cadEndFaltando = pagador ? [String(pagador.cep || "").replace(/\D/g, "").length === 8 ? null : "CEP", pagador.endereco ? null : "rua", pagador.endereco_numero ? null : "número", pagador.bairro ? null : "bairro"].filter(Boolean) : ["cadastro do tomador"];
+  let fazSel = notaFazendaSel.base === base.id ? notaFazendaSel.val : null;
+  if (fazSel == null || (fazSel !== "cadastro" && !fazendasTomador.some(f => f.id === fazSel))) fazSel = (fazendasTomador.find(f => f.id === base.fazenda_id) || fazendasTomador[0] || {}).id || "cadastro";
+  const fazendaTomador = fazSel !== "cadastro" ? fazendasTomador.find(f => f.id === fazSel) : null;
+  let endFaltando = fazendaTomador ? [] : cadEndFaltando;
+  const usaFazenda = !!fazendaTomador;
+  const ieNota = fazendaTomador ? (fazendaTomador.inscricao_estadual || "") : (pagador ? pagador.inscricao_estadual || "" : "");
   const linha = (rotulo, exibir, copiar, id) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
       <div style="min-width:0"><div style="font-size:11px;color:var(--ink-soft)">${rotulo}</div><div id="${id}" data-copiar="${escapeHtml(copiar).replace(/"/g, "&quot;")}" style="font-size:13px;word-break:break-word">${escapeHtml(exibir) || "—"}</div></div>
       <button class="btn-ghost" style="padding:4px 10px;font-size:11px;flex-shrink:0" onclick="copiarTextoNota('${id}', this)">Copiar</button></div>`;
@@ -4447,9 +4455,10 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
       ${resumo}
       ${extrasDisp.length ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><div style="font-size:12.5px;margin-bottom:6px"><strong>Juntar na mesma nota</strong> — outros negócios de ${escapeHtml(pagador ? pagador.nome : "este pagador")} sem nota:</div>${extrasDisp.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ${notaExtrasSel.ids.has(x.id) ? "checked" : ""} onchange="toggleNotaExtra('${base.id}','${x.id}')"> ${escapeHtml(x.numero_contrato || "—")} · ${escapeHtml((x.grao || "") + (x.safra ? " " + x.safra : ""))} · ${fmtMoney(x.comissao)}${x.boleto_comissao_id ? " · tem boleto próprio" : ""}</label>`).join("")}${(base.boleto_comissao_id || extrasSel.some(x => x.boleto_comissao_id)) && extrasSel.length ? `<div class="hint" style="margin-top:6px">Com boletos diferentes, a nota sai <strong>avulsa</strong> em nome do pagador, sem ligação com um boleto específico.</div>` : ""}</div>` : ""}
       ${cfgOk ? "" : `<div class="hint" style="color:var(--red);margin-top:8px">Preencha o código do serviço, o nome e a alíquota de ISS em Configurações &gt; Nota fiscal antes de emitir.</div>`}
-      ${usaFazenda ? `<div class="hint" style="margin-top:8px">Sem endereço próprio no cadastro — a nota usa a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")}).</div>` : ""}
+      ${fazendasTomador.length ? `<div class="field" style="margin-top:10px"><label>Fazenda / inscrição estadual da nota</label><select onchange="escolherFazendaNota('${base.id}', this.value)">${fazendasTomador.map(f => `<option value="${f.id}" ${f.id === fazSel ? "selected" : ""}>${escapeHtml(f.nome)}${f.municipio_uf ? " — " + escapeHtml(f.municipio_uf) : ""}${f.inscricao_estadual ? " — IE " + escapeHtml(f.inscricao_estadual) : " — sem IE cadastrada"}</option>`).join("")}<option value="cadastro" ${fazSel === "cadastro" ? "selected" : ""}>Endereço do próprio cadastro${cadEndFaltando.length ? " (incompleto)" : ""}${pagador && pagador.inscricao_estadual ? " — IE " + escapeHtml(pagador.inscricao_estadual) : ""}</option></select></div>` : ""}
+      ${usaFazenda ? `<div class="hint" style="margin-top:6px">A nota vai com a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> como endereço (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")})${ieNota ? ` e inscrição estadual <strong>${escapeHtml(ieNota)}</strong>` : ""}.</div>` : (ieNota ? `<div class="hint" style="margin-top:6px">Inscrição estadual na nota: <strong>${escapeHtml(ieNota)}</strong>.</div>` : "")}
       ${endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
-      <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}')">${negs.length > 1 ? `Emitir nota única de ${negs.length} contratos — ${fmtMoney(valor)}` : "Emitir nota agora (Asaas)"}</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
+      <div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}', '${fazSel}')">${negs.length > 1 ? `Emitir nota única de ${negs.length} contratos — ${fmtMoney(valor)}` : "Emitir nota agora (Asaas)"}</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`;
   }
 
   const registroManual = `
@@ -4506,7 +4515,7 @@ async function enviarNotaPorEmail(negocioId) {
   } catch (e) { alert("Erro ao enviar: " + e.message); }
   await loadNegocios(); renderComissoesPage(); openNotaFiscalModal(negocioId);
 }
-async function emitirNotaComissao(negocioId) {
+async function emitirNotaComissao(negocioId, fazendaId) {
   const btn = document.getElementById("nfEmitirBtn");
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { alert("Sessão expirada, faça login novamente."); return; }
@@ -4515,7 +4524,7 @@ async function emitirNotaComissao(negocioId) {
     const resp = await fetch("/.netlify/functions/emitir-nota-comissao", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ negocio_id: negocioId, negocio_ids_extras: notaExtrasSel.base === negocioId ? [...notaExtrasSel.ids].filter(id => negociosExtrasParaNota(negocioId).some(x => x.id === id)) : [], access_token: session.access_token }),
+      body: JSON.stringify({ negocio_id: negocioId, fazenda_id: fazendaId || null, negocio_ids_extras: notaExtrasSel.base === negocioId ? [...notaExtrasSel.ids].filter(id => negociosExtrasParaNota(negocioId).some(x => x.id === id)) : [], access_token: session.access_token }),
     });
     const j = await resp.json();
     if (!j.ok) alert("Erro: " + j.erro);
