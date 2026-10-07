@@ -3,7 +3,7 @@
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const ASAAS_BASE_URL = "https://api.asaas.com/v3";
 const FROM_EMAIL = "Nexus Commodities <contratos@nexuscommoditiesms.com.br>";
-const BCC_NEXUS = "nexuscommodities@terra.com.br";
+const EMAIL_NEXUS = "nexuscommodities@terra.com.br";
 const ASSINATURA_EMAIL_HTML = `
   <table style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd;font-family:Arial,Helvetica,sans-serif">
     <tr>
@@ -75,13 +75,13 @@ export async function enviarEmailDaNota(inv, { forcar = false, enviadoPor = null
   const cad = (await (await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${pagadorId}&select=nome,email,emails_extra`, { headers: headersAdmin() })).json().catch(() => []))[0];
   if (!cad) return liberar("Não encontrei o cadastro de quem recebe a nota.");
   const destinatarios = [...new Set([cad.email, ...(cad.emails_extra || [])].filter(Boolean))];
-  if (!destinatarios.length) return liberar(`${cad.nome} não tem e-mail cadastrado — cadastre em Cadastros e use "Enviar por e-mail" na nota.`);
   if (!resendKey) return liberar("RESEND_API_KEY não configurada.");
 
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
   const numero = inv.number ? String(inv.number) : (base.nota_fiscal_numero || "");
   const valor = inv.value != null ? Number(inv.value) : negocios.reduce((s, n) => s + Number(n.comissao || 0), 0);
   const pdfUrl = inv.pdfUrl || base.nota_fiscal_url;
+  const semEmail = !destinatarios.length;
 
   let anexo = null;
   if (pdfUrl) {
@@ -99,9 +99,11 @@ export async function enviarEmailDaNota(inv, { forcar = false, enviadoPor = null
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: FROM_EMAIL, to: destinatarios, bcc: BCC_NEXUS,
-        subject: `Nota Fiscal de Serviço${numero ? " nº " + numero : ""} — Nexus Commodities`,
-        html: `<p>Olá, ${escapeHtml(cad.nome)}!</p><p>Segue ${anexo ? "em anexo " : ""}a Nota Fiscal de Serviço${numero ? " nº " + escapeHtml(numero) : ""}, no valor de <strong>${fmtMoney(valor)}</strong>, referente à comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${escapeHtml(contratos)}.</p>${pdfUrl ? `<p>Também pode abrir a nota por aqui: <a href="${escapeHtml(pdfUrl)}">${escapeHtml(pdfUrl)}</a></p>` : ""}<p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
+        from: FROM_EMAIL,
+        // A Nexus sempre recebe a nota. Sem e-mail no cadastro, vai só pra Nexus, com aviso.
+        ...(semEmail ? { to: [EMAIL_NEXUS] } : { to: destinatarios, cc: [EMAIL_NEXUS] }),
+        subject: `${semEmail ? "[NÃO ENVIADA AO CLIENTE] " : ""}Nota Fiscal de Serviço${numero ? " nº " + numero : ""} — Nexus Commodities`,
+        html: `${semEmail ? `<p style="background:#fff3cd;padding:10px;border-radius:4px"><strong>Atenção:</strong> ${escapeHtml(cad.nome)} não tem e-mail cadastrado, então a nota NÃO foi enviada a essa pessoa. Cadastre o e-mail em Cadastros e use "Enviar por e-mail" na janela da nota.</p>` : ""}<p>Olá, ${escapeHtml(cad.nome)}!</p><p>Segue ${anexo ? "em anexo " : ""}a Nota Fiscal de Serviço${numero ? " nº " + escapeHtml(numero) : ""}, no valor de <strong>${fmtMoney(valor)}</strong>, referente à comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${escapeHtml(contratos)}.</p>${pdfUrl ? `<p>Também pode abrir a nota por aqui: <a href="${escapeHtml(pdfUrl)}">${escapeHtml(pdfUrl)}</a></p>` : ""}<p>Qualquer dúvida, fale com seu corretor.</p>${ASSINATURA_EMAIL_HTML}`,
         ...(anexo ? { attachments: [anexo] } : {}),
       }),
     });
@@ -109,6 +111,11 @@ export async function enviarEmailDaNota(inv, { forcar = false, enviadoPor = null
     if (!resp.ok) throw new Error(j.message || JSON.stringify(j));
   } catch (e) {
     return liberar(`Falha no envio do e-mail: ${String(e.message || e)}`);
+  }
+
+  if (semEmail) {
+    // Nexus recebeu a cópia; o cliente não. Libera pra reenviar depois que o e-mail for cadastrado.
+    return liberar(`${cad.nome} não tem e-mail cadastrado — a nota foi enviada só pra Nexus. Cadastre em Cadastros e use "Enviar por e-mail" na nota.`);
   }
 
   await fetch(alvo, { method: "PATCH", headers: headersJson(), body: JSON.stringify({ nota_fiscal_email_enviado_em: agora, nota_fiscal_email_erro: null }) });
