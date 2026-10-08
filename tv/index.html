@@ -42,6 +42,7 @@
   .dolar-strip .var.up { color: var(--green); } .dolar-strip .var.down { color: var(--red); }
   .dolar-strip .ref { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
 
+  .slide > .main-grid { flex: 1; }
   .main-grid { flex: 1; display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 18px; min-height: 0; }
   .col { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
 
@@ -75,6 +76,28 @@
   .ticker-track .titem .sep { color: var(--ink-dim); margin-left: 36px; }
   @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
+
+  .slides { position: relative; flex: 1; min-height: 0; }
+  .slide { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .7s ease; display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+  .slide.active { opacity: 1; pointer-events: auto; }
+  .slide-title { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); font-weight: 700; }
+  .slide-title b { color: var(--gold); }
+  .dots { position: absolute; left: 50%; bottom: -2px; transform: translateX(-50%); display: flex; gap: 8px; z-index: 5; }
+  .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--border); display: block; transition: background .3s, transform .3s; }
+  .dots i.on { background: var(--gold); transform: scale(1.3); }
+  .two-cols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-height: 0; }
+  .preco-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .preco-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; }
+  .preco-card .safra { font-size: 15px; font-weight: 700; color: var(--ink-soft); }
+  .preco-card .medio { font-size: clamp(30px, 4vw, 48px); font-weight: 800; color: var(--gold); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .preco-card .faixa { font-size: 15px; color: var(--ink); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .preco-card .qtd { font-size: 12.5px; color: var(--ink-dim); margin-top: 6px; }
+  .curios-grid { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; gap: 16px; min-height: 0; }
+  .curio { min-height: 0; overflow: hidden; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: clamp(10px, 1.6vh, 22px) 24px; display: flex; flex-direction: column; justify-content: center; }
+  .curio .ic { font-size: clamp(20px, 3vh, 30px); }
+  .curio .lbl { font-size: 13px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .07em; margin-top: 10px; }
+  .curio .val { white-space: nowrap; font-size: clamp(24px, 2.9vw, 46px); font-weight: 800; color: var(--gold); margin-top: 6px; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .curio .foot { font-size: 14px; color: var(--ink-soft); margin-top: 8px; }
   .placeholder { color: var(--ink-dim); font-size: 13px; padding: 20px 0; text-align: center; }
 
   #loginBox {
@@ -116,26 +139,43 @@
 
     <div class="dolar-strip" id="dolarStripTv"></div>
 
-    <div class="main-grid">
-      <div class="col">
-        <div class="cotacoes-grid" id="cotacoesGridTv"></div>
-        <div class="panel" style="flex:1">
-          <h2>Tendência de preços — Diário (R$/saca)</h2>
-          <div class="chart-box"><canvas id="tvChart"></canvas></div>
+    <div class="slides" id="slides">
+      <div class="slide active" data-nome="Mercado">
+        <div class="main-grid">
+          <div class="col">
+            <div class="cotacoes-grid" id="cotacoesGridTv"></div>
+            <div class="panel" style="flex:1">
+              <h2>Tendência de preços — Diário (R$/saca)</h2>
+              <div class="chart-box"><canvas id="tvChart"></canvas></div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="panel" style="flex:1">
+              <h2>Tendência de preços — Mensal (R$/saca)</h2>
+              <div class="chart-box"><canvas id="tvChartMensal"></canvas></div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="panel" style="flex:1">
+              <h2>Negócios fechados — Mensal (sacas)</h2>
+              <div class="chart-box"><canvas id="tvChartVolume"></canvas></div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="col">
-        <div class="panel" style="flex:1">
-          <h2>Tendência de preços — Mensal (R$/saca)</h2>
-          <div class="chart-box"><canvas id="tvChartMensal"></canvas></div>
+      <div class="slide" data-nome="Preços dos negócios">
+        <div class="slide-title">Preços médios dos <b>negócios fechados</b> — preço líquido por saca</div>
+        <div class="preco-cards" id="precoCardsTv"></div>
+        <div class="two-cols">
+          <div class="panel"><h2>Menor, médio e maior preço por safra (R$/saca)</h2><div class="chart-box"><canvas id="tvChartFaixa"></canvas></div></div>
+          <div class="panel"><h2>Preço médio negociado por mês (R$/saca)</h2><div class="chart-box"><canvas id="tvChartPrecoMes"></canvas></div></div>
         </div>
       </div>
-      <div class="col">
-        <div class="panel" style="flex:1">
-          <h2>Negócios fechados — Mensal (sacas)</h2>
-          <div class="chart-box"><canvas id="tvChartVolume"></canvas></div>
-        </div>
+      <div class="slide" data-nome="Curiosidades">
+        <div class="slide-title">Curiosidades <b>Nexus Commodities</b></div>
+        <div class="curios-grid" id="curiosTv"></div>
       </div>
+      <div class="dots" id="slideDots"></div>
     </div>
 
     <div class="ticker-bar">
@@ -302,6 +342,127 @@ function renderChartVolumeTv(negocios) {
   });
 }
 
+
+// ---------------- SLIDES: preços dos negócios, curiosidades e rodízio de telas ----------------
+// Tela pensada pra clientes que passam pelo escritório: só números agregados — nunca nomes de
+// clientes/produtores nem valores de comissão (a menos que a TV seja aberta com ?comissao=1).
+const INICIO_MERCADO = "2026-07-13"; // primeiro negócio gerado
+const MOSTRAR_COMISSAO = new URLSearchParams(location.search).get("comissao") === "1";
+const TEMPO_SLIDE = Math.max(8, Number(new URLSearchParams(location.search).get("tempo")) || 20) * 1000;
+const SAFRAS_PRECO = [
+  { grao: "Soja", safra: "2025/2026", label: "Soja 25/26" },
+  { grao: "Milho", safra: "2026/2026", label: "Milho 26/26" },
+  { grao: "Soja", safra: "2026/2027", label: "Soja 26/27" },
+];
+function fmtInt(v) { return Math.round(Number(v || 0)).toLocaleString("pt-BR"); }
+function fmtDec1(v) { return Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+
+// Mesma conta do painel (precoLiquidoNegocio do index.html): preço bruto menos comissão do vendedor,
+// SENAR, Fundersul/Fundems (exceto Cooperativa/Cerealista) e Funrural.
+function precoLiquidoTv(n, cfg, compradores) {
+  const sacas = Number(n.quantidade || 0);
+  const total = Number(n.preco || 0) * sacas;
+  const comprador = compradores.get(n.cliente_id);
+  const aplica = !comprador || (comprador.categoria_comprador !== "Cooperativa" && comprador.categoria_comprador !== "Cerealista");
+  const fundersul = aplica ? Number(cfg.fundersul_saca || 0) * sacas : 0, fundems = aplica ? Number(cfg.fundems_saca || 0) * sacas : 0;
+  const funrural = (n.funrural_forma || "Comercialização") === "Comercialização" ? total * Number(cfg.funrural_pct || 0) / 100 : 0;
+  const comissaoVendedor = n.comissao_pagador === "Comprador" ? 0 : Number(n.comissao || 0);
+  const estimado = total - comissaoVendedor - total * 0.002 - fundersul - fundems - funrural;
+  const informado = n.preco_liquido != null && n.preco_liquido !== "";
+  return informado ? Number(n.preco_liquido) : (sacas ? estimado / sacas : 0);
+}
+
+let tvChartFaixaInstance = null, tvChartPrecoMesInstance = null;
+const OPCOES_EIXOS = { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9" } };
+function renderPrecosNegociosTv(negocios, cfg, compradores) {
+  const stats = SAFRAS_PRECO.map(sf => {
+    const precos = negocios.filter(n => n.grao === sf.grao && n.safra === sf.safra && Number(n.preco) > 0).map(n => precoLiquidoTv(n, cfg, compradores));
+    if (!precos.length) return { ...sf, qtd: 0 };
+    return { ...sf, qtd: precos.length, min: Math.min(...precos), max: Math.max(...precos), media: precos.reduce((a, b) => a + b, 0) / precos.length };
+  });
+  document.getElementById("precoCardsTv").innerHTML = stats.map(sf => `<div class="preco-card">
+    <div class="safra">${sf.label}</div>
+    <div class="medio">${sf.qtd ? fmtMoney(sf.media) : "—"}</div>
+    <div class="faixa">${sf.qtd ? `${fmtMoney(sf.min)} a ${fmtMoney(sf.max)}` : "sem negócios ainda"}</div>
+    <div class="qtd">${sf.qtd ? `preço médio · ${sf.qtd} negócio${sf.qtd === 1 ? "" : "s"} fechado${sf.qtd === 1 ? "" : "s"}` : ""}</div></div>`).join("");
+
+  if (tvChartFaixaInstance) tvChartFaixaInstance.destroy();
+  tvChartFaixaInstance = new Chart(document.getElementById("tvChartFaixa"), {
+    type: "bar",
+    data: { labels: stats.map(x => x.label), datasets: [
+      { label: "Mínimo", data: stats.map(x => x.min ?? null), backgroundColor: "#c0574a", borderRadius: 5, maxBarThickness: 46 },
+      { label: "Médio", data: stats.map(x => x.media ?? null), backgroundColor: "#e0b23f", borderRadius: 5, maxBarThickness: 46 },
+      { label: "Máximo", data: stats.map(x => x.max ?? null), backgroundColor: "#6fa348", borderRadius: 5, maxBarThickness: 46 },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 12 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtMoney(c.parsed.y)}` } } },
+      scales: { y: { ...OPCOES_EIXOS, beginAtZero: true, ticks: { color: "#9aa1a9", callback: v => "R$ " + v } }, x: { grid: { display: false }, ticks: { color: "#9aa1a9", font: { size: 13 } } } } },
+  });
+
+  // preço médio por mês (mês do negócio), por grão
+  const base = negocios.filter(n => n.data && Number(n.preco) > 0 && n.data >= INICIO_MERCADO);
+  const meses = [...new Set(base.map(n => n.data.slice(0, 7)))].sort();
+  const graos = [...new Set(base.map(n => n.grao).filter(Boolean))];
+  const datasets = graos.map((grao, i) => ({
+    label: grao, borderColor: PALETTE_TV[i % PALETTE_TV.length], backgroundColor: "transparent", tension: 0.3, borderWidth: 3, pointRadius: 4, spanGaps: true,
+    data: meses.map(m => { const l = base.filter(n => n.grao === grao && n.data.startsWith(m)); return l.length ? l.reduce((s, n) => s + precoLiquidoTv(n, cfg, compradores), 0) / l.length : null; }),
+  }));
+  const rotulos = meses.map(m => { const [y, mm] = m.split("-"); return new Date(Number(y), Number(mm) - 1, 1).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }); });
+  if (tvChartPrecoMesInstance) tvChartPrecoMesInstance.destroy();
+  tvChartPrecoMesInstance = new Chart(document.getElementById("tvChartPrecoMes"), {
+    type: "line", data: { labels: rotulos, datasets },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 12 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtMoney(c.parsed.y)}` } } },
+      scales: { y: { ...OPCOES_EIXOS, ticks: { color: "#9aa1a9", callback: v => "R$ " + v } }, x: { grid: { display: false }, ticks: { color: "#9aa1a9" } } } },
+  });
+}
+
+function renderCuriosidadesTv(negocios) {
+  const hoje = new Date(), hojeISO = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const diaNum = iso => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+  const dias = Math.max(1, diaNum(hojeISO) - diaNum(INICIO_MERCADO) + 1);
+  const lista = negocios.filter(n => n.data && n.data >= INICIO_MERCADO);
+  const sacas = lista.reduce((s, n) => s + Number(n.quantidade || 0), 0);
+  const comissao = lista.reduce((s, n) => s + Number(n.comissao || 0), 0);
+  const porGrao = {}; lista.forEach(n => { porGrao[n.grao || "—"] = (porGrao[n.grao || "—"] || 0) + Number(n.quantidade || 0); });
+  const topGrao = Object.entries(porGrao).sort((a, b) => b[1] - a[1])[0];
+  const maior = lista.slice().sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
+  const mesAtual = hojeISO.slice(0, 7);
+  const sacasMes = lista.filter(n => n.data.startsWith(mesAtual)).reduce((s, n) => s + Number(n.quantidade || 0), 0);
+  const produtores = new Set(lista.map(n => n.produtor_id).filter(Boolean)).size;
+  const compradores = new Set(lista.map(n => n.cliente_id || n.contraparte).filter(Boolean)).size;
+  const tiles = [
+    { ic: "📅", lbl: "Dias no mercado", val: fmtInt(dias), foot: `desde ${fmtDateBR(INICIO_MERCADO)}` },
+    { ic: "📦", lbl: "Sacas negociadas", val: fmtInt(sacas), foot: `${fmtInt(sacas * 0.06)} toneladas` },
+    { ic: "🤝", lbl: "Negócios fechados", val: fmtInt(lista.length), foot: `${fmtDec1(lista.length / (dias / 7))} por semana` },
+    { ic: "🌾", lbl: "Produtores atendidos", val: fmtInt(produtores), foot: `${fmtInt(compradores)} compradores parceiros` },
+    { ic: "🚛", lbl: "Média por dia", val: `${fmtInt(sacas / dias)} sc`, foot: `${fmtInt(sacas / dias * 0.06)} toneladas por dia` },
+    { ic: "📈", lbl: "Negociado neste mês", val: `${fmtInt(sacasMes)} sc`, foot: new Date().toLocaleDateString("pt-BR", { month: "long" }) },
+    { ic: "🏆", lbl: "Maior negócio", val: maior ? `${fmtInt(maior.quantidade)} sc` : "—", foot: maior ? `${maior.grao || ""} ${maior.safra || ""}`.trim() : "" },
+    { ic: "🌱", lbl: "Grão mais negociado", val: topGrao ? topGrao[0] : "—", foot: topGrao && sacas ? `${fmtDec1(topGrao[1] / sacas * 100)}% do volume` : "" },
+  ];
+  if (MOSTRAR_COMISSAO) { tiles.splice(2, 0, { ic: "💰", lbl: "Comissão gerada", val: fmtMoney(comissao), foot: `${fmtMoney(comissao / (dias / 30.4375))} por mês` }); tiles.pop(); }
+  document.getElementById("curiosTv").innerHTML = tiles.map(t => `<div class="curio"><div class="ic">${t.ic}</div><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div><div class="foot">${t.foot}</div></div>`).join("");
+}
+
+// rodízio das telas (setas do teclado / clique também trocam)
+let slideAtual = 0, slideTimer = null;
+function mostrarSlide(i) {
+  const slides = [...document.querySelectorAll("#slides .slide")];
+  slideAtual = (i + slides.length) % slides.length;
+  slides.forEach((el, k) => el.classList.toggle("active", k === slideAtual));
+  document.querySelectorAll("#slideDots i").forEach((d, k) => d.classList.toggle("on", k === slideAtual));
+}
+function iniciarSlides() {
+  const slides = [...document.querySelectorAll("#slides .slide")];
+  document.getElementById("slideDots").innerHTML = slides.map(() => "<i></i>").join("");
+  mostrarSlide(0);
+  const reiniciar = () => { clearInterval(slideTimer); slideTimer = setInterval(() => mostrarSlide(slideAtual + 1), TEMPO_SLIDE); };
+  reiniciar();
+  document.addEventListener("keydown", e => { if (e.key === "ArrowRight") { mostrarSlide(slideAtual + 1); reiniciar(); } if (e.key === "ArrowLeft") { mostrarSlide(slideAtual - 1); reiniciar(); } });
+  document.getElementById("slides").addEventListener("click", () => { mostrarSlide(slideAtual + 1); reiniciar(); });
+}
+
 async function carregarNoticiasTv() {
   const track = document.getElementById("noticiasTickerTrack");
   try {
@@ -325,17 +486,22 @@ async function carregarNoticiasTv() {
 async function carregarDadosTv() {
   const hoje = new Date();
   const desde = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
-  const [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }] = await Promise.all([
+  const [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }, { data: cfgRow }, { data: compRows }] = await Promise.all([
     sb.from("nexus_cotacoes").select("*").order("produto"),
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
     sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
-    sb.from("nexus_negocios").select("data, grao, quantidade").is("deleted_at", null).gte("data", desde),
+    sb.from("nexus_negocios").select("data, grao, safra, quantidade, preco, preco_liquido, funrural_forma, comissao, comissao_pagador, cliente_id, produtor_id, contraparte").is("deleted_at", null).limit(5000),
+    sb.from("nexus_config").select("fundersul_saca, fundems_saca, funrural_pct").eq("id", 1).single(),
+    sb.from("nexus_cadastros").select("id, categoria_comprador").eq("tipo", "Comprador"),
   ]);
+  const todos = negociosRows || [];
   renderCotacoesTv(cotRows || []);
   renderDolarTv(dolarRow);
   renderChartTv(histRows || []);
   renderChartMensalTv(histRows || []);
-  renderChartVolumeTv(negociosRows || []);
+  renderChartVolumeTv(todos.filter(n => n.data >= desde));
+  renderPrecosNegociosTv(todos, cfgRow || {}, new Map((compRows || []).map(c => [c.id, c])));
+  renderCuriosidadesTv(todos);
 }
 
 function iniciarApp() {
@@ -344,6 +510,7 @@ function iniciarApp() {
   relogioTick(); setInterval(relogioTick, 1000);
   carregarDadosTv();
   carregarNoticiasTv();
+  iniciarSlides();
   setInterval(carregarDadosTv, 60000);
   setInterval(carregarNoticiasTv, 600000);
   sb.channel("tv-realtime")
