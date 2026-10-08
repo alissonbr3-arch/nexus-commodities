@@ -1,6 +1,6 @@
 import { carregarBase, hojeCampoGrande, formatarTelefoneWhats, montarMatinal, enfileirar, registrarLog } from "./_resumo-corretor-lib.mjs";
 
-// Roda todo dia às 07:30 (Campo Grande): manda pro WhatsApp de cada corretor o resumo do dia dos
+// Roda todo dia às 07:00 (Campo Grande): manda pro WhatsApp de cada corretor o resumo do dia dos
 // negócios DELE — pagamentos de hoje, embarques, pendências vencidas, comissões a receber dos
 // clientes, produtores da carteira parados e a meta do mês. Só manda se houver algo a avisar.
 // Negócio sem corretor vai pro proprietário. Entra na fila (1 mensagem a cada 3 min) e não repete
@@ -22,4 +22,4 @@ export default async () => {
   return new Response(JSON.stringify({ ok: true, enfileirados, semTelefone }), { status: 200 });
 };
 
-export const config = { schedule: "30 11 * * *" };
+export const config = { schedule: "0 11 * * *" };

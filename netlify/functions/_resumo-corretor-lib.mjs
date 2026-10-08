@@ -1,7 +1,7 @@
 // Biblioteca dos resumos por WhatsApp dos corretores (matinal, semanal, mensal). Não é uma function.
 // Regra: cada corretor só recebe dados dos NEGÓCIOS DELE. Do resto da equipe, só aparecem totais
 // agregados e os destaques (quem foi corretor da semana/mês etc.), nunca os negócios dos outros.
-// O proprietário recebe, além do dele, um resumo da equipe (e herda os negócios sem corretor).
+// O proprietário herda os negócios sem corretor.
 export const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 
 export const fmtMoney = v => "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -185,7 +185,11 @@ export function montarResumoPeriodo(base, corretor, { periodo, anterior, rotulo,
     const mesRef = limitesMesDe(periodo.fim);
     const feitas = soma(noPeriodo(meus, mesRef), sacas);
     if (mensal) linhas.push(`🎯 Meta do mês: ${pct(feitas / meta * 100)} (${fmtNum(feitas)} de ${fmtNum(meta)} sc)${feitas >= meta ? " ✅" : ""}`);
-    else { const hojeMeta = linhaMeta(base, corretor, somaDias(periodo.fim, 1)); if (hojeMeta) linhas.push("", hojeMeta); }
+    else {
+      const amanha = somaDias(periodo.fim, 1);
+      const refMeta = amanha.slice(0, 7) === periodo.fim.slice(0, 7) ? amanha : periodo.fim;
+      const linha = linhaMeta(base, corretor, refMeta); if (linha) linhas.push("", linha);
+    }
   }
   const minhas = conq.filter(c => c.id === corretor.user_id);
   if (minhas.length) linhas.push("", ...minhas.map(c => `${c.icone} *${c.titulo}!* ${c.detalhe}`));
@@ -193,21 +197,6 @@ export function montarResumoPeriodo(base, corretor, { periodo, anterior, rotulo,
   if (outras.length) linhas.push("", "*Destaques da equipe*", ...outras);
   linhas.push("", "*Nexus Commodities*");
   return linhas.join("\n").replace(/\n{3,}/g, "\n\n");
-}
-
-export function montarResumoEquipe(base, { periodo, anterior, rotulo, mensal }) {
-  const l = noPeriodo(base.negocios, periodo), la = noPeriodo(base.negocios, anterior);
-  const linhas = [`🏢 *Resumo da equipe ${mensal ? "do mês" : "da semana"}* — ${rotulo}`, ""];
-  linhas.push(`🤝 *${l.length}* negócios${variacao(l.length, la.length)}`);
-  linhas.push(`📦 *${fmtNum(soma(l, sacas))} sc*${variacao(soma(l, sacas), soma(la, sacas))}`);
-  linhas.push(`💰 Comissão gerada: *${fmtMoney(soma(l, com))}*${variacao(soma(l, com), soma(la, com))}`);
-  linhas.push("", "*Por corretor*");
-  const porCor = base.equipe.map(e => { const x = noPeriodo(negociosDoCorretor(base, e), periodo); return { e, n: x.length, s: soma(x, sacas), c: soma(x, com) }; }).sort((a, b) => b.s - a.s);
-  porCor.forEach((x, i) => linhas.push(`${["🥇", "🥈", "🥉"][i] || `${i + 1}.`} ${x.e.nome} — ${fmtNum(x.s)} sc · ${x.n} negócio${x.n === 1 ? "" : "s"} · ${fmtMoney(x.c)}`));
-  const conq = conquistasDoPeriodo(base, periodo, { mensal });
-  if (conq.length) linhas.push("", "*Destaques*", ...conq.map(c => `${c.icone} ${c.titulo}: ${(base.equipe.find(e => e.user_id === c.id) || {}).nome || ""} — ${c.detalhe}`));
-  linhas.push("", "*Nexus Commodities*");
-  return linhas.join("\n");
 }
 
 // ---- fila ----
@@ -231,7 +220,7 @@ export async function registrarLog(tipo, enfileirados, semTelefone) {
   }).catch(() => {});
 }
 
-// Gera e enfileira os resumos de período pra equipe toda (cada um o seu + resumo da equipe pro proprietário).
+// Gera e enfileira o resumo de período de cada corretor (só os negócios dele).
 export async function enviarResumosDePeriodo({ periodo, anterior, rotulo, mensal, tipo }) {
   const hoje = hojeCampoGrande();
   const base = await carregarBase();
@@ -241,13 +230,7 @@ export async function enviarResumosDePeriodo({ periodo, anterior, rotulo, mensal
     if (!telefone) { semTelefone.push(e.nome); continue; }
     msgs.push({ telefone, mensagem: montarResumoPeriodo(base, e, { periodo, anterior, rotulo, mensal }) });
   }
-  const prop = base.proprietario, telProp = prop && formatarTelefoneWhats(prop.telefone);
-  if (telProp) msgs.push({ telefone: telProp, mensagem: montarResumoEquipe(base, { periodo, anterior, rotulo, mensal }) });
-  // mesmo telefone do proprietário recebe dois textos: o tipo de dedupe precisa diferenciar, então grava o resumo da equipe com tipo próprio.
-  const proprio = msgs.filter((m, i) => !(telProp && i === msgs.length - 1));
-  const equipeMsg = telProp ? [msgs[msgs.length - 1]] : [];
-  const n1 = await enfileirar(proprio, tipo, hoje);
-  const n2 = await enfileirar(equipeMsg, `${tipo} (equipe)`, hoje);
-  await registrarLog(`WhatsApp ${tipo}`, n1 + n2, semTelefone);
-  return { enfileirados: n1 + n2, semTelefone };
+  const enfileirados = await enfileirar(msgs, tipo, hoje);
+  await registrarLog(`WhatsApp ${tipo}`, enfileirados, semTelefone);
+  return { enfileirados, semTelefone };
 }
