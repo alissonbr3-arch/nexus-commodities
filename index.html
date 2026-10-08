@@ -1744,8 +1744,8 @@ function renderDashboard() {
   renderCuriosidades();
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
 }
-// ---------------- CURIOSIDADES (desde a entrada no mercado) ----------------
-const NEXUS_INICIO_MERCADO = "2026-08-01";
+// ---------------- CURIOSIDADES (desde o primeiro negócio) ----------------
+const NEXUS_INICIO_MERCADO = "2026-07-13"; // data do primeiro negócio gerado
 function renderCuriosidades() {
   const el = document.getElementById("curiosidadesCards");
   if (!el) return;
@@ -1797,7 +1797,7 @@ function renderCuriosidades() {
     { ic: "&#128302;", label: "Ritmo anual", value: fmtMoney(mediaMensal * 12), foot: "se mantiver a média mensal por 12 meses" },
   ];
   el.innerHTML = cards.map(c => `<div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:var(--gold-soft);color:var(--gold)">${c.ic}</div></div><div class="value" style="font-size:20px">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  document.getElementById("curiosidadesHint").innerHTML = `Desde a entrada no mercado, em ${fmtDate(NEXUS_INICIO_MERCADO)} — não depende do filtro de período acima.${antes.length ? ` ${antes.length} negócio${antes.length > 1 ? "s" : ""} anterior${antes.length > 1 ? "es" : ""} a essa data (${fmtMoney(antes.reduce((s, n) => s + com(n), 0))} de comissão) ${antes.length > 1 ? "ficam" : "fica"} de fora da conta.` : ""}`;
+  document.getElementById("curiosidadesHint").innerHTML = `Desde o primeiro negócio, em ${fmtDate(NEXUS_INICIO_MERCADO)} — não depende do filtro de período acima.${antes.length ? ` ${antes.length} negócio${antes.length > 1 ? "s" : ""} anterior${antes.length > 1 ? "es" : ""} a essa data (${fmtMoney(antes.reduce((s, n) => s + com(n), 0))} de comissão) ${antes.length > 1 ? "ficam" : "fica"} de fora da conta.` : ""}`;
 }
 const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
 const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
