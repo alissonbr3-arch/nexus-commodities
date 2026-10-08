@@ -508,6 +508,11 @@
             <button class="period-btn" data-period="total">Total</button>
           </div>
           <div class="cards" id="dashCards"></div>
+          <div class="panel-card" style="margin-bottom:18px">
+            <h3>Curiosidades</h3>
+            <div class="hint" id="curiosidadesHint">—</div>
+            <div class="cards" id="curiosidadesCards" style="margin:12px 0 0"></div>
+          </div>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Volume por comprador</h3>
@@ -1736,7 +1741,63 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
+  renderCuriosidades();
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
+}
+// ---------------- CURIOSIDADES (desde a entrada no mercado) ----------------
+const NEXUS_INICIO_MERCADO = "2026-08-01";
+function renderCuriosidades() {
+  const el = document.getElementById("curiosidadesCards");
+  if (!el) return;
+  const isoParaDia = iso => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+  const hoje = todayISO();
+  const dias = Math.max(1, isoParaDia(hoje) - isoParaDia(NEXUS_INICIO_MERCADO) + 1);
+  const semanas = dias / 7, meses = dias / 30.4375;
+  const f1 = n => Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  // dias úteis (seg–sex) desde o início, pra "por dia útil"
+  let uteis = 0; for (let d = isoParaDia(NEXUS_INICIO_MERCADO); d <= isoParaDia(hoje); d++) { const dow = new Date(d * 86400000).getUTCDay(); if (dow !== 0 && dow !== 6) uteis++; }
+  uteis = Math.max(1, uteis);
+
+  const todos = data.negocios.filter(n => !n.deleted_at);
+  const lista = todos.filter(n => n.data && n.data >= NEXUS_INICIO_MERCADO);
+  const antes = todos.filter(n => n.data && n.data < NEXUS_INICIO_MERCADO);
+  const com = n => Number(n.comissao || 0), sc = n => Number(n.quantidade || 0);
+  const totalCom = lista.reduce((s, n) => s + com(n), 0), totalSc = lista.reduce((s, n) => s + sc(n), 0);
+  const nNeg = lista.length;
+  const porDia = {}, porSemana = {}, porGrao = {};
+  lista.forEach(n => {
+    porDia[n.data] = (porDia[n.data] || 0) + com(n);
+    const [y, m, d] = n.data.split("-").map(Number); const sem = limitesSemana(new Date(y, m - 1, d)).inicio;
+    porSemana[sem] = (porSemana[sem] || 0) + com(n);
+    const g = n.grao || "—"; porGrao[g] = (porGrao[g] || 0) + sc(n);
+  });
+  const melhor = obj => Object.entries(obj).sort((a, b) => b[1] - a[1])[0];
+  const mDia = melhor(porDia), mSem = melhor(porSemana), mGrao = melhor(porGrao);
+  const maior = lista.slice().sort((a, b) => com(b) - com(a))[0];
+  const nProdutores = new Set(lista.map(n => n.produtor_id).filter(Boolean)).size;
+  const nCompradores = new Set(lista.map(n => n.cliente_id || n.contraparte).filter(Boolean)).size;
+  const diasComNegocio = Object.keys(porDia).length;
+  const mediaMensal = totalCom / meses;
+
+  const cards = [
+    { ic: "&#128197;", label: "Dias no mercado", value: `${fmtNum(dias)} dias`, foot: `desde ${fmtDate(NEXUS_INICIO_MERCADO)} · ${f1(semanas)} semanas · ${f1(meses)} meses` },
+    { ic: "&#128176;", label: "Comissão gerada", value: fmtMoney(totalCom), foot: `em ${fmtNum(nNeg)} negócios` },
+    { ic: "&#128198;", label: "Média por mês", value: fmtMoney(mediaMensal), foot: `total ÷ ${f1(meses)} meses` },
+    { ic: "&#128467;", label: "Média por semana", value: fmtMoney(totalCom / semanas), foot: `total ÷ ${f1(semanas)} semanas` },
+    { ic: "&#9728;", label: "Média por dia", value: fmtMoney(totalCom / dias), foot: `${fmtMoney(totalCom / uteis)} por dia útil (${fmtNum(uteis)} dias úteis)` },
+    { ic: "&#128230;", label: "Sacas negociadas", value: `${fmtNum(Math.round(totalSc))} sc`, foot: `${fmtNum(Math.round(totalSc / dias))} sc por dia · ${fmtNum(Math.round(totalSc * TON_POR_SACA))} ton` },
+    { ic: "&#129309;", label: "Negócios fechados", value: fmtNum(nNeg), foot: `${f1(nNeg / semanas)} por semana · ${f1(nNeg / dias)} por dia` },
+    { ic: "&#127915;", label: "Comissão média por negócio", value: fmtMoney(nNeg ? totalCom / nNeg : 0), foot: totalSc ? `${fmtMoney(totalCom / totalSc)} por saca em média` : "" },
+    { ic: "&#127942;", label: "Melhor dia", value: mDia ? fmtMoney(mDia[1]) : "—", foot: mDia ? fmtDate(mDia[0]) : "" },
+    { ic: "&#128640;", label: "Melhor semana", value: mSem ? fmtMoney(mSem[1]) : "—", foot: mSem ? `semana de ${fmtDate(mSem[0])}` : "" },
+    { ic: "&#11088;", label: "Maior comissão em um negócio", value: maior ? fmtMoney(com(maior)) : "—", foot: maior ? `${escapeHtml(maior.numero_contrato || "—")} · ${escapeHtml(maior.cliente_id ? nomeCadastro(maior.cliente_id) : (maior.contraparte || "—"))}` : "" },
+    { ic: "&#127806;", label: "Grão mais negociado", value: mGrao ? escapeHtml(mGrao[0]) : "—", foot: mGrao && totalSc ? `${fmtNum(Math.round(mGrao[1]))} sc · ${f1(mGrao[1] / totalSc * 100)}% do volume` : "" },
+    { ic: "&#128101;", label: "Produtores atendidos", value: fmtNum(nProdutores), foot: `${fmtNum(nCompradores)} compradores` },
+    { ic: "&#128285;", label: "Dias com negócio", value: `${fmtNum(diasComNegocio)} de ${fmtNum(dias)}`, foot: `${f1(diasComNegocio / dias * 100)}% dos dias` },
+    { ic: "&#128302;", label: "Ritmo anual", value: fmtMoney(mediaMensal * 12), foot: "se mantiver a média mensal por 12 meses" },
+  ];
+  el.innerHTML = cards.map(c => `<div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:var(--gold-soft);color:var(--gold)">${c.ic}</div></div><div class="value" style="font-size:20px">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
+  document.getElementById("curiosidadesHint").innerHTML = `Desde a entrada no mercado, em ${fmtDate(NEXUS_INICIO_MERCADO)} — não depende do filtro de período acima.${antes.length ? ` ${antes.length} negócio${antes.length > 1 ? "s" : ""} anterior${antes.length > 1 ? "es" : ""} a essa data (${fmtMoney(antes.reduce((s, n) => s + com(n), 0))} de comissão) ${antes.length > 1 ? "ficam" : "fica"} de fora da conta.` : ""}`;
 }
 const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
 const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
