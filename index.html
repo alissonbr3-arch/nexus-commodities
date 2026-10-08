@@ -508,6 +508,7 @@
             <button class="period-btn" data-period="total">Total</button>
           </div>
           <div class="cards" id="dashCards"></div>
+          <div class="panel-card" id="minhaMetaPanel" style="display:none"></div>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Volume por comprador</h3>
@@ -610,6 +611,11 @@
             <button class="corretor-period-btn" data-corretorperiodo="total">Total</button>
           </div>
           <div class="cards" id="corretoresCards"></div>
+          <div class="panel-card">
+            <h3>Conquistas</h3>
+            <div class="hint">Reconhecimento por semana e por mês fechados — corretor da semana/mês (mais sacas), maior negócio, mais negócios fechados e meta batida.</div>
+            <div id="conquistasBox"></div>
+          </div>
           <div class="panel-card">
             <h3>Carteira convertida por corretor</h3>
             <div class="hint">% da carteira de produtores (cadastros sob responsabilidade do corretor) com quem ele já fechou pelo menos um negócio. Produtores do mesmo grupo contam como uma unidade só.</div>
@@ -1687,6 +1693,7 @@ function renderDashboardCorretores() {
     stats.map(s => `<tr><td>${s.nome}</td><td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.recebida)}</td><td>${fmtMoney(s.aReceber)}</td><td style="font-weight:500">${fmtMoney(s.total)}</td></tr>`).join("");
 
   renderCarteiraConversaoRanking();
+  renderConquistas();
 }
 function renderCarteiraConversaoRanking() {
   const el = document.getElementById("carteiraConversaoRanking");
@@ -1741,7 +1748,7 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderCuriosidades();
+  renderCuriosidades(); renderMinhaMeta();
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
 }
 // ---------------- CURIOSIDADES (desde o primeiro negócio) ----------------
@@ -1798,6 +1805,88 @@ function renderCuriosidades() {
   ];
   el.innerHTML = cards.map(c => `<div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:var(--gold-soft);color:var(--gold)">${c.ic}</div></div><div class="value" style="font-size:20px">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
   document.getElementById("curiosidadesHint").innerHTML = `Desde o primeiro negócio, em ${fmtDate(NEXUS_INICIO_MERCADO)} — não depende do filtro de período acima.${antes.length ? ` ${antes.length} negócio${antes.length > 1 ? "s" : ""} anterior${antes.length > 1 ? "es" : ""} a essa data (${fmtMoney(antes.reduce((s, n) => s + com(n), 0))} de comissão) ${antes.length > 1 ? "ficam" : "fica"} de fora da conta.` : ""}`;
+}
+// ---------------- MINHA META + CONQUISTAS (corretores) ----------------
+// O corretor só enxerga os negócios dele aqui; os sem corretor ficam com o proprietário (igual ao WhatsApp).
+function equipeProprietario() { return data.equipe.find(e => /propriet/i.test(e.cargo || "")) || data.equipe[0] || null; }
+function negociosDoCorretorUI(e) {
+  const prop = equipeProprietario();
+  const ehProp = prop && prop.user_id === e.user_id;
+  return data.negocios.filter(n => !n.deleted_at && (n.corretor_id === e.user_id || (ehProp && !n.corretor_id)));
+}
+function diasUteisEntre(iniISO, fimISO) {
+  let n = 0; const [y1, m1, d1] = iniISO.split("-").map(Number), [y2, m2, d2] = fimISO.split("-").map(Number);
+  for (let d = new Date(y1, m1 - 1, d1); d <= new Date(y2, m2 - 1, d2); d.setDate(d.getDate() + 1)) { const w = d.getDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+function renderMinhaMeta() {
+  const el = document.getElementById("minhaMetaPanel");
+  if (!el) return;
+  const eu = data.equipe.find(e => e.user_id === currentUserId);
+  const meta = eu ? Number(eu.meta_mensal_sacas || 0) : 0;
+  if (!eu || !meta) { el.style.display = "none"; return; }
+  const hoje = todayISO(), [y, m] = hoje.split("-").map(Number);
+  const iniMes = `${y}-${String(m).padStart(2, "0")}-01`, fimMes = `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const feitas = negociosDoCorretorUI(eu).filter(n => n.data && n.data >= iniMes && n.data <= fimMes).reduce((s, n) => s + Number(n.quantidade || 0), 0);
+  const pct = feitas / meta * 100, faltam = Math.max(0, meta - feitas);
+  const restantes = diasUteisEntre(hoje, fimMes), decorridos = Math.max(1, diasUteisEntre(iniMes, hoje));
+  const projecao = feitas / decorridos * (decorridos + Math.max(0, restantes - 1));
+  const cor = pct >= 100 ? "var(--green)" : "var(--gold)";
+  el.style.display = "";
+  el.innerHTML = `<h3>Minha meta de ${MESES_PT[m - 1].toLowerCase()}</h3>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin:8px 0 6px"><span style="font-size:22px;font-weight:700;color:${cor}">${pct.toFixed(0)}%</span><span style="font-size:13px;color:var(--ink-soft)">${fmtNum(Math.round(feitas))} de ${fmtNum(meta)} sc</span></div>
+    <div class="ws-progress" style="height:10px"><div class="bar" style="width:${Math.min(100, pct)}%;background:${cor}"></div></div>
+    <div class="hint" style="margin-top:8px">${faltam > 0 ? `Faltam <strong>${fmtNum(Math.round(faltam))} sc</strong>${restantes > 0 ? ` · ${restantes} ${restantes > 1 ? "dias úteis restantes" : "dia útil restante"} · ≈ ${fmtNum(Math.round(faltam / restantes))} sc por dia útil` : ""}` : "<strong>Meta batida! 🎉</strong>"}${faltam > 0 && feitas > 0 ? `<br>No ritmo atual você fecha o mês com ≈ ${fmtNum(Math.round(projecao))} sc (${(projecao / meta * 100).toFixed(0)}% da meta).` : ""}</div>`;
+}
+function limitesSemanaISO(iso) { const l = limitesSemana(new Date(iso + "T12:00:00")); return { inicio: l.inicio, fim: l.fim }; }
+function conquistasDoPeriodoUI(inicio, fim, mensal) {
+  const linhas = data.equipe.map(e => {
+    const l = negociosDoCorretorUI(e).filter(n => n.data && n.data >= inicio && n.data <= fim);
+    const maior = l.slice().sort((a, b) => Number(b.comissao || 0) - Number(a.comissao || 0))[0];
+    return { e, n: l.length, sacas: l.reduce((s, n) => s + Number(n.quantidade || 0), 0), maior };
+  });
+  const out = [];
+  const top = linhas.slice().sort((a, b) => b.sacas - a.sacas)[0];
+  if (top && top.sacas > 0) out.push({ id: top.e.user_id, ic: "🏆", titulo: mensal ? "Corretor do mês" : "Corretor da semana", det: `${fmtNum(Math.round(top.sacas))} sc` });
+  const tm = linhas.filter(x => x.maior).sort((a, b) => Number(b.maior.comissao || 0) - Number(a.maior.comissao || 0))[0];
+  if (tm && Number(tm.maior.comissao || 0) > 0) out.push({ id: tm.e.user_id, ic: "⭐", titulo: "Maior negócio", det: `comissão de ${fmtMoney(tm.maior.comissao)}` });
+  const tn = linhas.filter(x => x.n >= 2).sort((a, b) => b.n - a.n || b.sacas - a.sacas)[0];
+  if (tn) out.push({ id: tn.e.user_id, ic: "🤝", titulo: "Mais negócios fechados", det: `${tn.n} negócios` });
+  if (mensal) linhas.forEach(x => { const meta = Number(x.e.meta_mensal_sacas || 0); if (meta > 0 && x.sacas >= meta) out.push({ id: x.e.user_id, ic: "🎯", titulo: "Meta batida", det: `${fmtNum(Math.round(x.sacas))} de ${fmtNum(meta)} sc` }); });
+  return out;
+}
+function renderConquistas() {
+  const el = document.getElementById("conquistasBox");
+  if (!el) return;
+  const hoje = todayISO();
+  const semPassada = limitesSemanaISO(new Date(new Date(hoje + "T12:00:00").getTime() - 7 * 86400000).toISOString().slice(0, 10));
+  const [y, m] = hoje.split("-").map(Number);
+  const mesAtual = { inicio: `${y}-${String(m).padStart(2, "0")}-01`, fim: `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` };
+  const dm = new Date(y, m - 2, 1), mp = { inicio: `${dm.getFullYear()}-${String(dm.getMonth() + 1).padStart(2, "0")}-01`, fim: `${dm.getFullYear()}-${String(dm.getMonth() + 1).padStart(2, "0")}-${String(new Date(dm.getFullYear(), dm.getMonth() + 1, 0).getDate()).padStart(2, "0")}` };
+  const nomeDe = id => (data.equipe.find(e => e.user_id === id) || {}).nome || "—";
+  const bloco = (titulo, per, mensal) => { const c = conquistasDoPeriodoUI(per.inicio, per.fim, mensal);
+    return `<div style="flex:1;min-width:230px"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">${titulo}</div>${c.length ? c.map(x => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${x.ic} <strong>${x.titulo}</strong><br><span style="color:var(--ink-soft);font-size:12px">${escapeHtml(nomeDe(x.id))} — ${x.det}</span></div>`).join("") : `<div class="hint">Sem negócios no período.</div>`}</div>`; };
+
+  // Quadro de títulos: quantas semanas/meses cada corretor já foi o destaque em sacas (períodos fechados).
+  const datas = data.negocios.filter(n => !n.deleted_at && n.data).map(n => n.data).sort();
+  const titulos = new Map(data.equipe.map(e => [e.user_id, { semanas: 0, meses: 0, metas: 0 }]));
+  if (datas.length) {
+    let cur = limitesSemanaISO(datas[0]);
+    while (cur.fim < hoje) {
+      const c = conquistasDoPeriodoUI(cur.inicio, cur.fim, false).find(x => x.titulo === "Corretor da semana"); if (c) titulos.get(c.id).semanas++;
+      cur = limitesSemanaISO(new Date(new Date(cur.fim + "T12:00:00").getTime() + 86400000).toISOString().slice(0, 10));
+    }
+    let [yy, mm] = datas[0].split("-").map(Number);
+    while (yy < y || (yy === y && mm < m)) {
+      const ini = `${yy}-${String(mm).padStart(2, "0")}-01`, fim = `${yy}-${String(mm).padStart(2, "0")}-${String(new Date(yy, mm, 0).getDate()).padStart(2, "0")}`;
+      conquistasDoPeriodoUI(ini, fim, true).forEach(c => { if (c.titulo === "Corretor do mês") titulos.get(c.id).meses++; if (c.titulo === "Meta batida") titulos.get(c.id).metas++; });
+      mm++; if (mm > 12) { mm = 1; yy++; }
+    }
+  }
+  const quadro = [...titulos.entries()].map(([id, t]) => ({ nome: nomeDe(id), ...t, total: t.semanas * 1 + t.meses * 3 + t.metas * 2 })).sort((a, b) => b.total - a.total);
+  el.innerHTML = `<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px">${bloco("Semana passada", semPassada, false)}${bloco("Mês passado (" + MESES_PT[dm.getMonth()] + ")", mp, true)}${bloco("Mês atual (parcial)", mesAtual, true)}</div>
+    <div style="margin-top:14px"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">Quadro de títulos (períodos já fechados)</div>
+    ${quadro.map((q, i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>${["🥇", "🥈", "🥉"][i] || (i + 1) + "."} ${escapeHtml(q.nome)}</span><span style="color:var(--ink-soft);font-size:12px">🏆 ${q.semanas} semana${q.semanas === 1 ? "" : "s"} · 🏅 ${q.meses} ${q.meses === 1 ? "mês" : "meses"} · 🎯 ${q.metas} meta${q.metas === 1 ? "" : "s"}</span></div>`).join("")}</div>`;
 }
 const PALETTE_GRAO = ["#d9ab34", "#b8860b", "#e8c468", "#8a6410", "#f0d488"];
 const PALETTE_COMPRADOR = ["#4a8bb0", "#2c5f7a", "#7fb8d6", "#1a3f52", "#a3d0e8", "#5aa8c9"];
