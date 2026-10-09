@@ -1290,7 +1290,7 @@ async function doLogin() {
   btn.disabled = false; btn.textContent = "Entrar";
   if (error) errEl.textContent = "E-mail ou senha inválidos.";
 }
-document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); });
+document.getElementById("logoutBtn").addEventListener("click", async () => { try { ["page", "subtab", "period"].forEach(k => sessionStorage.removeItem("nexus_nav_" + k)); } catch {} await sb.auth.signOut(); });
 
 sb.auth.onAuthStateChange((event, session) => {
   if (session) { showApp(session); } else { showLogin(); }
@@ -1320,6 +1320,7 @@ async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
   renderAll();
+  navRestaurar();
   wireRealtime();
 }
 
@@ -1463,12 +1464,23 @@ function abrirNegocioDeNotificacao(negocioId) {
 }
 
 // ---------------- NAV ----------------
+// Página/sub-aba/período sobrevivem ao F5 (sessionStorage = só nesta aba do navegador).
+function navSalvar(k, v) { try { sessionStorage.setItem("nexus_nav_" + k, v); } catch {} }
+function navLer(k) { try { return sessionStorage.getItem("nexus_nav_" + k); } catch { return null; } }
+function navRestaurar() {
+  const clicar = (sel) => { const b = sel && document.querySelector(sel); if (b && b.offsetParent !== null) b.click(); };
+  const page = navLer("page"), sub = navLer("subtab"), period = navLer("period");
+  if (page) clicar(`.nav-item[data-page="${page}"]`);
+  if (sub) clicar(`.subtab-btn[data-subtab="${sub}"]`);
+  if (period) clicar(`.period-btn[data-period="${period}"]`);
+}
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-item[data-page]").forEach(b => b.classList.remove("active"));
     document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
+    navSalvar("page", btn.dataset.page);
     // Toda vez que entra em Negociações, volta o filtro pros próprios negócios do corretor —
     // quem quiser ver de todo mundo escolhe "Todos os corretores" de novo no filtro.
     if (btn.dataset.page === "negociacoes") {
@@ -1500,6 +1512,7 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     document.querySelectorAll(".subpage").forEach(p => p.style.display = "none");
     btn.classList.add("active");
     document.getElementById("sub-" + btn.dataset.subtab).style.display = "block";
+    navSalvar("subtab", btn.dataset.subtab);
     if (btn.dataset.subtab === "compradores") renderDashboardCompradores();
     if (btn.dataset.subtab === "produtores") renderDashboardProdutores();
     if (btn.dataset.subtab === "corretores") renderDashboardCorretores();
@@ -1509,7 +1522,7 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 document.querySelectorAll(".period-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active"); currentPeriod = btn.dataset.period; renderDashboard();
+    btn.classList.add("active"); currentPeriod = btn.dataset.period; navSalvar("period", currentPeriod); renderDashboard();
   });
 });
 
