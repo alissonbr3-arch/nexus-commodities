@@ -219,6 +219,8 @@ export default async (req) => {
     method: "PATCH", headers: patchHeaders,
     body: JSON.stringify({
       nota_fiscal_asaas_id: inv.id, nota_fiscal_status: inv.status || "SCHEDULED", nota_fiscal_erro: null, nota_fiscal_tomador_id: pagador.id,
+      // nota nova (ex.: depois de cancelar a anterior): o e-mail dela tem que sair de novo
+      nota_fiscal_email_enviado_em: null, nota_fiscal_email_erro: null,
       nota_fiscal_numero: inv.number ? String(inv.number) : null, nota_fiscal_url: inv.pdfUrl || null,
       nota_fiscal_emitida_em: inv.status === "AUTHORIZED" ? hojeBR : null,
     }),

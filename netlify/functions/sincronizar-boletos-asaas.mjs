@@ -65,9 +65,10 @@ export default async () => {
   }
   if (falhas.length) console.log("sincronizar-boletos-asaas falhas:", falhas.join(" | "));
 
-  // Notas fiscais ainda em emissão: pergunta direto ao Asaas (rede de segurança do webhook de nota).
+  // Notas ainda em emissão e as autorizadas nos últimos 14 dias (pra pegar cancelamento feito no Asaas):
+  // pergunta direto ao Asaas (rede de segurança do webhook de nota).
   const notasResp = await fetch(
-    `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&nota_fiscal_asaas_id=not.is.null&nota_fiscal_status=in.(SCHEDULED,SYNCHRONIZED,PROCESSING_CANCELLATION)&select=nota_fiscal_asaas_id`,
+    `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&nota_fiscal_asaas_id=not.is.null&or=(nota_fiscal_status.in.(SCHEDULED,SYNCHRONIZED,PROCESSING_CANCELLATION),and(nota_fiscal_status.eq.AUTHORIZED,nota_fiscal_emitida_em.gte.${new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10)}))&select=nota_fiscal_asaas_id`,
     { headers: adminHeaders }
   );
   const notasRaw = await notasResp.json().catch(() => []);
