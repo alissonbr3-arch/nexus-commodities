@@ -151,11 +151,15 @@ export default async (req) => {
     endCep = (await cepRuralDoMunicipio(cidade, uf)) || "";
     endComplemento = "";
   }
-  const ieNota = String((fazenda ? fazenda.inscricao_estadual : pagador.inscricao_estadual) || "").trim();
+  let ieNota = String((fazenda ? fazenda.inscricao_estadual : pagador.inscricao_estadual) || "").trim();
+  if (/^[\d.\-\/ ]+$/.test(ieNota)) ieNota = ieNota.replace(/\s+/g, ""); // "28.437.513- 6" -> "28.437.513-6"
   const ieAsaas = /^[\d.\-\/ ]+$/.test(ieNota) ? ieNota.replace(/\D/g, "") : ieNota;
   const faltando = [endCep.length === 8 ? null : "CEP", endRua ? null : "rua", endNum ? null : "número", endBairro ? null : "bairro"].filter(Boolean);
   if (faltando.length) return json({ ok: false, erro: `Complete o endereço de ${pagador.nome} em Cadastros antes de emitir (faltando: ${faltando.join(", ")}).` }, 400);
-  const enderecoAsaas = { postalCode: endCep, address: endRua, addressNumber: endNum, complement: endComplemento || undefined, province: endBairro };
+  const enderecoAsaas = { postalCode: endCep, address: endRua, addressNumber: endNum, complement: endComplemento || undefined, 
+    // A DANFSe monta o endereço do tomador como "rua, número, complemento, bairro". A inscrição
+    // estadual vai no fim do bairro pra aparecer logo depois do endereço: "..., Zona Rural - IE 28.123.456-7".
+    province: `${endBairro}${ieNota ? ` - IE ${ieNota}` : ""}`.slice(0, 60) };
 
   const valorTotal = Math.round(negocios.reduce((s, n) => s + Number(n.comissao), 0) * 100) / 100;
   const contratos = negocios.map(n => n.numero_contrato || "—").join(", ");
@@ -164,7 +168,7 @@ export default async (req) => {
   const corpo = {
     // Mesmo padrão das notas emitidas à mão: contratos + dados bancários (texto em Configurações).
     serviceDescription: `Comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${cfg.nfse_texto_adicional ? " " + cfg.nfse_texto_adicional : ""}`,
-    observations: `Contrato(s): ${contratos}${fazenda ? ` — Fazenda ${fazenda.nome}` : ""}${ieNota ? ` — Inscrição Estadual ${ieNota}` : ""}`,
+    observations: `Contrato(s): ${contratos}${fazenda ? ` — ${/^fazenda/i.test(fazenda.nome) ? "" : "Fazenda "}${fazenda.nome}` : ""}${ieNota ? ` — Inscrição Estadual ${ieNota}` : ""}`,
     externalReference: `nexus:${contratos}`.slice(0, 100), // o Asaas aceita no máximo 100 caracteres; a nota é achada pelo nota_fiscal_asaas_id
     value: valorTotal,
     deductions: 0,
