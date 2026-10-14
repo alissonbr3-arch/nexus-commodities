@@ -30,6 +30,11 @@
   .brand .sub { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
   .clock { text-align: right; }
   .clock .time { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .radio-box { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+  .radio-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--card); color: var(--ink-soft); border: 1px solid var(--border); border-radius: 18px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  .radio-btn.on { color: #171207; background: var(--gold); border-color: var(--gold); }
+  .radio-btn.erro { color: var(--red); border-color: var(--red); }
+  .radio-vol { width: 70px; accent-color: var(--gold); cursor: pointer; }
   .clock .date { font-size: 13px; color: var(--ink-soft); text-transform: capitalize; }
 
   .dolar-strip {
@@ -135,6 +140,7 @@
       <div class="clock">
         <div class="time" id="tvClock">--:--</div>
         <div class="date" id="tvDate">—</div>
+        <div class="radio-box"><input type="range" class="radio-vol" id="radioVol" min="0" max="100" value="60" title="Volume"><button class="radio-btn" id="radioBtn" onclick="alternarRadio()">🔊 Rádio Mix FM</button></div>
       </div>
     </header>
 
@@ -521,6 +527,54 @@ async function carregarDadosTv() {
   renderCuriosidadesTv(todos);
 }
 
+
+// ---------------- RÁDIO DE FUNDO: Mix FM São Paulo 106.3 ----------------
+// Stream aberto (StreamTheWorld, sem chave). O navegador só deixa o som começar depois de um clique:
+// o botão liga/desliga e, se a rádio estava ligada, o primeiro clique ou tecla em qualquer lugar
+// da TV (depois de reiniciar) volta a tocar. Se a transmissão cair, reconecta sozinho.
+const RADIO_URL = "https://playerservices.streamtheworld.com/api/livestream-redirect/MIXFM_SAOPAULOAAC.aac";
+const radio = { audio: null, ligado: false, tentativa: 0, timer: null };
+function radioUI(estado) {
+  const b = document.getElementById("radioBtn"); if (!b) return;
+  b.className = "radio-btn" + (estado === "tocando" ? " on" : estado === "erro" ? " erro" : "");
+  b.textContent = estado === "tocando" ? "🔊 Mix FM tocando" : estado === "conectando" ? "⏳ Conectando…" : estado === "erro" ? "⚠️ Rádio fora do ar — tentando" : "🔈 Rádio Mix FM";
+}
+function radioIniciar() {
+  clearTimeout(radio.timer);
+  if (!radio.audio) {
+    radio.audio = new Audio();
+    radio.audio.preload = "none";
+    radio.audio.addEventListener("playing", () => { radio.tentativa = 0; radioUI("tocando"); });
+    const cair = () => { if (!radio.ligado) return; radioUI("erro"); radio.timer = setTimeout(radioIniciar, Math.min(30000, 3000 * ++radio.tentativa)); };
+    radio.audio.addEventListener("error", cair); radio.audio.addEventListener("stalled", cair); radio.audio.addEventListener("ended", cair);
+  }
+  radio.audio.volume = Math.max(0, Math.min(1, Number(document.getElementById("radioVol").value) / 100));
+  radio.audio.src = RADIO_URL + (RADIO_URL.includes("?") ? "&" : "?") + "t=" + Date.now(); // novo pedido = sem buffer velho
+  radioUI("conectando");
+  const p = radio.audio.play();
+  if (p && p.catch) p.catch(() => { radioUI("desligado"); }); // bloqueado até haver um clique
+}
+function alternarRadio() {
+  // Estado "ligado" restaurado mas o navegador bloqueou o som: o clique serve pra começar, não pra desligar.
+  if (radio.ligado && (!radio.audio || radio.audio.paused)) { radioIniciar(); return; }
+  radio.ligado = !radio.ligado;
+  try { localStorage.setItem("nexus_tv_radio", radio.ligado ? "1" : "0"); } catch {}
+  if (radio.ligado) radioIniciar();
+  else { clearTimeout(radio.timer); if (radio.audio) { radio.audio.pause(); radio.audio.removeAttribute("src"); radio.audio.load(); } radioUI("desligado"); }
+}
+function iniciarRadio() {
+  const vol = document.getElementById("radioVol");
+  try { const v = localStorage.getItem("nexus_tv_radio_vol"); if (v != null) vol.value = v; radio.ligado = localStorage.getItem("nexus_tv_radio") === "1"; } catch {}
+  vol.addEventListener("input", () => { if (radio.audio) radio.audio.volume = Number(vol.value) / 100; try { localStorage.setItem("nexus_tv_radio_vol", vol.value); } catch {} });
+  radioUI("desligado");
+  if (radio.ligado) {
+    // tenta já; se o navegador bloquear, o primeiro clique/tecla retoma
+    radioIniciar();
+    const retomar = (e) => { if (e.target && e.target.id === "radioBtn") return; if (radio.ligado && radio.audio && radio.audio.paused) radioIniciar(); document.removeEventListener("click", retomar); document.removeEventListener("keydown", retomar); };
+    document.addEventListener("click", retomar); document.addEventListener("keydown", retomar);
+  }
+}
+
 function iniciarApp() {
   document.getElementById("loginBox").style.display = "none";
   document.getElementById("tvApp").style.display = "flex";
@@ -528,6 +582,7 @@ function iniciarApp() {
   carregarDadosTv();
   carregarNoticiasTv();
   iniciarSlides();
+  iniciarRadio();
   setInterval(carregarDadosTv, 60000);
   setInterval(carregarNoticiasTv, 600000);
   sb.channel("tv-realtime")
