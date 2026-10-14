@@ -46,18 +46,18 @@
   .main-grid { flex: 1; display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 18px; min-height: 0; }
   .col { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
 
-  .cotacoes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
-  .cot-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
-  .cot-card .produto { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .cotacoes-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(8px, 1.2vh, 14px); flex: 0 0 auto; }
+  .cot-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: clamp(8px, 1.4vh, 16px) clamp(10px, 1.1vw, 18px); }
+  .cot-card .produto { font-size: clamp(12px, 1.8vh, 15px); flex-wrap: wrap; font-weight: 700; display: flex; align-items: center; gap: 8px; }
   .cot-card .mes { font-size: 11.5px; color: var(--ink-soft); font-weight: 400; }
-  .cot-card .preco { font-size: 30px; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .cot-card .preco { font-size: clamp(17px, 2.7vh, 30px); font-weight: 800; margin-top: clamp(2px, 0.8vh, 8px); font-variant-numeric: tabular-nums; }
   .cot-card .row2 { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 14px; font-variant-numeric: tabular-nums; }
   .cot-card .row2 .up { color: var(--green); font-weight: 700; }
   .cot-card .row2 .down { color: var(--red); font-weight: 700; }
-  .cot-card .saca { margin-top: 10px; font-size: 12.5px; color: var(--ink-soft); }
+  .cot-card .saca { white-space: nowrap; margin-top: clamp(3px, 1vh, 10px); font-size: clamp(10px, 1.5vh, 12.5px); color: var(--ink-soft); }
   .cot-card .saca b { color: var(--ink); font-size: 14px; }
 
-  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; min-height: 0; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; min-height: 120px; }
   .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); margin: 0 0 12px; font-weight: 700; }
   .chart-box { flex: 1; min-height: 0; position: relative; }
 
