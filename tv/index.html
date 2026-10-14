@@ -225,6 +225,11 @@ function renderDolarTv(d) {
 function renderCotacoesTv(lista) {
   const el = document.getElementById("cotacoesGridTv");
   if (!lista || lista.length === 0) { el.innerHTML = `<div class="placeholder">Nenhuma cotação cadastrada.</div>`; return; }
+  // Ordem: por produto e, dentro do produto, pelo vencimento mais próximo primeiro (Soja Novembro antes
+  // de Março). O vencimento vem do código do contrato (ex.: ZSX26 = Nov/26, ZSH27 = Mar/27).
+  const MES_CONTRATO = { F: 1, G: 2, H: 3, J: 4, K: 5, M: 6, N: 7, Q: 8, U: 9, V: 10, X: 11, Z: 12 };
+  const vencimento = c => { const m = /^Z[SCLM]([FGHJKMNQUVXZ])(\d{2})/.exec(c.codigo || ""); return m ? (2000 + Number(m[2])) * 12 + MES_CONTRATO[m[1]] : 0; };
+  lista = [...lista].sort((a, b) => String(a.produto).localeCompare(String(b.produto), "pt-BR") || (vencimento(a) - vencimento(b)) || String(a.mes || "").localeCompare(String(b.mes || ""), "pt-BR"));
   el.innerHTML = lista.map(c => {
     const varClass = Number(c.varr) > 0 ? "up" : Number(c.varr) < 0 ? "down" : "";
     return `<div class="cot-card">
