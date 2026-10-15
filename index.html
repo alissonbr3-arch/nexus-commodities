@@ -4620,6 +4620,12 @@ async function emitirNotasPorCpf(baseId) {
 }
 
 function escolherTomadorNota(baseId, id) { notaTomadorSel = { base: baseId, id }; notaFazendaSel = { base: null, val: null }; openNotaFiscalModal(baseId, true); }
+async function desfazerNotaExterna(negocioId) {
+  if (!confirm("Desfazer a marcação de 'nota emitida fora do app'? O contrato volta a poder emitir a nota por aqui.")) return;
+  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_externa: false }).eq("id", negocioId);
+  if (error) { alert("Erro ao desfazer: " + error.message); return; }
+  await loadNegocios(); renderComissoesPage(); openNotaFiscalModal(negocioId);
+}
 async function marcarNotaExterna(baseId, id) {
   const x = data.negocios.find(n => n.id === id);
   if (!x || !confirm(`Marcar que a nota do contrato ${x.numero_contrato || ""} já foi emitida fora do app? Ele deixa de aparecer na lista de notas a emitir.`)) return;
@@ -4709,7 +4715,8 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
 
   let topo = "";
   if (estado === "emitida") {
-    topo = `<div style="padding:10px 12px;border-radius:8px;background:var(--green-soft);color:var(--green);margin-bottom:10px;font-size:13px">&#10003; Nota emitida${base.nota_fiscal_numero ? ` — nº ${escapeHtml(base.nota_fiscal_numero)}` : ""}${base.nota_fiscal_emitida_em ? ` em ${fmtDate(base.nota_fiscal_emitida_em)}` : ""}</div>
+    const soMarcada = !!(base.nota_fiscal_externa && !base.nota_fiscal_asaas_id && !base.nota_fiscal_numero);
+    topo = `${soMarcada ? `<div style="padding:10px 12px;border-radius:8px;background:var(--gold-soft);color:var(--gold);margin-bottom:10px;font-size:12.5px">Este contrato foi <strong>marcado como "nota emitida fora do app"</strong>, sem número de nota registrado. Se a nota ainda não foi emitida, desfaça a marcação pra poder emitir aqui.<div style="margin-top:8px"><button class="btn-primary" onclick="desfazerNotaExterna('${base.id}')">Desfazer — ainda não foi emitida</button></div></div>` : ""}<div style="padding:10px 12px;border-radius:8px;background:var(--green-soft);color:var(--green);margin-bottom:10px;font-size:13px">&#10003; Nota emitida${base.nota_fiscal_numero ? ` — nº ${escapeHtml(base.nota_fiscal_numero)}` : ""}${base.nota_fiscal_emitida_em ? ` em ${fmtDate(base.nota_fiscal_emitida_em)}` : ""}</div>
       ${resumo}
       ${base.nota_fiscal_asaas_id ? `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">${base.nota_fiscal_email_enviado_em ? `&#9993; E-mail enviado pra ${escapeHtml([pagador && pagador.email, ...((pagador && pagador.emails_extra) || [])].filter(Boolean).join(", ") || "o e-mail de cadastro")} em ${new Date(base.nota_fiscal_email_enviado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : base.nota_fiscal_email_erro ? `<span style="color:var(--red)">&#9993; E-mail não enviado: ${escapeHtml(base.nota_fiscal_email_erro)}</span>` : `<span style="color:var(--ink-soft)">&#9993; E-mail ainda não enviado (sai sozinho assim que o sistema confirmar a nota).</span>`}</div>` : ""}
       <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap">${base.nota_fiscal_asaas_id ? `<button class="btn-ghost" onclick="atualizarStatusNota('${base.id}')">Atualizar status</button>` : ""}${base.nota_fiscal_asaas_id ? `<button class="btn-ghost" id="nfEmailBtn" onclick="enviarNotaPorEmail('${base.id}')">${base.nota_fiscal_email_enviado_em ? "Reenviar por e-mail" : "Enviar por e-mail"}</button>` : ""}${base.nota_fiscal_url ? `<a class="btn-primary" style="display:inline-block;padding:8px 14px;border-radius:7px;text-decoration:none" href="${base.nota_fiscal_url}" target="_blank" rel="noopener">Abrir PDF da nota</a>` : ""}${base.nota_fiscal_pdf_path ? `<button class="btn-ghost" onclick="verPdfNotaFiscal('${base.id}')">Ver PDF anexado</button>` : ""}</div>`;
@@ -4822,7 +4829,7 @@ async function salvarNotaFiscal(negocioId) {
 async function removerNotaFiscal(negocioId) {
   if (!confirm("Remover o registro desta nota fiscal? (O PDF anexado continua guardado.)")) return;
   const negs = negociosDaNota(negocioId);
-  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_numero: null, nota_fiscal_emitida_em: null, nota_fiscal_pdf_path: null }).in("id", negs.map(n => n.id));
+  const { error } = await sb.from("nexus_negocios").update({ nota_fiscal_numero: null, nota_fiscal_emitida_em: null, nota_fiscal_pdf_path: null, nota_fiscal_externa: false }).in("id", negs.map(n => n.id));
   if (error) { alert("Erro ao remover a nota: " + error.message); return; }
   await loadNegocios(); closeModal(); renderComissoesPage();
 }
