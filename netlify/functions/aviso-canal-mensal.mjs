@@ -71,4 +71,7 @@ export default async () => {
   return new Response(JSON.stringify({ ok: true, enfileirados: telefones.length }), { status: 200 });
 };
 
-export const config = { schedule: "0 11 15 * *" };
+// DESATIVADO em 15/10/2026: este disparo em massa (a mesma mensagem pra ~125 produtores) derrubou a
+// conta do WhatsApp em 15/09 e de novo em 15/10, mesmo enfileirado a 1 a cada 3 minutos. Sem o
+// "schedule", a função só roda se for chamada à mão. Não religar sem trocar pra API oficial.
+// export const config = { schedule: "0 11 15 * *" };
