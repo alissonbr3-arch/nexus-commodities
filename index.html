@@ -2431,7 +2431,7 @@ function briefingHtml(formato, opc = {}) {
   const H = post ? 1350 : 1920;
   const { ouro, verde, verm, txt, suave, card, borda, fundo, pillTxt } = claro
     ? { ouro: "#a97c0a", verde: "#1e9e57", verm: "#d64040", txt: "#14181d", suave: "#5f6672", card: "#faf8f3", borda: "#e3ddca", fundo: "linear-gradient(180deg,#ffffff 0,#f6f1e3 100%)", pillTxt: "#ffffff" }
-    : { ouro: "#e0b23f", verde: "#4caf6d", verm: "#e15c5c", txt: "#f2f3f5", suave: "#9aa1a9", card: "#14171a", borda: "#2a2e33", fundo: "#08090a", pillTxt: "#171207" };
+    : { ouro: "#e0b23f", verde: "#4caf6d", verm: "#e15c5c", txt: "#f2f3f5", suave: "#9aa1a9", card: "#14171a", borda: "#2a2e33", fundo: "radial-gradient(circle at 20% 0%,#2a2210 0,#0b0d0f 38%)", pillTxt: "#171207" };
   const agora = new Date();
   const dataTxt = agora.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }).toUpperCase() + "  •  " + agora.toLocaleDateString("pt-BR", { weekday: "long" }).toUpperCase();
   const hora = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -2463,7 +2463,7 @@ function briefingHtml(formato, opc = {}) {
   const blocoAtento = atento.length ? `<div style="background:rgba(225,92,92,.10);border:2px solid ${verm};border-radius:24px;padding:16px 26px;margin-bottom:16px"><div style="font-size:28px;font-weight:800;color:${verm};letter-spacing:.06em;margin-bottom:6px">⚠️ FIQUE ATENTO</div>${atento.map((a, i) => `<div style="font-size:24px;color:${txt};margin:5px 0;display:flex;gap:12px"><b style="color:${verm}">${i + 1}.</b><span>${escapeHtml(a)}</span></div>`).join("")}</div>` : "";
   const recado = (document.getElementById("br_recado")?.value || "").trim();
   return `<div style="width:1080px;height:${H}px;box-sizing:border-box;background:${fundo};color:${txt};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:40px 48px;overflow:hidden"><div class="br-inner" style="display:flex;flex-direction:column;height:100%">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px"><img src="${claro ? "logo-nexus-claro.png" : "logo-nexus-hd.png"}" style="height:${post ? 150 : 190}px" crossorigin="anonymous"><div style="text-align:right"><div style="font-size:54px;font-weight:900;letter-spacing:.04em;line-height:1">BRIEFING <span style="color:${ouro}">DIÁRIO</span></div><div style="display:inline-block;margin-top:10px;font-size:23px;font-weight:700;color:${pillTxt};background:${ouro};border-radius:30px;padding:7px 22px">${dataTxt}</div></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px"><img src="${claro ? "logo-nexus-claro.png" : "logo-nexus-escuro.png"}" style="height:${post ? 150 : 176}px;${claro ? "" : "filter:drop-shadow(0 0 22px rgba(224,178,63,.45))"}" crossorigin="anonymous"><div style="text-align:right"><div style="font-size:54px;font-weight:900;letter-spacing:.04em;line-height:1">BRIEFING <span style="color:${ouro}">DIÁRIO</span></div><div style="display:inline-block;margin-top:10px;font-size:23px;font-weight:700;color:${pillTxt};background:${ouro};border-radius:30px;padding:7px 22px">${dataTxt}</div></div></div>
     ${secao("MERCADO HOJE", "📊")}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">${cards.map(cardHtml).join("")}</div>
     ${blocoPreco}${blocoNoticias}${blocoClima}${blocoAtento}
@@ -2505,7 +2505,7 @@ async function briefingCanvas(formato) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject x="0" y="0" width="${W}" height="${H}">${xhtml}</foreignObject></svg>`;
   const img = await new Promise((ok, erro) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => erro(new Error("O navegador não conseguiu desenhar a imagem.")); im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
   const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d"); ctx.fillStyle = (document.getElementById("br_tema")?.value || "escuro") === "claro" ? "#ffffff" : "#08090a"; ctx.fillRect(0, 0, W, H); ctx.drawImage(img, 0, 0, W, H);
+  const ctx = canvas.getContext("2d"); ctx.fillStyle = (document.getElementById("br_tema")?.value || "escuro") === "claro" ? "#ffffff" : "#0b0d0f"; ctx.fillRect(0, 0, W, H); ctx.drawImage(img, 0, 0, W, H);
   return canvas;
 }
 async function briefingBaixar() {
