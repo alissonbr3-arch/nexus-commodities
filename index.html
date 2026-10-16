@@ -749,8 +749,12 @@
             <button class="btn-ghost" onclick="precoEnvioPuxarDoMercado()">Puxar o maior preço da tabela acima</button>
             <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
           </div>
-          <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin:0 0 10px;cursor:pointer"><input type="checkbox" id="pe_respeitar" checked onchange="precoEnvioPrevia()"> Mandar a cada cliente só os produtos que ele trabalha (SD, SF, MD, MF). Cliente sem produto marcado recebe tudo que estiver preenchido.</label>
+          <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem (completa — cada cliente recebe só as linhas dele)</div>
           <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
+          <div style="display:flex;align-items:center;gap:10px;margin:2px 0 6px"><button class="btn-ghost" onclick="precoEnvioTeste()" title="Abre o WhatsApp no número cadastrado em Equipe pra você, com a mensagem de exemplo">Testar no meu número</button></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:4px"><span>Enviados hoje</span><span id="pe_prog_txt"></span></div>
+          <div class="ws-progress" style="margin-bottom:12px"><div class="bar" id="pe_prog_bar" style="width:0"></div></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
             <input type="text" id="pe_busca" placeholder="Buscar cliente..." oninput="renderPrecoEnvioLista()" style="max-width:240px">
             <select id="pe_filtro" onchange="renderPrecoEnvioLista()" style="max-width:260px">
@@ -758,6 +762,7 @@
               <option value="soja">Só quem trabalha soja (SD ou SF)</option>
               <option value="sd">Só soja disponível (SD)</option>
               <option value="sf">Só soja futuro (SF)</option>
+              <option value="milho">Só milho (MD ou MF)</option>
               <option value="pendentes">Só quem ainda não recebeu hoje</option>
             </select>
             <span id="pe_contador" style="font-size:12px;color:var(--ink-soft)"></span>
@@ -2336,9 +2341,9 @@ async function loadPrecoEnvio() {
   try {
     const { data: row } = await sb.from("nexus_preco_whatsapp").select("*").eq("id", 1).maybeSingle();
     precoEnvio.dados = row || null;
-    const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at").in("tipo", PE_TIPOS_LOG).eq("sucesso", true).gte("created_at", todayISO() + "T00:00:00-04:00");
+    const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at, tipo").in("tipo", PE_TIPOS_LOG).eq("sucesso", true).gte("created_at", todayISO() + "T00:00:00-04:00");
     precoEnvio.enviadosHoje = new Map();
-    (logs || []).forEach(l => { const m = /^cadastro:([0-9a-f-]{36}) /.exec(l.destinatarios || ""); if (m && !precoEnvio.enviadosHoje.has(m[1])) precoEnvio.enviadosHoje.set(m[1], l.created_at); });
+    (logs || []).forEach(l => { const m = /^cadastro:([0-9a-f-]{36}) /.exec(l.destinatarios || ""); if (m && !precoEnvio.enviadosHoje.has(m[1])) precoEnvio.enviadosHoje.set(m[1], { at: l.created_at, manual: /manual/.test(l.tipo || "") }); });
   } catch (e) { /* tabela ainda não existe ou sem acesso: o painel segue vazio */ }
 }
 function precoEnvioNum(id) { const v = document.getElementById(id); return v && v.value !== "" ? Number(v.value) : null; }
@@ -2355,8 +2360,14 @@ function precoEnvioPreencherForm() {
   }
 }
 // Mensagem com {{SAUDACAO}} e {{NOME}} (o servidor troca; a prévia e o "Abrir no WhatsApp" trocam aqui).
-function precoEnvioTemplate() {
-  const sd = precoEnvioNum("pe_soja_disp"), sf = precoEnvioNum("pe_soja_fut"), md = precoEnvioNum("pe_milho_disp"), mf = precoEnvioNum("pe_milho_fut");
+// Mensagem com {{SAUDACAO}} e {{NOME}}. Com "respeitar produtos" ligado e um cliente informado, só entram as linhas dos
+// produtos que ele trabalha (flags SD/SF/MD/MF do cadastro); cliente sem nenhuma flag recebe tudo que estiver preenchido.
+function precoEnvioTemplate(cliente) {
+  const respeitar = document.getElementById("pe_respeitar")?.checked !== false;
+  const temFlag = cliente && WS_FLAGS.some(f => cliente[f.campo]);
+  const quer = campo => !(respeitar && cliente && temFlag) || !!cliente[campo];
+  const sd = quer("flag_soja_disponivel") ? precoEnvioNum("pe_soja_disp") : null, sf = quer("flag_soja_futuro") ? precoEnvioNum("pe_soja_fut") : null;
+  const md = quer("flag_milho_disponivel") ? precoEnvioNum("pe_milho_disp") : null, mf = quer("flag_milho_futuro") ? precoEnvioNum("pe_milho_fut") : null;
   const refS = (document.getElementById("pe_soja_ref")?.value || "").trim(), refM = (document.getElementById("pe_milho_ref")?.value || "").trim();
   const obs = (document.getElementById("pe_obs")?.value || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -2377,10 +2388,10 @@ function precoEnvioNome(nome) {
   const p = n.split(/\s+/)[0] || n; return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
-function precoEnvioMensagemPara(c) { return precoEnvioTemplate().replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c.nome)); }
+function precoEnvioMensagemPara(c) { return precoEnvioTemplate(c).replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c.nome)); }
 function precoEnvioPrevia() {
   const el = document.getElementById("pe_previa"); if (!el) return;
-  const t = precoEnvioTemplate();
+  const t = precoEnvioTemplate(null);
   el.textContent = t ? t.replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, "Nome do cliente") : "Preencha ao menos um preço pra ver a mensagem.";
   renderPrecoEnvioLista();
 }
@@ -2404,20 +2415,23 @@ function precoEnvioClientes() {
   const filtro = document.getElementById("pe_filtro")?.value || "todos", busca = (document.getElementById("pe_busca")?.value || "").trim().toLowerCase();
   return data.cadastros.filter(c => c.tipo === "Produtor" && String(c.telefone || "").replace(/\D/g, "").length >= 10)
     .filter(c => !busca || String(c.nome || "").toLowerCase().includes(busca))
-    .filter(c => filtro === "todos" ? true : filtro === "soja" ? (c.flag_soja_disponivel || c.flag_soja_futuro) : filtro === "sd" ? c.flag_soja_disponivel : filtro === "sf" ? c.flag_soja_futuro : !precoEnvio.enviadosHoje.has(c.id))
+    .filter(c => filtro === "todos" ? true : filtro === "soja" ? (c.flag_soja_disponivel || c.flag_soja_futuro) : filtro === "sd" ? c.flag_soja_disponivel : filtro === "sf" ? c.flag_soja_futuro : filtro === "milho" ? (c.flag_milho_disponivel || c.flag_milho_futuro) : !precoEnvio.enviadosHoje.has(c.id))
     .sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
 }
 function renderPrecoEnvioLista() {
   const body = document.getElementById("pe_lista"); if (!body) return;
   const lista = precoEnvioClientes();
-  const temMsg = !!precoEnvioTemplate();
+  const temMsg = !!precoEnvioTemplate(null);
   const esperando = Date.now() < precoEnvio.cooldownAte;
-  document.getElementById("pe_contador").textContent = `${lista.length} cliente${lista.length === 1 ? "" : "s"} · enviados hoje: ${precoEnvio.enviadosHoje.size}`;
+  document.getElementById("pe_contador").textContent = `${lista.length} cliente${lista.length === 1 ? "" : "s"} na lista`;
+  const totalCom = data.cadastros.filter(c => c.tipo === "Produtor" && String(c.telefone || "").replace(/\D/g, "").length >= 10).length;
+  document.getElementById("pe_prog_txt").textContent = `${precoEnvio.enviadosHoje.size} de ${totalCom}`;
+  document.getElementById("pe_prog_bar").style.width = (totalCom ? Math.min(100, precoEnvio.enviadosHoje.size / totalCom * 100) : 0) + "%";
   body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum cliente nesse filtro.</td></tr>` : lista.map(c => {
     const env = precoEnvio.enviadosHoje.get(c.id);
-    const hora = env ? new Date(env).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+    const hora = env ? new Date(env.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
     return `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.telefone)}</td><td>${flagBadgesHtmlLeitura(c)}</td>
-      <td>${env ? `<span style="color:var(--green)">&#10003; enviado ${hora}</span>` : `<span style="color:var(--ink-soft)">—</span>`}</td>
+      <td>${env ? `<span style="color:var(--green)">&#10003; ${env.manual ? "aberto" : "enviado"} ${hora}</span>${env.manual ? ` · <button type="button" class="btn-edit-text" onclick="precoEnvioDesfazer('${c.id}')">desfazer</button>` : ""}` : `<span style="color:var(--ink-soft)">—</span>`}</td>
       <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 12px;font-size:12px" ${temMsg && !esperando ? "" : "disabled"} onclick="enviarPrecoCliente('${c.id}')">${env ? "Reenviar" : "Enviar"}</button>
       <button class="btn-ghost" style="padding:5px 10px;font-size:12px" ${temMsg ? "" : "disabled"} title="Abre a conversa no seu próprio WhatsApp, com a mensagem pronta" onclick="abrirPrecoNoWhatsapp('${c.id}')">Abrir no WhatsApp</button></td></tr>`;
   }).join("");
@@ -2436,7 +2450,7 @@ function precoEnvioIniciarCooldown(seg) {
 }
 async function enviarPrecoCliente(cadastroId, forcar) {
   const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
-  const tpl = precoEnvioTemplate(); if (!tpl) { alert("Preencha ao menos um preço."); return; }
+  const tpl = precoEnvioTemplate(c); if (!tpl) { alert("Preencha ao menos um preço" + (document.getElementById("pe_respeitar")?.checked !== false ? " dos produtos que esse cliente trabalha (ou desmarque a opção de respeitar os produtos)." : ".")); return; }
   if (precoEnvio.enviadosHoje.has(cadastroId) && !forcar && !confirm(`${c.nome} já recebeu o preço hoje. Enviar de novo?`)) return;
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { alert("Sessão expirada, faça login novamente."); return; }
@@ -2453,9 +2467,24 @@ async function enviarPrecoCliente(cadastroId, forcar) {
 async function abrirPrecoNoWhatsapp(cadastroId) {
   const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
   const dig = String(c.telefone || "").replace(/\D/g, ""); const tel = dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig;
-  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(precoEnvioMensagemPara(c))}`, "_blank");
+  const msg = precoEnvioMensagemPara(c);
+  if (!msg) { alert("Preencha ao menos um preço" + (document.getElementById("pe_respeitar")?.checked !== false ? " dos produtos que esse cliente trabalha (ou desmarque a opção de respeitar os produtos)." : ".")); return; }
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, "_blank");
   await sb.from("nexus_email_log").insert({ negocio_id: null, tipo: "WhatsApp Preço do dia (manual)", destinatarios: `cadastro:${c.id} ${c.nome} (${tel})`, enviado_por: currentUserId, sucesso: true, erro: null });
   await loadPrecoEnvio(); renderPrecoEnvioLista();
+}
+async function precoEnvioDesfazer(cadastroId) {
+  if (!confirm("Desfazer a marcação de 'aberto' deste cliente hoje? (Não apaga nada do WhatsApp — só tira a marca na lista.)")) return;
+  await sb.from("nexus_email_log").delete().eq("tipo", "WhatsApp Preço do dia (manual)").like("destinatarios", `cadastro:${cadastroId} %`).gte("created_at", todayISO() + "T00:00:00-04:00");
+  await loadPrecoEnvio(); renderPrecoEnvioLista();
+}
+function precoEnvioTeste() {
+  const eu = data.equipe.find(e => e.user_id === currentUserId);
+  const dig = String((eu && eu.telefone) || "").replace(/\D/g, "");
+  if (dig.length < 10) { alert("Cadastre o seu telefone em Equipe pra testar no seu número."); return; }
+  const msg = precoEnvioMensagemPara({ nome: eu.nome, flag_soja_disponivel: false });
+  if (!msg) { alert("Preencha ao menos um preço."); return; }
+  window.open(`https://wa.me/${dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig}?text=${encodeURIComponent("🧪 TESTE\n\n" + msg)}`, "_blank");
 }
 function renderPrecoEnvio() { precoEnvioPreencherForm(); precoEnvioPrevia(); }
 
