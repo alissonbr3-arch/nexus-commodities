@@ -750,6 +750,12 @@
             <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin:0 0 10px;cursor:pointer"><input type="checkbox" id="pe_respeitar" checked onchange="precoEnvioPrevia()"> Mandar a cada cliente só os produtos que ele trabalha (SD, SF, MD, MF). Cliente sem produto marcado recebe tudo que estiver preenchido.</label>
+          <details id="pe_edit_det" style="margin:0 0 12px">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--gold)">Editar texto da mensagem</summary>
+            <div class="hint" style="margin:8px 0">Escreva como quiser. Variáveis que o sistema troca sozinho: <code>{{SAUDACAO}}</code> (bom dia/boa tarde/boa noite), <code>{{NOME}}</code>, <code>{{DATA}}</code>, <code>{{PRECOS}}</code> (as linhas de preço de cada cliente) e <code>{{OBS}}</code> (a observação). *texto* fica em negrito no WhatsApp. O texto é salvo junto com os preços.</div>
+            <textarea id="pe_texto" rows="9" style="width:100%;font:inherit;font-size:12.5px" oninput="precoEnvioPrevia()"></textarea>
+            <div style="margin-top:6px"><button class="btn-ghost" onclick="precoEnvioTextoPadrao()">Voltar ao texto padrão</button></div>
+          </details>
           <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem (completa — cada cliente recebe só as linhas dele)</div>
           <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
           <div style="display:flex;align-items:center;gap:10px;margin:2px 0 6px"><button class="btn-ghost" onclick="precoEnvioTeste()" title="Abre o WhatsApp no número cadastrado em Equipe pra você, com a mensagem de exemplo">Testar no meu número</button></div>
@@ -2351,7 +2357,7 @@ function precoEnvioPreencherForm() {
   const d = precoEnvio.dados || {};
   const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v ?? ""; };
   set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref);
-  set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs);
+  set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs); set("pe_texto", d.texto || PE_TEXTO_PADRAO);
   const st = document.getElementById("pe_status");
   if (st) {
     if (!d.atualizado_em) st.textContent = "";
@@ -2360,6 +2366,9 @@ function precoEnvioPreencherForm() {
   }
 }
 // Mensagem com {{SAUDACAO}} e {{NOME}} (o servidor troca; a prévia e o "Abrir no WhatsApp" trocam aqui).
+// Texto padrão da mensagem. Variáveis: {{SAUDACAO}} (bom dia/boa tarde/boa noite), {{NOME}}, {{DATA}}, {{PRECOS}} (as linhas de
+// preço de cada cliente) e {{OBS}} (a observação). O corretor pode editar em "Editar texto da mensagem".
+const PE_TEXTO_PADRAO = "{{SAUDACAO}}, {{NOME}}!\n\nPreços de hoje ({{DATA}}):\n\n{{PRECOS}}\n\n{{OBS}}\n\n*Nexus Commodities*";
 // Mensagem com {{SAUDACAO}} e {{NOME}}. Com "respeitar produtos" ligado e um cliente informado, só entram as linhas dos
 // produtos que ele trabalha (flags SD/SF/MD/MF do cadastro); cliente sem nenhuma flag recebe tudo que estiver preenchido.
 function precoEnvioTemplate(cliente) {
@@ -2375,12 +2384,10 @@ function precoEnvioTemplate(cliente) {
   const blocoSoja = [sd != null ? linha("Disponível", sd) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf) : null].filter(Boolean);
   const blocoMilho = [md != null ? linha("Disponível", md) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf) : null].filter(Boolean);
   if (!blocoSoja.length && !blocoMilho.length) return "";
-  const partes = [`{{SAUDACAO}}, {{NOME}}!`, `Preços de hoje (${hoje}):`];
-  if (blocoSoja.length) partes.push(`*Soja*\n${blocoSoja.join("\n")}`);
-  if (blocoMilho.length) partes.push(`*Milho*\n${blocoMilho.join("\n")}`);
-  if (obs) partes.push(obs);
-  partes.push("*Nexus Commodities*");
-  return partes.join("\n\n");
+  const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : ""].filter(Boolean).join("\n\n");
+  let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
+  if (!/\{\{PRECOS\}\}/.test(texto)) texto += "\n\n{{PRECOS}}"; // sem o marcador dos preços, a mensagem sairia sem preço nenhum
+  return texto.replace(/\{\{DATA\}\}/g, hoje).replace(/\{\{PRECOS\}\}/g, precos).replace(/\{\{OBS\}\}/g, obs).replace(/\n{3,}/g, "\n\n").trim();
 }
 function precoEnvioNome(nome) {
   const n = String(nome || "").trim();
@@ -2389,6 +2396,7 @@ function precoEnvioNome(nome) {
 }
 function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
 function precoEnvioMensagemPara(c) { return precoEnvioTemplate(c).replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c.nome)); }
+function precoEnvioTextoPadrao() { document.getElementById("pe_texto").value = PE_TEXTO_PADRAO; precoEnvioPrevia(); }
 function precoEnvioPrevia() {
   const el = document.getElementById("pe_previa"); if (!el) return;
   const t = precoEnvioTemplate(null);
@@ -2398,7 +2406,7 @@ function precoEnvioPrevia() {
 async function salvarPrecoEnvio() {
   const row = { id: 1, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
     milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
-    obs: (document.getElementById("pe_obs").value || "").trim(), atualizado_em: new Date().toISOString(), atualizado_por: currentUserId };
+    obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString(), atualizado_por: currentUserId };
   const { error } = await sb.from("nexus_preco_whatsapp").upsert(row);
   if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
   precoEnvio.dados = row; precoEnvioPreencherForm(); renderPrecoEnvioLista();
