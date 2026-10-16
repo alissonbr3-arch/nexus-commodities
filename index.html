@@ -732,7 +732,7 @@
         <h2 class="page-title">Enviar preços</h2>
         <div class="page-sub">Preencha os preços do dia e mande pelo WhatsApp pra cada cliente, um a um — nada sai automático.</div>
         <div class="panel-card" id="precoEnvioPanel">
-          <div class="hint">Confira a prévia e envie pra cada cliente. Dá pra mandar pelo WhatsApp da Nexus ou abrir a conversa no seu próprio WhatsApp.</div>
+          <div class="hint">Confira a prévia e clique em "Enviar no meu WhatsApp": abre o WhatsApp do seu computador com a mensagem já escrita, é só apertar Enter. Não usa a conta da Nexus.</div>
           <div class="field-row">
             <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div>
             <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div>
@@ -758,7 +758,7 @@
           </details>
           <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem (completa — cada cliente recebe só as linhas dele)</div>
           <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
-          <div style="display:flex;align-items:center;gap:10px;margin:2px 0 6px"><button class="btn-ghost" onclick="precoEnvioTeste()" title="Abre o WhatsApp no número cadastrado em Equipe pra você, com a mensagem de exemplo">Testar no meu número</button></div>
+          <div style="display:flex;align-items:center;gap:10px;margin:2px 0 6px;flex-wrap:wrap"><label style="font-size:12.5px;color:var(--ink-soft)">Abrir em:</label><select id="pe_abrir_em" onchange="precoEnvioMudarAbrirEm(this.value)" style="max-width:240px"><option value="web">WhatsApp Web (no navegador)</option><option value="app">Aplicativo WhatsApp (Mac/Windows)</option></select><button class="btn-ghost" onclick="precoEnvioTeste()" title="Abre o WhatsApp no número cadastrado em Equipe pra você, com a mensagem de exemplo">Testar no meu número</button></div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:4px"><span>Enviados hoje</span><span id="pe_prog_txt"></span></div>
           <div class="ws-progress" style="margin-bottom:12px"><div class="bar" id="pe_prog_bar" style="width:0"></div></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
@@ -774,7 +774,7 @@
             <span id="pe_contador" style="font-size:12px;color:var(--ink-soft)"></span>
           </div>
           <div style="max-height:460px;overflow:auto"><table>
-            <thead><tr><th>Cliente</th><th>Telefone</th><th>Produtos</th><th>Hoje</th><th></th></tr></thead>
+            <thead><tr><th>Cliente</th><th>Chamar de</th><th>Telefone</th><th>Produtos</th><th>Hoje</th><th></th></tr></thead>
             <tbody id="pe_lista"></tbody>
           </table></div>
         </div>
@@ -2342,7 +2342,7 @@ async function salvarPrecoMercadoLinha(id) {
 }
 // ---------------- ENVIO DE PREÇOS AOS CLIENTES (WhatsApp, um a um) ----------------
 const PE_TIPOS_LOG = ["WhatsApp Preço do dia", "WhatsApp Preço do dia (manual)"];
-let precoEnvio = { dados: null, enviadosHoje: new Map(), cooldownAte: 0, timer: null };
+let precoEnvio = { dados: null, enviadosHoje: new Map() };
 async function loadPrecoEnvio() {
   try {
     const { data: row } = await sb.from("nexus_preco_whatsapp").select("*").eq("id", 1).maybeSingle();
@@ -2389,13 +2389,14 @@ function precoEnvioTemplate(cliente) {
   if (!/\{\{PRECOS\}\}/.test(texto)) texto += "\n\n{{PRECOS}}"; // sem o marcador dos preços, a mensagem sairia sem preço nenhum
   return texto.replace(/\{\{DATA\}\}/g, hoje).replace(/\{\{PRECOS\}\}/g, precos).replace(/\{\{OBS\}\}/g, obs).replace(/\n{3,}/g, "\n\n").trim();
 }
-function precoEnvioNome(nome) {
-  const n = String(nome || "").trim();
+function precoEnvioNome(nomeOuCliente) {
+  if (nomeOuCliente && typeof nomeOuCliente === "object" && String(nomeOuCliente.apelido || "").trim()) return String(nomeOuCliente.apelido).trim();
+  const n = String((nomeOuCliente && typeof nomeOuCliente === "object") ? nomeOuCliente.nome : nomeOuCliente || "").trim();
   if (/\b(ltda|s\.?a\.?|eireli|me|epp|agro|agropecu\w*|grupo|cooperativa|fazendas?|comercio|comércio|cereais|armaz\w+)\b/i.test(n)) return n;
   const p = n.split(/\s+/)[0] || n; return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
-function precoEnvioMensagemPara(c) { return precoEnvioTemplate(c).replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c.nome)); }
+function precoEnvioMensagemPara(c) { return precoEnvioTemplate(c).replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c)); }
 function precoEnvioTextoPadrao() { document.getElementById("pe_texto").value = PE_TEXTO_PADRAO; precoEnvioPrevia(); }
 function precoEnvioPrevia() {
   const el = document.getElementById("pe_previa"); if (!el) return;
@@ -2430,56 +2431,45 @@ function renderPrecoEnvioLista() {
   const body = document.getElementById("pe_lista"); if (!body) return;
   const lista = precoEnvioClientes();
   const temMsg = !!precoEnvioTemplate(null);
-  const esperando = Date.now() < precoEnvio.cooldownAte;
   document.getElementById("pe_contador").textContent = `${lista.length} cliente${lista.length === 1 ? "" : "s"} na lista`;
   const totalCom = data.cadastros.filter(c => c.tipo === "Produtor" && String(c.telefone || "").replace(/\D/g, "").length >= 10).length;
   document.getElementById("pe_prog_txt").textContent = `${precoEnvio.enviadosHoje.size} de ${totalCom}`;
   document.getElementById("pe_prog_bar").style.width = (totalCom ? Math.min(100, precoEnvio.enviadosHoje.size / totalCom * 100) : 0) + "%";
-  body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum cliente nesse filtro.</td></tr>` : lista.map(c => {
+  body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhum cliente nesse filtro.</td></tr>` : lista.map(c => {
     const env = precoEnvio.enviadosHoje.get(c.id);
     const hora = env ? new Date(env.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
-    return `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.telefone)}</td><td>${flagBadgesHtmlLeitura(c)}</td>
-      <td>${env ? `<span style="color:var(--green)">&#10003; ${env.manual ? "aberto" : "enviado"} ${hora}</span>${env.manual ? ` · <button type="button" class="btn-edit-text" onclick="precoEnvioDesfazer('${c.id}')">desfazer</button>` : ""}` : `<span style="color:var(--ink-soft)">—</span>`}</td>
-      <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 12px;font-size:12px" ${temMsg && !esperando ? "" : "disabled"} onclick="enviarPrecoCliente('${c.id}')">${env ? "Reenviar" : "Enviar"}</button>
-      <button class="btn-ghost" style="padding:5px 10px;font-size:12px" ${temMsg ? "" : "disabled"} title="Abre a conversa no seu próprio WhatsApp, com a mensagem pronta" onclick="abrirPrecoNoWhatsapp('${c.id}')">Abrir no WhatsApp</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.nome)}</td>
+      <td><input type="text" value="${escapeHtml(c.apelido || "")}" placeholder="${escapeHtml(precoEnvioNome({ nome: c.nome }))}" title="Como chamar o cliente na mensagem. Em branco: usa o nome do cadastro." style="width:130px;padding:4px 8px;font-size:12px" onchange="precoEnvioSalvarApelido('${c.id}', this.value)"></td>
+      <td>${escapeHtml(c.telefone)}</td><td>${flagBadgesHtmlLeitura(c)}</td>
+      <td>${env ? `<span style="color:var(--green)">&#10003; aberto ${hora}</span> · <button type="button" class="btn-edit-text" onclick="precoEnvioDesfazer('${c.id}')">desfazer</button>` : `<span style="color:var(--ink-soft)">—</span>`}</td>
+      <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 12px;font-size:12px" ${temMsg ? "" : "disabled"} title="Abre o WhatsApp do seu computador com a mensagem pronta" onclick="abrirPrecoNoWhatsapp('${c.id}')">${env ? "Abrir de novo" : "Enviar no meu WhatsApp"}</button></td></tr>`;
   }).join("");
 }
 function flagBadgesHtmlLeitura(c) { return WS_FLAGS.filter(f => c[f.campo]).map(f => `<span class="flag-badge ${f.grupo} active" title="${f.title}">${f.label}</span>`).join(" ") || `<span style="color:var(--ink-dim)">—</span>`; }
-function precoEnvioIniciarCooldown(seg) {
-  precoEnvio.cooldownAte = Date.now() + seg * 1000;
-  clearInterval(precoEnvio.timer);
-  const st = document.getElementById("pe_status");
-  precoEnvio.timer = setInterval(() => {
-    const falta = Math.ceil((precoEnvio.cooldownAte - Date.now()) / 1000);
-    if (falta <= 0) { clearInterval(precoEnvio.timer); if (st) st.textContent = ""; renderPrecoEnvioLista(); }
-    else if (st) st.textContent = `Próximo envio liberado em ${falta}s (intervalo que protege a conta do WhatsApp)`;
-  }, 500);
-  renderPrecoEnvioLista();
+// Abre o WhatsApp DO CORRETOR (o que estiver aberto no computador dele) com a mensagem pronta: é só apertar Enter.
+// Não usa a conta da Nexus. "WhatsApp Web" abre/reaproveita uma aba; "Aplicativo" abre o WhatsApp Desktop do Mac/Windows.
+function precoEnvioAbrirEm() { try { return localStorage.getItem("nexus_pe_abrir_em") || "web"; } catch { return "web"; } }
+function precoEnvioMudarAbrirEm(v) { try { localStorage.setItem("nexus_pe_abrir_em", v); } catch {} }
+function precoEnvioAbrirWhats(telDigitos, texto) {
+  const dig = String(telDigitos || "").replace(/\D/g, ""); const tel = dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig;
+  if (precoEnvioAbrirEm() === "app") { const a = document.createElement("a"); a.href = `whatsapp://send?phone=${tel}&text=${encodeURIComponent(texto)}`; document.body.appendChild(a); a.click(); a.remove(); }
+  else window.open(`https://web.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(texto)}`, "nexus_whatsapp_web");
+  return tel;
 }
-async function enviarPrecoCliente(cadastroId, forcar) {
-  const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
-  const tpl = precoEnvioTemplate(c); if (!tpl) { alert("Preencha ao menos um preço" + (document.getElementById("pe_respeitar")?.checked !== false ? " dos produtos que esse cliente trabalha (ou desmarque a opção de respeitar os produtos)." : ".")); return; }
-  if (precoEnvio.enviadosHoje.has(cadastroId) && !forcar && !confirm(`${c.nome} já recebeu o preço hoje. Enviar de novo?`)) return;
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
-  precoEnvioIniciarCooldown(25); // trava já, pra não clicar duas vezes
-  try {
-    const resp = await fetch("/.netlify/functions/enviar-preco-whatsapp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cadastro_id: cadastroId, mensagem: tpl, access_token: session.access_token, forcar: true }) });
-    const j = await resp.json();
-    if (!j.ok) { alert(j.erro || "Não consegui enviar."); if (j.aguardar) precoEnvioIniciarCooldown(j.aguardar); else { precoEnvio.cooldownAte = 0; clearInterval(precoEnvio.timer); document.getElementById("pe_status").textContent = ""; } }
-    else precoEnvioIniciarCooldown(21);
-  } catch (e) { alert("Erro ao enviar: " + e.message); precoEnvio.cooldownAte = 0; clearInterval(precoEnvio.timer); }
-  await loadPrecoEnvio(); renderPrecoEnvioLista();
-}
-// Pelo próprio WhatsApp do corretor (wa.me): não usa a conta da Nexus no Z-API. Registra como enviado hoje.
 async function abrirPrecoNoWhatsapp(cadastroId) {
   const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
-  const dig = String(c.telefone || "").replace(/\D/g, ""); const tel = dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig;
   const msg = precoEnvioMensagemPara(c);
   if (!msg) { alert("Preencha ao menos um preço" + (document.getElementById("pe_respeitar")?.checked !== false ? " dos produtos que esse cliente trabalha (ou desmarque a opção de respeitar os produtos)." : ".")); return; }
-  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, "_blank");
+  const tel = precoEnvioAbrirWhats(c.telefone, msg);
   await sb.from("nexus_email_log").insert({ negocio_id: null, tipo: "WhatsApp Preço do dia (manual)", destinatarios: `cadastro:${c.id} ${c.nome} (${tel})`, enviado_por: currentUserId, sucesso: true, erro: null });
   await loadPrecoEnvio(); renderPrecoEnvioLista();
+}
+async function precoEnvioSalvarApelido(cadastroId, valor) {
+  const apelido = String(valor || "").trim() || null;
+  const { error } = await sb.from("nexus_cadastros").update({ apelido }).eq("id", cadastroId);
+  if (error) { alert("Erro ao salvar o apelido: " + error.message); return; }
+  const c = data.cadastros.find(x => x.id === cadastroId); if (c) c.apelido = apelido;
+  precoEnvioPrevia();
 }
 async function precoEnvioDesfazer(cadastroId) {
   if (!confirm("Desfazer a marcação de 'aberto' deste cliente hoje? (Não apaga nada do WhatsApp — só tira a marca na lista.)")) return;
@@ -2492,9 +2482,9 @@ function precoEnvioTeste() {
   if (dig.length < 10) { alert("Cadastre o seu telefone em Equipe pra testar no seu número."); return; }
   const msg = precoEnvioMensagemPara({ nome: eu.nome, flag_soja_disponivel: false });
   if (!msg) { alert("Preencha ao menos um preço."); return; }
-  window.open(`https://wa.me/${dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig}?text=${encodeURIComponent("🧪 TESTE\n\n" + msg)}`, "_blank");
+  precoEnvioAbrirWhats(dig, "🧪 TESTE\n\n" + msg);
 }
-function renderPrecoEnvio() { precoEnvioPreencherForm(); precoEnvioPrevia(); }
+function renderPrecoEnvio() { precoEnvioPreencherForm(); const sel = document.getElementById("pe_abrir_em"); if (sel) sel.value = precoEnvioAbrirEm(); precoEnvioPrevia(); }
 
 function renderPrecoMercado() {
   const body = document.getElementById("precoMercadoBody");
@@ -4312,6 +4302,7 @@ function openContatoModal(id) {
         : `<div style="font-size:11.5px;color:var(--ink-soft)">Salve o cadastro para adicionar uma foto.</div>`}
     </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
+    <div class="field"><label>Apelido <span style="font-weight:400;color:var(--ink-soft)">(como o cliente prefere ser chamado — usado nas mensagens de preço)</span></label><input type="text" id="f_apelido" value="${escapeHtml(item.apelido || "")}" placeholder="Ex.: Dida, Seu Zé, Dr. Carlos"></div>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora","Armazém"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     ${extraContatoBlocoHtml("telefone", item.telefones_extra, "telefones")}
     ${cidadeUfFieldsHtml(item.cidade, !id)}
@@ -4383,7 +4374,7 @@ function openContatoModal(id) {
 }
 async function saveContato(id) {
   const tipo = v("f_ctipo");
-  const payload = { nome: v("f_nome")||"—", tipo, telefone: v("f_telefone"), telefones_extra: coletarExtras("telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, emails_extra: coletarExtras("email"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
+  const payload = { nome: v("f_nome")||"—", apelido: v("f_apelido") || null, tipo, telefone: v("f_telefone"), telefones_extra: coletarExtras("telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, emails_extra: coletarExtras("email"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     grupo_id: (v("f_grupoSelect") && v("f_grupoSelect") !== "__novo__") ? v("f_grupoSelect") : null,
     cep: v("f_cep") || null, endereco: v("f_endereco") || null, endereco_numero: v("f_endNumero") || null, complemento: v("f_endComplemento") || null, bairro: v("f_bairro") || null,
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
