@@ -668,6 +668,44 @@
           </div>
         </div>
 
+        <div class="panel-card" id="precoEnvioPanel">
+          <h3>Enviar preços aos clientes (WhatsApp)</h3>
+          <div class="hint">Preencha os preços de hoje, confira a prévia e envie pra cada cliente, um a um. Dá pra mandar pelo WhatsApp da Nexus ou abrir a conversa no seu próprio WhatsApp.</div>
+          <div class="field-row">
+            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
+          </div>
+          <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
+            <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar preços</button>
+            <button class="btn-ghost" onclick="precoEnvioPuxarDoMercado()">Puxar o maior preço da tabela acima</button>
+            <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
+          </div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem</div>
+          <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <input type="text" id="pe_busca" placeholder="Buscar cliente..." oninput="renderPrecoEnvioLista()" style="max-width:240px">
+            <select id="pe_filtro" onchange="renderPrecoEnvioLista()" style="max-width:260px">
+              <option value="todos">Todos os produtores com telefone</option>
+              <option value="soja">Só quem trabalha soja (SD ou SF)</option>
+              <option value="sd">Só soja disponível (SD)</option>
+              <option value="sf">Só soja futuro (SF)</option>
+              <option value="pendentes">Só quem ainda não recebeu hoje</option>
+            </select>
+            <span id="pe_contador" style="font-size:12px;color:var(--ink-soft)"></span>
+          </div>
+          <div style="max-height:460px;overflow:auto"><table>
+            <thead><tr><th>Cliente</th><th>Telefone</th><th>Produtos</th><th>Hoje</th><th></th></tr></thead>
+            <tbody id="pe_lista"></tbody>
+          </table></div>
+        </div>
+
         <div class="panel-card">
           <h3>Histórico de preço por comprador</h3>
           <div class="hint">Evolução dos preços salvos dia a dia. Começa a partir de agora — sem dados retroativos.</div>
@@ -1318,7 +1356,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig(), loadPrecoEnvio()]);
   renderAll();
   navRestaurar();
   wireRealtime();
@@ -1350,7 +1388,7 @@ async function loadFazendas() { const { data: rows, error } = await sb.from("nex
 function wireRealtime() {
   sb.channel("nexus-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderWorkspace(); renderAgendaSemana(); renderEmbarquesPage(); renderDashboard(); renderFinanceiro(); renderNotificacoes(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); renderPrecoMercado(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cadastros" }, async () => { await loadCadastros(); renderContatos(); renderWorkspace(); renderRelatorios(); renderPrecoMercado(); renderPrecoEnvioLista(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_tarefas" }, async () => { await loadTarefas(); renderTarefas(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, async () => { await loadCotacoes(); await loadCotacoesHistorico(); renderCotacoes(); renderNotificacoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
@@ -1365,7 +1403,7 @@ function wireRealtime() {
 }
 
 function renderAll() {
-  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); renderRelatorios(); renderNotificacoes(); aplicarIconeTema();
+  renderDashboard(); renderCotacoes(); renderDolarStrip(); renderNegocios(); renderEmbarquesPage(); renderContatos(); renderFinanceiro(); renderTarefas(); renderWorkspace(); renderFunil(); renderAgendaSemana(); renderEquipe(); atualizarAvatarHeader(); renderConfiguracoes(); renderRelatorios(); renderNotificacoes(); aplicarIconeTema(); renderPrecoEnvio();
   const activeSub = document.querySelector(".subtab-btn.active")?.dataset.subtab;
   if (activeSub === "compradores") renderDashboardCompradores();
   if (activeSub === "produtores") renderDashboardProdutores();
@@ -2284,6 +2322,136 @@ async function salvarPrecoMercadoLinha(id) {
   await loadCadastros();
   renderPrecoMercado();
 }
+// ---------------- ENVIO DE PREÇOS AOS CLIENTES (WhatsApp, um a um) ----------------
+const PE_TIPOS_LOG = ["WhatsApp Preço do dia", "WhatsApp Preço do dia (manual)"];
+let precoEnvio = { dados: null, enviadosHoje: new Map(), cooldownAte: 0, timer: null };
+async function loadPrecoEnvio() {
+  try {
+    const { data: row } = await sb.from("nexus_preco_whatsapp").select("*").eq("id", 1).maybeSingle();
+    precoEnvio.dados = row || null;
+    const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at").in("tipo", PE_TIPOS_LOG).eq("sucesso", true).gte("created_at", todayISO() + "T00:00:00-04:00");
+    precoEnvio.enviadosHoje = new Map();
+    (logs || []).forEach(l => { const m = /^cadastro:([0-9a-f-]{36}) /.exec(l.destinatarios || ""); if (m && !precoEnvio.enviadosHoje.has(m[1])) precoEnvio.enviadosHoje.set(m[1], l.created_at); });
+  } catch (e) { /* tabela ainda não existe ou sem acesso: o painel segue vazio */ }
+}
+function precoEnvioNum(id) { const v = document.getElementById(id); return v && v.value !== "" ? Number(v.value) : null; }
+function precoEnvioPreencherForm() {
+  const d = precoEnvio.dados || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v ?? ""; };
+  set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref);
+  set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs);
+  const st = document.getElementById("pe_status");
+  if (st) {
+    if (!d.atualizado_em) st.textContent = "";
+    else { const dt = new Date(d.atualizado_em); const hojeOk = d.atualizado_em.slice(0, 10) === todayISO() || dt.toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" }) === todayISO();
+      st.innerHTML = hojeOk ? `Salvo hoje às ${dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : `<span style="color:var(--red)">&#9888; Preços salvos em ${dt.toLocaleDateString("pt-BR")} — atualize antes de enviar</span>`; }
+  }
+}
+// Mensagem com {{SAUDACAO}} e {{NOME}} (o servidor troca; a prévia e o "Abrir no WhatsApp" trocam aqui).
+function precoEnvioTemplate() {
+  const sd = precoEnvioNum("pe_soja_disp"), sf = precoEnvioNum("pe_soja_fut"), md = precoEnvioNum("pe_milho_disp"), mf = precoEnvioNum("pe_milho_fut");
+  const refS = (document.getElementById("pe_soja_ref")?.value || "").trim(), refM = (document.getElementById("pe_milho_ref")?.value || "").trim();
+  const obs = (document.getElementById("pe_obs")?.value || "").trim();
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const linha = (rot, v) => `• ${rot}: *${fmtMoney(v)}/sc*`;
+  const blocoSoja = [sd != null ? linha("Disponível", sd) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf) : null].filter(Boolean);
+  const blocoMilho = [md != null ? linha("Disponível", md) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf) : null].filter(Boolean);
+  if (!blocoSoja.length && !blocoMilho.length) return "";
+  const partes = [`{{SAUDACAO}}, {{NOME}}!`, `Preços de hoje (${hoje}):`];
+  if (blocoSoja.length) partes.push(`*Soja*\n${blocoSoja.join("\n")}`);
+  if (blocoMilho.length) partes.push(`*Milho*\n${blocoMilho.join("\n")}`);
+  if (obs) partes.push(obs);
+  partes.push("*Nexus Commodities*");
+  return partes.join("\n\n");
+}
+function precoEnvioNome(nome) {
+  const n = String(nome || "").trim();
+  if (/\b(ltda|s\.?a\.?|eireli|me|epp|agro|agropecu\w*|grupo|cooperativa|fazendas?|comercio|comércio|cereais|armaz\w+)\b/i.test(n)) return n;
+  const p = n.split(/\s+/)[0] || n; return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+}
+function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
+function precoEnvioMensagemPara(c) { return precoEnvioTemplate().replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c.nome)); }
+function precoEnvioPrevia() {
+  const el = document.getElementById("pe_previa"); if (!el) return;
+  const t = precoEnvioTemplate();
+  el.textContent = t ? t.replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, "Nome do cliente") : "Preencha ao menos um preço pra ver a mensagem.";
+  renderPrecoEnvioLista();
+}
+async function salvarPrecoEnvio() {
+  const row = { id: 1, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
+    milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
+    obs: (document.getElementById("pe_obs").value || "").trim(), atualizado_em: new Date().toISOString(), atualizado_por: currentUserId };
+  const { error } = await sb.from("nexus_preco_whatsapp").upsert(row);
+  if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
+  precoEnvio.dados = row; precoEnvioPreencherForm(); renderPrecoEnvioLista();
+}
+function precoEnvioPuxarDoMercado() {
+  const compradores = data.cadastros.filter(c => c.tipo === "Comprador");
+  const maior = campo => { const v = compradores.map(c => Number(c[campo])).filter(n => n > 0); return v.length ? Math.max(...v) : null; };
+  const set = (id, v) => { if (v != null) document.getElementById(id).value = v; };
+  set("pe_soja_disp", maior("preco_soja_disponivel")); set("pe_soja_fut", maior("preco_soja_futuro"));
+  set("pe_milho_disp", maior("preco_milho_disponivel")); set("pe_milho_fut", maior("preco_milho_futuro"));
+  precoEnvioPrevia();
+}
+function precoEnvioClientes() {
+  const filtro = document.getElementById("pe_filtro")?.value || "todos", busca = (document.getElementById("pe_busca")?.value || "").trim().toLowerCase();
+  return data.cadastros.filter(c => c.tipo === "Produtor" && String(c.telefone || "").replace(/\D/g, "").length >= 10)
+    .filter(c => !busca || String(c.nome || "").toLowerCase().includes(busca))
+    .filter(c => filtro === "todos" ? true : filtro === "soja" ? (c.flag_soja_disponivel || c.flag_soja_futuro) : filtro === "sd" ? c.flag_soja_disponivel : filtro === "sf" ? c.flag_soja_futuro : !precoEnvio.enviadosHoje.has(c.id))
+    .sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+}
+function renderPrecoEnvioLista() {
+  const body = document.getElementById("pe_lista"); if (!body) return;
+  const lista = precoEnvioClientes();
+  const temMsg = !!precoEnvioTemplate();
+  const esperando = Date.now() < precoEnvio.cooldownAte;
+  document.getElementById("pe_contador").textContent = `${lista.length} cliente${lista.length === 1 ? "" : "s"} · enviados hoje: ${precoEnvio.enviadosHoje.size}`;
+  body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="5">Nenhum cliente nesse filtro.</td></tr>` : lista.map(c => {
+    const env = precoEnvio.enviadosHoje.get(c.id);
+    const hora = env ? new Date(env).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+    return `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.telefone)}</td><td>${flagBadgesHtmlLeitura(c)}</td>
+      <td>${env ? `<span style="color:var(--green)">&#10003; enviado ${hora}</span>` : `<span style="color:var(--ink-soft)">—</span>`}</td>
+      <td style="white-space:nowrap"><button class="btn-primary" style="padding:5px 12px;font-size:12px" ${temMsg && !esperando ? "" : "disabled"} onclick="enviarPrecoCliente('${c.id}')">${env ? "Reenviar" : "Enviar"}</button>
+      <button class="btn-ghost" style="padding:5px 10px;font-size:12px" ${temMsg ? "" : "disabled"} title="Abre a conversa no seu próprio WhatsApp, com a mensagem pronta" onclick="abrirPrecoNoWhatsapp('${c.id}')">Abrir no WhatsApp</button></td></tr>`;
+  }).join("");
+}
+function flagBadgesHtmlLeitura(c) { return WS_FLAGS.filter(f => c[f.campo]).map(f => `<span class="flag-badge ${f.grupo} active" title="${f.title}">${f.label}</span>`).join(" ") || `<span style="color:var(--ink-dim)">—</span>`; }
+function precoEnvioIniciarCooldown(seg) {
+  precoEnvio.cooldownAte = Date.now() + seg * 1000;
+  clearInterval(precoEnvio.timer);
+  const st = document.getElementById("pe_status");
+  precoEnvio.timer = setInterval(() => {
+    const falta = Math.ceil((precoEnvio.cooldownAte - Date.now()) / 1000);
+    if (falta <= 0) { clearInterval(precoEnvio.timer); if (st) st.textContent = ""; renderPrecoEnvioLista(); }
+    else if (st) st.textContent = `Próximo envio liberado em ${falta}s (intervalo que protege a conta do WhatsApp)`;
+  }, 500);
+  renderPrecoEnvioLista();
+}
+async function enviarPrecoCliente(cadastroId, forcar) {
+  const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
+  const tpl = precoEnvioTemplate(); if (!tpl) { alert("Preencha ao menos um preço."); return; }
+  if (precoEnvio.enviadosHoje.has(cadastroId) && !forcar && !confirm(`${c.nome} já recebeu o preço hoje. Enviar de novo?`)) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { alert("Sessão expirada, faça login novamente."); return; }
+  precoEnvioIniciarCooldown(25); // trava já, pra não clicar duas vezes
+  try {
+    const resp = await fetch("/.netlify/functions/enviar-preco-whatsapp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cadastro_id: cadastroId, mensagem: tpl, access_token: session.access_token, forcar: true }) });
+    const j = await resp.json();
+    if (!j.ok) { alert(j.erro || "Não consegui enviar."); if (j.aguardar) precoEnvioIniciarCooldown(j.aguardar); else { precoEnvio.cooldownAte = 0; clearInterval(precoEnvio.timer); document.getElementById("pe_status").textContent = ""; } }
+    else precoEnvioIniciarCooldown(21);
+  } catch (e) { alert("Erro ao enviar: " + e.message); precoEnvio.cooldownAte = 0; clearInterval(precoEnvio.timer); }
+  await loadPrecoEnvio(); renderPrecoEnvioLista();
+}
+// Pelo próprio WhatsApp do corretor (wa.me): não usa a conta da Nexus no Z-API. Registra como enviado hoje.
+async function abrirPrecoNoWhatsapp(cadastroId) {
+  const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
+  const dig = String(c.telefone || "").replace(/\D/g, ""); const tel = dig.startsWith("55") && dig.length >= 12 ? dig : "55" + dig;
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(precoEnvioMensagemPara(c))}`, "_blank");
+  await sb.from("nexus_email_log").insert({ negocio_id: null, tipo: "WhatsApp Preço do dia (manual)", destinatarios: `cadastro:${c.id} ${c.nome} (${tel})`, enviado_por: currentUserId, sucesso: true, erro: null });
+  await loadPrecoEnvio(); renderPrecoEnvioLista();
+}
+function renderPrecoEnvio() { precoEnvioPreencherForm(); precoEnvioPrevia(); }
+
 function renderPrecoMercado() {
   const body = document.getElementById("precoMercadoBody");
   if (!body) return;
