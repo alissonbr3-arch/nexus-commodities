@@ -571,13 +571,7 @@
               <div class="chart-wrap"><canvas id="compradorVolumeMensalChart"></canvas></div>
             </div>
           </div>
-          <div class="panel-card">
-            <h3>Ranking de compradores</h3>
-            <table>
-              <thead><tr><th>#</th><th>Comprador</th><th>Cidade/UF</th><th>Volume (sc)</th><th>Valor interm.</th><th>Comissão</th><th>Negócios</th><th>Part. %</th></tr></thead>
-              <tbody id="rankingCompradoresBody"></tbody>
-            </table>
-          </div>
+<div id="rankingCompradoresGraos"></div>
         </div>
         <div class="subpage" id="sub-produtores" style="display:none">
           <div class="page-sub" id="produtoresSub">—</div>
@@ -2168,15 +2162,31 @@ function renderDashboardCompradores() {
   if (compradorVolumeMensalChart) compradorVolumeMensalChart.destroy();
   compradorVolumeMensalChart = new Chart(ctxV, { type: "bar", data: { labels: months.map(m=>m.label), datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: top5.length > 0, position: "bottom", labels: { color: chartTickColor, boxWidth: 10, font: { size: 10.5 } } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: chartTickColor } }, y: { stacked: true, beginAtZero: true, grid: { color: chartGridColor }, ticks: { color: chartTickColor } } } } });
 
-  document.getElementById("rankingCompradoresBody").innerHTML = stats.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum comprador cadastrado.</td></tr>` :
-    stats.map((s,i) => `<tr>
-      <td>${i+1}</td><td>${s.cadastro.nome}</td><td>${s.cadastro.cidade || "—"}</td>
-      <td>${fmtNum(s.volume)}</td><td>${fmtMoney(s.valorInterm)}</td><td>${fmtMoney(s.comissao)}</td><td>${s.negocios}</td>
-      <td>${participacaoBarHtml(s.participacao)}</td>
-    </tr>`).join("") + (stats.length === 0 ? "" : `<tr style="font-weight:700;background:var(--card-alt)">
-      <td></td><td>Total</td><td></td>
-      <td>${fmtNum(volumeTotal)}</td><td>${fmtMoney(valorIntermTotal)}</td><td>${fmtMoney(comissaoTotalComp)}</td><td>${negociosTotalComp}</td><td></td>
-    </tr>`);
+  // Ranking separado por grão: Soja, Milho e (se houver) Sorgo/outros. A participação é dentro de cada grão.
+  const ehGrao = g => n => String(n.grao || "").toLowerCase() === g.toLowerCase();
+  const principais = ["Soja", "Milho"];
+  const grupos = [
+    { titulo: "Soja", filtro: ehGrao("Soja") }, { titulo: "Milho", filtro: ehGrao("Milho") },
+    { titulo: "Sorgo e outros", filtro: n => !principais.some(g => ehGrao(g)(n)) },
+  ];
+  document.getElementById("rankingCompradoresGraos").innerHTML = grupos.map(g => {
+    const negs = data.negocios.filter(n => n.cliente_id && g.filtro(n));
+    const linhas = compradores.map(c => {
+      const ns = negs.filter(n => n.cliente_id === c.id);
+      return { c, volume: ns.reduce((s, n) => s + Number(n.quantidade || 0), 0), valor: ns.reduce((s, n) => s + Number(n.quantidade || 0) * Number(n.preco || 0), 0), comissao: ns.reduce((s, n) => s + Number(n.comissao || 0), 0), negocios: ns.length };
+    }).filter(l => l.negocios > 0).sort((a, b) => b.volume - a.volume);
+    if (!linhas.length && g.titulo === "Sorgo e outros") return "";
+    const tVol = linhas.reduce((s, l) => s + l.volume, 0), tVal = linhas.reduce((s, l) => s + l.valor, 0), tCom = linhas.reduce((s, l) => s + l.comissao, 0), tNeg = linhas.reduce((s, l) => s + l.negocios, 0);
+    return `<div class="panel-card">
+      <h3>Ranking de compradores — ${g.titulo}</h3>
+      <table>
+        <thead><tr><th>#</th><th>Comprador</th><th>Cidade/UF</th><th>Volume (sc)</th><th>Valor interm.</th><th>Comissão</th><th>Negócios</th><th>Part. %</th></tr></thead>
+        <tbody>${linhas.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum negócio de ${g.titulo.toLowerCase()} com comprador.</td></tr>` :
+          linhas.map((l, i) => `<tr><td>${i + 1}</td><td>${l.c.nome}</td><td>${l.c.cidade || "—"}</td><td>${fmtNum(l.volume)}</td><td>${fmtMoney(l.valor)}</td><td>${fmtMoney(l.comissao)}</td><td>${l.negocios}</td><td>${participacaoBarHtml(tVol > 0 ? l.volume / tVol * 100 : 0)}</td></tr>`).join("") +
+          `<tr style="font-weight:700;background:var(--card-alt)"><td></td><td>Total</td><td></td><td>${fmtNum(tVol)}</td><td>${fmtMoney(tVal)}</td><td>${fmtMoney(tCom)}</td><td>${tNeg}</td><td></td></tr>`}</tbody>
+      </table>
+    </div>`;
+  }).join("");
 }
 
 // ---------------- DASHBOARD PRODUTORES ----------------
