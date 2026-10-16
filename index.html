@@ -440,6 +440,7 @@
     <div class="nav-group">
       <button class="nav-item active" data-page="dashboard"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="label"> Dashboard</span></button>
       <button class="nav-item" data-page="cotacoes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span><span class="label"> Mercado</span></button>
+      <button class="nav-item" data-page="precos"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 20l1.2-4.7A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 11h8M8 14h5"/></svg></span><span class="label"> Enviar preços</span></button>
       <button class="nav-item" data-page="workspace"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span><span class="label"> Workspace</span></button>
       <button class="nav-item" data-page="funil"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span><span class="label"> Funil</span></button>
       <button class="nav-item" data-page="negociacoes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></span><span class="label"> Negociações</span></button>
@@ -668,44 +669,6 @@
           </div>
         </div>
 
-        <div class="panel-card" id="precoEnvioPanel">
-          <h3>Enviar preços aos clientes (WhatsApp)</h3>
-          <div class="hint">Preencha os preços de hoje, confira a prévia e envie pra cada cliente, um a um. Dá pra mandar pelo WhatsApp da Nexus ou abrir a conversa no seu próprio WhatsApp.</div>
-          <div class="field-row">
-            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
-          </div>
-          <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
-            <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar preços</button>
-            <button class="btn-ghost" onclick="precoEnvioPuxarDoMercado()">Puxar o maior preço da tabela acima</button>
-            <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
-          </div>
-          <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem</div>
-          <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <input type="text" id="pe_busca" placeholder="Buscar cliente..." oninput="renderPrecoEnvioLista()" style="max-width:240px">
-            <select id="pe_filtro" onchange="renderPrecoEnvioLista()" style="max-width:260px">
-              <option value="todos">Todos os produtores com telefone</option>
-              <option value="soja">Só quem trabalha soja (SD ou SF)</option>
-              <option value="sd">Só soja disponível (SD)</option>
-              <option value="sf">Só soja futuro (SF)</option>
-              <option value="pendentes">Só quem ainda não recebeu hoje</option>
-            </select>
-            <span id="pe_contador" style="font-size:12px;color:var(--ink-soft)"></span>
-          </div>
-          <div style="max-height:460px;overflow:auto"><table>
-            <thead><tr><th>Cliente</th><th>Telefone</th><th>Produtos</th><th>Hoje</th><th></th></tr></thead>
-            <tbody id="pe_lista"></tbody>
-          </table></div>
-        </div>
-
         <div class="panel-card">
           <h3>Histórico de preço por comprador</h3>
           <div class="hint">Evolução dos preços salvos dia a dia. Começa a partir de agora — sem dados retroativos.</div>
@@ -762,6 +725,49 @@
           <button class="btn-primary" onclick="salvarPrecoPraca()">Salvar</button>
           <div id="cfgPracaSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
         </div>
+      </div>
+
+      <!-- ENVIAR PREÇOS (WhatsApp) -->
+      <div class="page" id="page-precos">
+        <h2 class="page-title">Enviar preços</h2>
+        <div class="page-sub">Preencha os preços do dia e mande pelo WhatsApp pra cada cliente, um a um — nada sai automático.</div>
+        <div class="panel-card" id="precoEnvioPanel">
+          <div class="hint">Confira a prévia e envie pra cada cliente. Dá pra mandar pelo WhatsApp da Nexus ou abrir a conversa no seu próprio WhatsApp.</div>
+          <div class="field-row">
+            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
+          </div>
+          <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
+            <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar preços</button>
+            <button class="btn-ghost" onclick="precoEnvioPuxarDoMercado()">Puxar o maior preço da tabela acima</button>
+            <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
+          </div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem</div>
+          <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <input type="text" id="pe_busca" placeholder="Buscar cliente..." oninput="renderPrecoEnvioLista()" style="max-width:240px">
+            <select id="pe_filtro" onchange="renderPrecoEnvioLista()" style="max-width:260px">
+              <option value="todos">Todos os produtores com telefone</option>
+              <option value="soja">Só quem trabalha soja (SD ou SF)</option>
+              <option value="sd">Só soja disponível (SD)</option>
+              <option value="sf">Só soja futuro (SF)</option>
+              <option value="pendentes">Só quem ainda não recebeu hoje</option>
+            </select>
+            <span id="pe_contador" style="font-size:12px;color:var(--ink-soft)"></span>
+          </div>
+          <div style="max-height:460px;overflow:auto"><table>
+            <thead><tr><th>Cliente</th><th>Telefone</th><th>Produtos</th><th>Hoje</th><th></th></tr></thead>
+            <tbody id="pe_lista"></tbody>
+          </table></div>
+        </div>
+
       </div>
 
       <!-- NEGOCIAÇÕES -->
@@ -1519,6 +1525,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
     navSalvar("page", btn.dataset.page);
+    if (btn.dataset.page === "precos") loadPrecoEnvio().then(renderPrecoEnvio);
     // Toda vez que entra em Negociações, volta o filtro pros próprios negócios do corretor —
     // quem quiser ver de todo mundo escolhe "Todos os corretores" de novo no filtro.
     if (btn.dataset.page === "negociacoes") {
