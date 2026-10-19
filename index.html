@@ -729,15 +729,16 @@
         <div class="panel-card" id="precoEnvioPanel">
           <div class="hint">Confira a prévia e clique em "Enviar no meu WhatsApp": abre o WhatsApp do seu computador com a mensagem já escrita, é só apertar Enter. Não usa a conta da Nexus.</div>
           <div class="field-row">
-            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"><input type="text" id="pe_soja_disp_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
+            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
             <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
           </div>
           <div class="field-row">
-            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div>
-            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div>
+            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_disp_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
+            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
             <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
           </div>
+          <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
           <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
             <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar preços</button>
@@ -2444,8 +2445,8 @@ function briefingHtml(formato, opc = {}) {
       <div style="font-size:19px;color:${suave};margin-top:8px;min-height:22px">${c.extra || ""}</div></div>`; };
   const p = precoEnvio && precoEnvio.dados, hojeISO = todayISO();
   const pDia = p && p.atualizado_em && new Date(p.atualizado_em).toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" }) === hojeISO ? p : null;
-  const linhasPreco = pDia ? [pDia.soja_disp != null ? ["Soja disponível", pDia.soja_disp] : null, pDia.soja_fut != null ? [`Soja futuro${pDia.soja_fut_ref ? " (" + pDia.soja_fut_ref + ")" : ""}`, pDia.soja_fut] : null, pDia.milho_disp != null ? ["Milho disponível", pDia.milho_disp] : null, pDia.milho_fut != null ? [`Milho futuro${pDia.milho_fut_ref ? " (" + pDia.milho_fut_ref + ")" : ""}`, pDia.milho_fut] : null].filter(Boolean) : [];
-  const blocoPreco = linhasPreco.length ? `<div style="margin-bottom:20px">${secao("PREÇOS NEXUS HOJE", "💰")}<div style="display:flex;gap:12px">${linhasPreco.map(([r, v]) => `<div style="flex:1;background:linear-gradient(135deg,rgba(224,178,63,.18),${card});border:2px solid ${ouro};border-radius:20px;padding:12px 16px;box-sizing:border-box"><div style="font-size:20px;color:${suave};white-space:nowrap">${r}</div><div style="font-size:${linhasPreco.length > 2 ? 36 : 44}px;font-weight:800;color:${ouro};white-space:nowrap">R$ ${brN(v)}<span style="font-size:18px;color:${suave};font-weight:600"> /sc</span></div></div>`).join("")}</div></div>` : "";
+  const linhasPreco = pDia ? [pDia.soja_disp != null ? ["Soja disponível", pDia.soja_disp, pDia.soja_disp_obs] : null, pDia.soja_fut != null ? [`Soja futuro${pDia.soja_fut_ref ? " (" + pDia.soja_fut_ref + ")" : ""}`, pDia.soja_fut, pDia.soja_fut_obs] : null, pDia.milho_disp != null ? ["Milho disponível", pDia.milho_disp, pDia.milho_disp_obs] : null, pDia.milho_fut != null ? [`Milho futuro${pDia.milho_fut_ref ? " (" + pDia.milho_fut_ref + ")" : ""}`, pDia.milho_fut, pDia.milho_fut_obs] : null].filter(Boolean) : [];
+  const blocoPreco = linhasPreco.length ? `<div style="margin-bottom:20px">${secao("PREÇOS NEXUS HOJE", "💰")}<div style="display:flex;gap:12px">${linhasPreco.map(([r, v, q]) => `<div style="flex:1;background:linear-gradient(135deg,rgba(224,178,63,.18),${card});border:2px solid ${ouro};border-radius:20px;padding:12px 16px;box-sizing:border-box"><div style="font-size:20px;color:${suave};white-space:nowrap">${r}${q ? ` · <i>${escapeHtml(q)}</i>` : ""}</div><div style="font-size:${linhasPreco.length > 2 ? 36 : 44}px;font-weight:800;color:${ouro};white-space:nowrap">R$ ${brN(v)}<span style="font-size:18px;color:${suave};font-weight:600"> /sc</span></div></div>`).join("")}</div></div>` : "";
   const sel = [...briefing.selecionadas].sort((a, b) => a - b).slice(0, maxNews).map(i => ({ t: String(briefing.editados[i] ?? briefing.noticias[i].titulo).trim(), f: briefing.noticias[i].fonte })).filter(n => n.t);
   const corta = t => t.length > 105 ? t.slice(0, 102).replace(/\s+\S*$/, "") + "…" : t;
   const blocoNoticias = sel.length ? `<div style="margin-bottom:16px">${secao("PRINCIPAIS NOTÍCIAS", "📰")}${sel.map(n => `<div style="background:${card};border:2px solid ${borda};border-radius:18px;padding:12px 22px;margin-bottom:10px"><div style="font-size:25px;font-weight:700;line-height:1.25;color:${txt}">${escapeHtml(corta(n.t))}</div><div style="font-size:18px;color:${ouro};margin-top:4px;letter-spacing:.04em">${escapeHtml(String(n.f || "").toUpperCase())}</div></div>`).join("")}</div>` : "";
@@ -2535,7 +2536,7 @@ function precoEnvioNum(id) { const v = document.getElementById(id); return v && 
 function precoEnvioPreencherForm() {
   const d = precoEnvio.dados || {};
   const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v ?? ""; };
-  set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref);
+  set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref); set("pe_soja_disp_obs", d.soja_disp_obs); set("pe_soja_fut_obs", d.soja_fut_obs); set("pe_milho_disp_obs", d.milho_disp_obs); set("pe_milho_fut_obs", d.milho_fut_obs);
   set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs); set("pe_texto", d.texto || PE_TEXTO_PADRAO);
   const st = document.getElementById("pe_status");
   if (st) {
@@ -2554,9 +2555,10 @@ function precoEnvioTemplate() {
   const refS = (document.getElementById("pe_soja_ref")?.value || "").trim(), refM = (document.getElementById("pe_milho_ref")?.value || "").trim();
   const obs = (document.getElementById("pe_obs")?.value || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-  const linha = (rot, v) => `• ${rot}: *${fmtMoney(v)}/sc*`;
-  const blocoSoja = [sd != null ? linha("Disponível", sd) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf) : null].filter(Boolean);
-  const blocoMilho = [md != null ? linha("Disponível", md) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf) : null].filter(Boolean);
+  const qual = id => (document.getElementById(id)?.value || "").trim();
+  const linha = (rot, v, q) => `• ${rot}: ${q ? q + " " : ""}*${fmtMoney(v)}/sc*`;
+  const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null].filter(Boolean);
+  const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null].filter(Boolean);
   if (!blocoSoja.length && !blocoMilho.length) return "";
   const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : ""].filter(Boolean).join("\n\n");
   let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
@@ -2581,6 +2583,7 @@ function precoEnvioPrevia() {
 async function salvarPrecoEnvio() {
   const row = { id: 1, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
     milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
+    soja_disp_obs: (document.getElementById("pe_soja_disp_obs").value || "").trim(), soja_fut_obs: (document.getElementById("pe_soja_fut_obs").value || "").trim(), milho_disp_obs: (document.getElementById("pe_milho_disp_obs").value || "").trim(), milho_fut_obs: (document.getElementById("pe_milho_fut_obs").value || "").trim(),
     obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString(), atualizado_por: currentUserId };
   const { error } = await sb.from("nexus_preco_whatsapp").upsert(row);
   if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
