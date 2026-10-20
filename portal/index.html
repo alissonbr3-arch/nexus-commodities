@@ -93,6 +93,29 @@
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .placeholder-box { border: 1px dashed var(--border); border-radius: var(--radius); padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 13px; }
   @media (max-width: 640px) { .field-row { grid-template-columns: 1fr; } .cards { grid-template-columns: 1fr 1fr; } }
+
+  /* Resumo (dashboard pensado pro celular) */
+  .tabs { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabpage { overflow-x: auto; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; background: var(--card); color: var(--ink-soft); border: 1px solid var(--border); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; }
+  .chip.on { background: var(--gold); color: #1a1305; border-color: var(--gold); }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 15px; min-width: 0; }
+  .kpi .k { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; }
+  .kpi .v { font-size: 22px; font-weight: 800; margin-top: 6px; line-height: 1.1; word-break: break-word; }
+  .kpi .s { font-size: 11.5px; color: var(--ink-dim); margin-top: 4px; }
+  .kpi.hero { grid-column: 1 / -1; background: linear-gradient(135deg, rgba(217,171,52,.20), var(--card)); border-color: rgba(217,171,52,.5); }
+  .kpi.hero .v { font-size: 30px; color: var(--gold); }
+  .sec-title { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 20px 0 8px; }
+  .row-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .row-item .top { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; }
+  .row-item .sub { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+  .bar { height: 7px; border-radius: 4px; background: var(--card-alt); overflow: hidden; margin-top: 8px; }
+  .bar > i { display: block; height: 100%; background: var(--gold); border-radius: 4px; }
+  @media (max-width: 640px) { .content { padding: 14px 12px 60px; } .topbar { padding: 10px 12px; } .topbar .user #userName { display: none; } .tabs { gap: 16px; } .page-title { font-size: 19px; } }
 </style>
 </head>
 <body>
@@ -133,12 +156,17 @@
     <div class="page-sub" id="pageSub"></div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="negocios">Meus negócios</button>
+      <button class="tab-btn active" data-tab="resumo">Resumo</button>
+      <button class="tab-btn" data-tab="negocios">Meus negócios</button>
       <button class="tab-btn" data-tab="externos">Contratos com outras corretoras</button>
       <button class="tab-btn" data-tab="painel">Painel de vendas</button>
     </div>
 
-    <div class="tabpage active" id="tab-negocios">
+    <div class="tabpage active" id="tab-resumo">
+      <div id="resumoBox"></div>
+    </div>
+
+    <div class="tabpage" id="tab-negocios">
       <table>
         <thead><tr><th>Data</th><th>Contrato</th><th>Produto/Safra</th><th>Contraparte</th><th>Quantidade (sc)</th><th>Preço (R$/sc)</th><th>Status</th><th></th></tr></thead>
         <tbody id="negociosBody"></tbody>
@@ -547,9 +575,86 @@ async function excluirExterno(id) {
   await loadExternos(); renderExternos(); renderPainel();
 }
 
+// ---------------- RESUMO (dashboard) ----------------
+let resumoGrao = "Todos", resumoChart = null;
+function setResumoGrao(g) { resumoGrao = g; renderResumo(); }
+function renderResumo() {
+  const box = document.getElementById("resumoBox");
+  if (!box || !meuCadastro) return;
+  const compra = meuCadastro.tipo === "Comprador";
+  const todos = negocios.filter(n => Number(n.quantidade) > 0);
+  if (todos.length === 0) { box.innerHTML = `<div class="placeholder-box">Ainda não há negócios registrados com a Nexus.</div>`; return; }
+  const graos = [...new Set(todos.map(n => n.grao).filter(Boolean))];
+  if (resumoGrao !== "Todos" && !graos.includes(resumoGrao)) resumoGrao = "Todos";
+  const lista = resumoGrao === "Todos" ? todos : todos.filter(n => n.grao === resumoGrao);
+  const qtd = n => Number(n.quantidade || 0), preco = n => Number(n.preco || 0);
+  const sacas = lista.reduce((s, n) => s + qtd(n), 0);
+  const comPreco = lista.filter(n => preco(n) > 0);
+  const valor = comPreco.reduce((s, n) => s + qtd(n) * preco(n), 0);
+  const sacasPreco = comPreco.reduce((s, n) => s + qtd(n), 0);
+  const medio = sacasPreco ? valor / sacasPreco : 0;
+  const maior = comPreco.length ? Math.max(...comPreco.map(preco)) : 0, menor = comPreco.length ? Math.min(...comPreco.map(preco)) : 0;
+  const toneladas = sacas * 0.06;
+  const hoje = new Date().toLocaleDateString("en-CA");
+
+  const chips = ["Todos", ...graos].map(g => `<button class="chip ${g === resumoGrao ? "on" : ""}" onclick="setResumoGrao('${g}')">${g}</button>`).join("");
+  const kpis = `<div class="kpis">
+    <div class="kpi hero"><div class="k">${compra ? "Valor total comprado" : "Valor total negociado"}</div><div class="v">${fmtMoney(valor)}</div><div class="s">${lista.length} negócio${lista.length === 1 ? "" : "s"} · ${fmtNum(Math.round(sacas))} sc</div></div>
+    <div class="kpi"><div class="k">${compra ? "Sacas compradas" : "Sacas vendidas"}</div><div class="v">${fmtNum(Math.round(sacas))}</div><div class="s">${fmtNum(Math.round(toneladas))} toneladas</div></div>
+    <div class="kpi"><div class="k">Preço médio</div><div class="v">${medio ? fmtMoney(medio) : "—"}</div><div class="s">por saca (ponderado)</div></div>
+    <div class="kpi"><div class="k">Maior preço</div><div class="v">${maior ? fmtMoney(maior) : "—"}</div><div class="s">por saca</div></div>
+    <div class="kpi"><div class="k">Menor preço</div><div class="v">${menor ? fmtMoney(menor) : "—"}</div><div class="s">por saca</div></div>
+  </div>`;
+
+  // por produto/safra
+  const grupos = {};
+  lista.forEach(n => { const k = `${n.grao || "—"} ${n.safra || ""}`.trim(); const g = grupos[k] || (grupos[k] = { sacas: 0, valor: 0, sacasPreco: 0 }); g.sacas += qtd(n); if (preco(n) > 0) { g.valor += qtd(n) * preco(n); g.sacasPreco += qtd(n); } });
+  const maxSacas = Math.max(1, ...Object.values(grupos).map(g => g.sacas));
+  const porProduto = Object.entries(grupos).sort((a, b) => b[1].sacas - a[1].sacas).map(([k, g]) => `<div class="row-item"><div class="top"><span>${escapeHtml(k)}</span><span>${fmtNum(Math.round(g.sacas))} sc</span></div><div class="sub">${g.sacasPreco ? `Preço médio ${fmtMoney(g.valor / g.sacasPreco)}/sc · ${fmtMoney(g.valor)}` : "sem preço informado"}</div><div class="bar"><i style="width:${Math.round(g.sacas / maxSacas * 100)}%"></i></div></div>`).join("");
+
+  // por contraparte
+  const cont = {};
+  lista.forEach(n => { const nome = contraparteDe(n); const c = cont[nome] || (cont[nome] = { sacas: 0, valor: 0 }); c.sacas += qtd(n); if (preco(n) > 0) c.valor += qtd(n) * preco(n); });
+  const top = Object.entries(cont).sort((a, b) => b[1].sacas - a[1].sacas).slice(0, 6);
+  const maxC = Math.max(1, ...top.map(([, c]) => c.sacas));
+  const porContraparte = top.map(([nome, c]) => `<div class="row-item"><div class="top"><span>${escapeHtml(nome)}</span><span>${sacas ? (c.sacas / sacas * 100).toFixed(0) : 0}%</span></div><div class="sub">${fmtNum(Math.round(c.sacas))} sc${c.valor ? " · " + fmtMoney(c.valor) : ""}</div><div class="bar"><i style="width:${Math.round(c.sacas / maxC * 100)}%"></i></div></div>`).join("");
+
+  // próximos pagamentos e embarques
+  const pagamentos = lista.filter(n => n.data_pagamento && !n.check_pagamento && n.data_pagamento >= hoje).sort((a, b) => a.data_pagamento.localeCompare(b.data_pagamento)).slice(0, 5)
+    .map(n => `<div class="row-item"><div class="top"><span>${fmtDate(n.data_pagamento)}</span><span>${preco(n) ? fmtMoney(qtd(n) * preco(n)) : ""}</span></div><div class="sub">${escapeHtml(n.numero_contrato || "—")} · ${escapeHtml(n.grao || "")} · ${escapeHtml(contraparteDe(n))}</div></div>`).join("");
+  const embarques = lista.filter(n => !n.embarque_finalizado && n.data_fim_embarque && n.data_fim_embarque >= hoje).sort((a, b) => (a.data_inicio_embarque || a.data_fim_embarque).localeCompare(b.data_inicio_embarque || b.data_fim_embarque)).slice(0, 5)
+    .map(n => `<div class="row-item"><div class="top"><span>${n.data_inicio_embarque ? fmtDate(n.data_inicio_embarque) + " a " : "até "}${fmtDate(n.data_fim_embarque)}</span><span>${fmtNum(Math.round(qtd(n)))} sc</span></div><div class="sub">${escapeHtml(n.numero_contrato || "—")} · ${escapeHtml(n.grao || "")} · ${escapeHtml(contraparteDe(n))}</div></div>`).join("");
+
+  box.innerHTML = `<div class="chips">${chips}</div>${kpis}
+    <div class="sec-title">Evolução mensal</div><div class="panel-card" style="padding:12px"><div class="chart-wrap"><canvas id="resumoChart"></canvas></div></div>
+    <div class="sec-title">Por produto e safra</div>${porProduto}
+    <div class="sec-title">${compra ? "Por vendedor" : "Por comprador"}</div>${porContraparte}
+    <div class="sec-title">Próximos pagamentos</div>${pagamentos || `<div class="row-item"><div class="sub">Nenhum pagamento previsto.</div></div>`}
+    <div class="sec-title">Próximos embarques / entregas</div>${embarques || `<div class="row-item"><div class="sub">Nenhum embarque previsto.</div></div>`}
+    <div class="hint" style="margin-top:14px;font-size:11.5px;color:var(--ink-dim)">Valores brutos, calculados pelo preço de cada contrato. Para o líquido e os detalhes, veja "Meus negócios".</div>`;
+
+  // gráfico mensal
+  const meses = {};
+  lista.forEach(n => { const m = (n.data || "").slice(0, 7); if (!m) return; const o = meses[m] || (meses[m] = { sacas: 0, v: 0, sp: 0 }); o.sacas += qtd(n); if (preco(n) > 0) { o.v += qtd(n) * preco(n); o.sp += qtd(n); } });
+  const chaves = Object.keys(meses).sort();
+  if (resumoChart) { resumoChart.destroy(); resumoChart = null; }
+  if (chaves.length) {
+    const rot = chaves.map(m => { const [y, mm] = m.split("-"); return ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"][Number(mm) - 1] + "/" + y.slice(2); });
+    resumoChart = new Chart(document.getElementById("resumoChart"), {
+      data: { labels: rot, datasets: [
+        { type: "bar", label: "Sacas", data: chaves.map(m => Math.round(meses[m].sacas)), backgroundColor: "#d9ab34", borderRadius: 5, yAxisID: "y", maxBarThickness: 40 },
+        { type: "line", label: "Preço médio (R$/sc)", data: chaves.map(m => meses[m].sp ? +(meses[m].v / meses[m].sp).toFixed(2) : null), borderColor: "#4a8bb0", backgroundColor: "#4a8bb0", tension: .3, pointRadius: 4, yAxisID: "y2", spanGaps: true },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#8b93a1", boxWidth: 10, font: { size: 11 } } } },
+        scales: { x: { grid: { display: false }, ticks: { color: "#8b93a1" } }, y: { beginAtZero: true, grid: { color: "#2a2a2a" }, ticks: { color: "#8b93a1" } }, y2: { position: "right", grid: { display: false }, ticks: { color: "#4a8bb0", callback: v => "R$ " + v } } } },
+    });
+  }
+}
+
 // ---------------- PAINEL DE VENDAS ----------------
 let painelChart = null;
 function renderPainel() {
+  renderResumo();
   const totaisNexus = {}, totaisExternos = {};
   negocios.forEach(nreg => { totaisNexus[nreg.grao] = (totaisNexus[nreg.grao]||0) + Number(nreg.quantidade||0); });
   externos.forEach(e => { totaisExternos[e.grao] = (totaisExternos[e.grao]||0) + Number(e.quantidade||0); });
