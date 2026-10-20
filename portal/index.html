@@ -330,6 +330,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 
 // ---------------- DADOS ----------------
 let meuCadastro = null;
+let modoPreview = false; // equipe Nexus vendo o portal de um cliente (?ver=<id do cadastro>) — somente leitura
 let negocios = [];
 let contrapartes = {};
 let fazendas = {};
@@ -340,14 +341,33 @@ async function boot() {
   const uid = sess.session.user.id;
   document.getElementById("userName").textContent = sess.session.user.email || "";
 
-  const { data: cadastroRows } = await sb.from("nexus_cadastros").select("*").eq("user_id", uid).limit(1);
-  meuCadastro = cadastroRows && cadastroRows[0] ? cadastroRows[0] : null;
+  // Visualização pela equipe: ?ver=<cadastro>. Só vale pra quem é da equipe Nexus (o banco só deixa a equipe ler os dados de outro cliente).
+  const verId = new URLSearchParams(location.search).get("ver");
+  if (verId) {
+    const { data: eq } = await sb.from("nexus_equipe").select("user_id").eq("user_id", uid).limit(1);
+    if (eq && eq[0]) {
+      const { data: alvo } = await sb.from("nexus_cadastros").select("*").eq("id", verId).limit(1);
+      if (alvo && alvo[0]) { meuCadastro = alvo[0]; modoPreview = true; }
+    }
+  }
+  if (!modoPreview) {
+    const { data: cadastroRows } = await sb.from("nexus_cadastros").select("*").eq("user_id", uid).limit(1);
+    meuCadastro = cadastroRows && cadastroRows[0] ? cadastroRows[0] : null;
+  }
   if (!meuCadastro) {
     document.getElementById("pageTitle").textContent = "Acesso ainda não vinculado";
     document.getElementById("pageSub").textContent = "Seu login foi criado, mas ainda não está vinculado a um cadastro. Fale com seu corretor Nexus.";
     document.querySelector(".tabs").style.display = "none";
     document.querySelectorAll(".tabpage").forEach(p => p.style.display = "none");
     return;
+  }
+  if (modoPreview) {
+    document.getElementById("userName").textContent = "Visualização da equipe Nexus";
+    const aviso = document.createElement("div");
+    aviso.style.cssText = "background:rgba(224,178,63,.15);border:1px solid #e0b23f;color:#8a6a0c;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px";
+    aviso.innerHTML = "👁️ <b>Visualização da equipe.</b> Você está vendo o portal de <b>" + String(meuCadastro.nome).replace(/</g, "&lt;") + "</b> exatamente como ele vê. Somente leitura: nada aqui altera os dados do cliente.";
+    document.querySelector(".content").prepend(aviso);
+    document.getElementById("addExternoBtn").style.display = "none";
   }
   document.getElementById("pageTitle").textContent = `Olá, ${meuCadastro.nome}`;
   document.getElementById("pageSub").textContent = meuCadastro.tipo === "Produtor" ? "Acompanhe seus negócios e vendas de grãos" : "Acompanhe suas compras e negócios com a Nexus";
@@ -494,7 +514,7 @@ function renderExternos() {
   body.innerHTML = externos.length === 0 ? `<tr class="empty-row"><td colspan="6">Nenhum contrato externo cadastrado.</td></tr>` :
     externos.map(e => `<tr>
       <td>${e.corretora_nome}</td><td>${e.grao}${e.safra ? " " + e.safra : ""}</td><td>${fmtNum(e.quantidade)}</td><td>${e.preco ? fmtMoney(e.preco) : "—"}</td><td>${fmtDate(e.data_venda)}</td>
-      <td><button class="btn-edit-text" onclick="openExternoModal('${e.id}')">Editar</button><button class="btn-danger-text" onclick="excluirExterno('${e.id}')">Excluir</button></td>
+      <td>${modoPreview ? "" : `<button class="btn-edit-text" onclick="openExternoModal('${e.id}')">Editar</button><button class="btn-danger-text" onclick="excluirExterno('${e.id}')">Excluir</button>`}</td>
     </tr>`).join("");
 }
 document.getElementById("addExternoBtn").addEventListener("click", () => openExternoModal(null));

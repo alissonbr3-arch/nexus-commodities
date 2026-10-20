@@ -4554,6 +4554,7 @@ function openContatoModal(id) {
           : item.user_id ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Acesso criado: ${item.email || "—"}</div>`
           : `<div class="field-row"><input type="email" id="f_acessoEmail" value="${item.email || ""}" placeholder="email@cliente.com" style="flex:1"><button type="button" class="btn-ghost" style="white-space:nowrap" onclick="criarAcessoCliente('${id}')">Criar acesso</button></div>
              <div id="acessoClienteMsg" style="font-size:11.5px;margin-top:6px"></div>`}
+        ${id ? `<div style="margin-top:8px"><button type="button" class="btn-ghost" onclick="window.open('/portal/?ver=${id}', '_blank')">👁️ Ver o portal deste cliente</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">Abre como o cliente vê (somente leitura)</span></div>` : ""}
       </div>
     </div>
     <div class="field"><label>Responsável (corretor)</label><select id="f_owner"><option value="">— Sem responsável —</option>${equipeOptions}</select></div>
