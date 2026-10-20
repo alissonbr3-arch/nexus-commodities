@@ -3843,7 +3843,9 @@ function renderEmbarquesPage() {
       (n.contraparte || "").toLowerCase().includes(search) ||
       nomeCadastro(n.produtor_id).toLowerCase().includes(search));
   }
-  list.sort((a, b) => (a.data_inicio_embarque || a.data_fim_embarque || "").localeCompare(b.data_inicio_embarque || b.data_fim_embarque || ""));
+  // Previstos: os mais próximos primeiro. Finalizados: os embarques mais recentes primeiro.
+  if (finalizados) list.sort((a, b) => (b.data_fim_embarque || b.data_inicio_embarque || "").localeCompare(a.data_fim_embarque || a.data_inicio_embarque || "") || (b.data_inicio_embarque || "").localeCompare(a.data_inicio_embarque || "") || (b.embarque_finalizado_em || "").localeCompare(a.embarque_finalizado_em || ""));
+  else list.sort((a, b) => (a.data_inicio_embarque || a.data_fim_embarque || "").localeCompare(b.data_inicio_embarque || b.data_fim_embarque || ""));
   const custoFreteTotal = list.reduce((s,n) => s + Number(n.frete_saca||0) * Number(n.quantidade||0), 0);
   const resumoEl = document.getElementById("embFreteResumo");
   if (resumoEl) resumoEl.textContent = list.length === 0 ? "" : `Custo de frete total nesta lista: ${fmtMoney(custoFreteTotal)}`;
