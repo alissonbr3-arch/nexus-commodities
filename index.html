@@ -725,7 +725,7 @@
       <!-- ENVIAR PREÇOS (WhatsApp) -->
       <div class="page" id="page-precos">
         <h2 class="page-title">Enviar preços</h2>
-        <div class="page-sub">Preencha os preços do dia e mande pelo WhatsApp pra cada cliente, um a um — nada sai automático.</div>
+        <div class="page-sub">Seus preços, sua mensagem e sua lista: cada corretor tem a própria janela. Mande pelo WhatsApp pra cada cliente, um a um — nada sai automático.</div>
         <div class="panel-card" id="precoEnvioPanel">
           <div class="hint">Confira a prévia e clique em "Enviar no meu WhatsApp": abre o WhatsApp do seu computador com a mensagem já escrita, é só apertar Enter. Não usa a conta da Nexus.</div>
           <div class="field-row">
@@ -741,7 +741,7 @@
           <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
           <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
-            <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar preços</button>
+            <button class="btn-primary" onclick="salvarPrecoEnvio()">Salvar meus preços</button>
             <button class="btn-ghost" onclick="precoEnvioPuxarDoMercado()">Puxar o maior preço da tabela acima</button>
             <span id="pe_status" style="font-size:11.5px;color:var(--ink-soft)"></span>
           </div>
@@ -2525,9 +2525,9 @@ const PE_TIPOS_LOG = ["WhatsApp Preço do dia", "WhatsApp Preço do dia (manual)
 let precoEnvio = { dados: null, enviadosHoje: new Map() };
 async function loadPrecoEnvio() {
   try {
-    const { data: row } = await sb.from("nexus_preco_whatsapp").select("*").eq("id", 1).maybeSingle();
+    const { data: row } = await sb.from("nexus_preco_whatsapp_usuario").select("*").eq("user_id", currentUserId).maybeSingle();
     precoEnvio.dados = row || null;
-    const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at, tipo").in("tipo", PE_TIPOS_LOG).eq("sucesso", true).gte("created_at", todayISO() + "T00:00:00-04:00");
+    const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at, tipo").in("tipo", PE_TIPOS_LOG).eq("sucesso", true).eq("enviado_por", currentUserId).gte("created_at", todayISO() + "T00:00:00-04:00");
     precoEnvio.enviadosHoje = new Map();
     (logs || []).forEach(l => { const m = /^cadastro:([0-9a-f-]{36}) /.exec(l.destinatarios || ""); if (m && !precoEnvio.enviadosHoje.has(m[1])) precoEnvio.enviadosHoje.set(m[1], { at: l.created_at, manual: /manual/.test(l.tipo || "") }); });
   } catch (e) { /* tabela ainda não existe ou sem acesso: o painel segue vazio */ }
@@ -2581,11 +2581,11 @@ function precoEnvioPrevia() {
   renderPrecoEnvioLista();
 }
 async function salvarPrecoEnvio() {
-  const row = { id: 1, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
+  const row = { user_id: currentUserId, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
     milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
     soja_disp_obs: (document.getElementById("pe_soja_disp_obs").value || "").trim(), soja_fut_obs: (document.getElementById("pe_soja_fut_obs").value || "").trim(), milho_disp_obs: (document.getElementById("pe_milho_disp_obs").value || "").trim(), milho_fut_obs: (document.getElementById("pe_milho_fut_obs").value || "").trim(),
-    obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString(), atualizado_por: currentUserId };
-  const { error } = await sb.from("nexus_preco_whatsapp").upsert(row);
+    obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString() };
+  const { error } = await sb.from("nexus_preco_whatsapp_usuario").upsert(row, { onConflict: "user_id" });
   if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
   precoEnvio.dados = row; precoEnvioPreencherForm(); renderPrecoEnvioLista();
 }
