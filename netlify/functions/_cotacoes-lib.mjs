@@ -86,6 +86,23 @@ export function lerMilhoB3(html) {
   }
   return null;
 }
+// Preço do dia (atraso de 15 min) do mesmo contrato, pelo scanner público do TradingView (dados da B3).
+// Não é fonte oficial: se falhar, o card continua com o fechamento do Notícias Agrícolas.
+const CODIGO_MES_B3 = { Jan: "F", Mar: "H", Mai: "K", Jul: "N", Set: "U", Nov: "X" };
+async function milhoB3AoVivo(mesRotulo) {
+  const m = String(mesRotulo || "").match(/(\w{3})\/(\d{2})/);
+  const letra = m && CODIGO_MES_B3[m[1]];
+  if (!letra) return null;
+  try {
+    const r = await fetch("https://scanner.tradingview.com/futures/scan", {
+      method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
+      body: JSON.stringify({ symbols: { tickers: [`BMFBOVESPA:CCM${letra}20${m[2]}`] }, columns: ["close", "update_mode"] }),
+    });
+    const j = await r.json();
+    const [close, modo] = (j.data && j.data[0] && j.data[0].d) || [];
+    return close > 0 && /delayed|streaming/.test(String(modo)) ? Number(close) : null;
+  } catch { return null; }
+}
 export async function atualizarMilhoB3() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
@@ -94,16 +111,30 @@ export async function atualizarMilhoB3() {
     if (!r.ok) return { codigo: "CCM", ok: false, erro: `HTTP ${r.status}` };
     const b3 = lerMilhoB3(await r.text());
     if (!b3) return { codigo: "CCM", ok: false, erro: "não achei a tabela do Milho B3 na página" };
-    const anterior = b3.pct > -100 ? b3.ultima / (1 + b3.pct / 100) : b3.ultima;
+    let ultima = b3.ultima, pct = b3.pct, anterior = b3.pct > -100 ? b3.ultima / (1 + b3.pct / 100) : b3.ultima;
+    let observacao = b3.data ? `Fechamento de ${b3.data.slice(8, 10)}/${b3.data.slice(5, 7)}` : "Fechamento do pregão anterior";
+
+    // Pregão de hoje ainda sem fechamento publicado (Campo Grande = UTC-4): usa o preço do dia, com 15 min de atraso.
+    const agoraLocal = new Date(Date.now() - 4 * 3600 * 1000);
+    const hojeLocal = agoraLocal.toISOString().slice(0, 10), diaSemana = agoraLocal.getUTCDay();
+    const minutos = agoraLocal.getUTCHours() * 60 + agoraLocal.getUTCMinutes();
+    let aoVivo = null;
+    if (diaSemana >= 1 && diaSemana <= 5 && minutos >= 9 * 60 + 30 && minutos <= 19 * 60 && b3.data && b3.data < hojeLocal) aoVivo = await milhoB3AoVivo(b3.mes);
+    if (aoVivo) {
+      anterior = b3.ultima; ultima = aoVivo; pct = (aoVivo / b3.ultima - 1) * 100;
+      observacao = `Preço do dia · atraso de 15 min · ${String(agoraLocal.getUTCHours()).padStart(2, "0")}:${String(agoraLocal.getUTCMinutes()).padStart(2, "0")}`;
+    }
+
     const upd = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?codigo=eq.CCM`, {
       method: "PATCH", headers: sbHeaders,
-      body: JSON.stringify({ ultima: b3.ultima, varr: b3.ultima - anterior, pct: b3.pct, previa: anterior, preco_saca_brl: b3.ultima, mes: b3.mes, updated_at: new Date().toISOString() }),
+      body: JSON.stringify({ ultima, varr: ultima - anterior, pct: Number(pct.toFixed(2)), previa: anterior, preco_saca_brl: ultima, mes: b3.mes, observacao, updated_at: new Date().toISOString() }),
     });
+    // O histórico guarda só o fechamento oficial (nunca o preço do dia).
     await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes_historico?on_conflict=codigo,data`, {
       method: "POST", headers: { ...sbHeaders, Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({ codigo: "CCM", produto: "Milho", mes: "B3", data: b3.data || new Date().toISOString().slice(0, 10), ultima: b3.ultima, preco_saca_brl: b3.ultima }),
     });
-    return { codigo: "CCM", produto: "Milho", mes: b3.mes, ultima: b3.ultima, pct: b3.pct, fechamento: b3.data, ok: upd.ok, status: upd.status };
+    return { codigo: "CCM", produto: "Milho", mes: b3.mes, ultima, pct, fechamento: b3.data, aoVivo: !!aoVivo, ok: upd.ok, status: upd.status };
   } catch (e) { return { codigo: "CCM", ok: false, erro: String(e) }; }
 }
 
