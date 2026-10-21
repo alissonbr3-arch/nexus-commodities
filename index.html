@@ -4544,6 +4544,7 @@ function openContatoModal(id) {
     </div>
     <div class="field"><label>Nome</label><input type="text" id="f_nome" value="${item.nome}"></div>
     <div class="field"><label>Apelido <span style="font-weight:400;color:var(--ink-soft)">(como o cliente prefere ser chamado — usado nas mensagens de preço)</span></label><input type="text" id="f_apelido" value="${escapeHtml(item.apelido || "")}" placeholder="Ex.: Dida, Seu Zé, Dr. Carlos"></div>
+    <div class="field"><label>Data de nascimento <span style="font-weight:400;color:var(--ink-soft)">(opcional — o cliente aparece como aniversariante na TV)</span></label><input type="date" id="f_nascimento" value="${item.data_nascimento || ""}"></div>
     <div class="field-row"><div class="field"><label>Tipo</label><select id="f_ctipo" onchange="onCadastroTipoChange()">${["Produtor","Comprador","Transportadora","Armazém"].map(s => `<option ${item.tipo===s?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Telefone</label><input type="text" id="f_telefone" value="${item.telefone || ""}"></div></div>
     ${extraContatoBlocoHtml("telefone", item.telefones_extra, "telefones")}
     ${cidadeUfFieldsHtml(item.cidade, !id)}
@@ -4617,7 +4618,7 @@ function openContatoModal(id) {
 }
 async function saveContato(id) {
   const tipo = v("f_ctipo");
-  const payload = { nome: v("f_nome")||"—", apelido: v("f_apelido") || null, tipo, telefone: v("f_telefone"), telefones_extra: coletarExtras("telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, emails_extra: coletarExtras("email"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
+  const payload = { nome: v("f_nome")||"—", apelido: v("f_apelido") || null, data_nascimento: v("f_nascimento") || null, tipo, telefone: v("f_telefone"), telefones_extra: coletarExtras("telefone"), cidade: cidadeUfValor(), email: v("f_email") || null, emails_extra: coletarExtras("email"), obs: v("f_cobs"), owner_id: v("f_owner") || null, volume_anual_soja: n("f_volumeSoja"), volume_anual_milho: n("f_volumeMilho"), lembrete: v("f_lembrete"),
     grupo_id: (v("f_grupoSelect") && v("f_grupoSelect") !== "__novo__") ? v("f_grupoSelect") : null,
     cep: v("f_cep") || null, endereco: v("f_endereco") || null, endereco_numero: v("f_endNumero") || null, complemento: v("f_endComplemento") || null, bairro: v("f_bairro") || null,
     cpf: tipo === "Produtor" ? v("f_cpf") : "", cnpj: tipo === "Comprador" ? v("f_cnpj") : "",
@@ -6824,12 +6825,20 @@ function renderEquipe() {
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meta mensal (sc)</label>
         <input type="number" step="1" min="0" value="${e.meta_mensal_sacas || ""}" placeholder="Sem meta" style="text-align:center" onchange="salvarMetaCorretor('${e.user_id}', this.value)">
       </div>
+      <div style="margin-top:10px;text-align:left">
+        <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Aniversário (aparece na TV)</label>
+        <input type="date" value="${e.data_nascimento || ""}" style="text-align:center" onchange="salvarNascimentoCorretor('${e.user_id}', this.value)">
+      </div>
       ${isMe ? `<div style="margin-top:10px;text-align:left">
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:3px">Meu WhatsApp (pra criar negociação por mensagem)</label>
         <input type="text" value="${e.telefone || ""}" placeholder="Ex: 67999990000" autocomplete="off" style="text-align:center" onchange="salvarTelefoneCorretor('${e.user_id}', this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
       </div>` : ""}
     </div>`;
   }).join("");
+}
+async function salvarNascimentoCorretor(userId, valor) {
+  await sb.from("nexus_equipe").update({ data_nascimento: valor || null }).eq("user_id", userId);
+  await loadEquipe();
 }
 async function salvarMetaCorretor(userId, valor) {
   const meta = valor === "" ? null : Number(valor);
