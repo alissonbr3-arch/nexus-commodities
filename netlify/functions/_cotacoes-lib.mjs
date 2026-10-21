@@ -75,8 +75,9 @@ export function lerMilhoB3(html) {
     const linhas = [...tb.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(m => [...m[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c => c[1].replace(/<[^>]+>/g, "").trim()));
     const dados = linhas.find(c => /^[A-Za-zçÇ]+\/\d{4}$/.test(c[0] || "") && c.length >= 3);
     if (!dados) continue;
-    const idx = html.indexOf(tb) + tb.length;
-    const data = html.slice(idx, idx + 600).match(/Fechamento:\s*(\d{2})\/(\d{2})\/(\d{4})/);
+    // A data "Fechamento: dd/mm/aaaa" fica ANTES da tabela do pregão (depois dela vem a do pregão anterior).
+    const ini = html.indexOf(tb);
+    const data = html.slice(Math.max(0, ini - 600), ini).match(/Fechamento:\s*(\d{2})\/(\d{2})\/(\d{4})(?![\s\S]*Fechamento:)/);
     const [mesNome, ano] = dados[0].split("/");
     const num = t => Number(String(t).replace(/\./g, "").replace(",", "."));
     const ultima = num(dados[1]), pct = num(dados[2]);
