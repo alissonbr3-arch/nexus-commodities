@@ -4816,7 +4816,7 @@ function renderComissoesPage() {
   list = st && st.key ? applySort(list, st.key, st.dir) : list.sort((a,b) => b.data.localeCompare(a.data));
   comissoesListAtual = list;
   const totalReceberEl = document.getElementById("comissoesTotalReceber");
-  if (totalReceberEl) totalReceberEl.textContent = list.length === 0 ? "" : `Total nesta lista: ${fmtMoney(list.reduce((s,c) => s + c.valor, 0))} (${list.length} lançamento${list.length === 1 ? "" : "s"})`;
+  if (totalReceberEl) totalReceberEl.textContent = list.length === 0 ? "" : (() => { const total = list.reduce((s,c) => s + c.valor, 0), corretores = list.reduce((s,c) => s + Number(c.negocio.comissao_corretor || 0), 0); return `Total nesta lista: ${fmtMoney(total)} — escritório fica com ${fmtMoney(total - corretores)} (corretores ${fmtMoney(corretores)}) · ${list.length} lançamento${list.length === 1 ? "" : "s"}`; })();
   // Remove da seleção qualquer id que não esteja mais na lista atual (filtro mudou, negócio pago, etc.)
   for (const id of [...comissoesSelecionados]) if (!list.some(c => c.id === id)) comissoesSelecionados.delete(id);
 
