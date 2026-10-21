@@ -3855,7 +3855,7 @@ function renderEmbarquesPage() {
       const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
       const acoes = finalizados
         ? `<span style="font-size:11.5px;color:var(--ink-soft)">Finalizado em ${fmtDate((n.embarque_finalizado_em||"").slice(0,10))}</span>`
-        : `<button class="btn-edit-text" onclick="gerarLiberacaoEmbarque('${n.id}')">Liberação</button><button class="btn-edit-text" title="Enviar Liberação por e-mail pro comprador e vendedor" onclick="enviarLiberacaoPorEmail('${n.id}')">&#128231;</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
+        : `<button class="btn-edit-text" onclick="abrirLiberacaoModal('${n.id}')">Liberação${n.liberacao_sacas != null && Number(n.liberacao_sacas) !== Number(n.quantidade) ? " (parcial)" : ""}</button><button class="btn-edit-text" title="Enviar Liberação por e-mail pro comprador e vendedor" onclick="enviarLiberacaoPorEmail('${n.id}')">&#128231;</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
       const periodoCell = finalizados
         ? `<td>${periodo}</td>`
         : `<td><span id="embPeriodo-${n.id}" onclick="editEmbarquePeriodo('${n.id}')" style="cursor:pointer;border-bottom:1px dashed var(--ink-soft)" title="Clique para editar o período de embarque">${periodo}</span></td>`;
@@ -3900,6 +3900,45 @@ function numeroPorExtenso(valorInteiro) {
   if (unidade) partes.push(extensoGrupo(unidade));
   return partes.join(", ").toUpperCase();
 }
+// Liberação parcial: o comprador às vezes paga só parte do contrato, então a quantidade liberada
+// pode ser menor que a do contrato. Fica guardada em liberacao_sacas (vazio = contrato inteiro).
+function sacasLiberadas(n) { const l = Number(n.liberacao_sacas); return l > 0 ? l : Number(n.quantidade || 0); }
+function liberacaoParcial(n) { return sacasLiberadas(n) !== Number(n.quantidade || 0); }
+function abrirLiberacaoModal(id) {
+  const n = data.negocios.find(x => x.id === id);
+  if (!n) return;
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Liberação de Embarque — ${escapeHtml(n.numero_contrato || "")}</h3>
+    <div class="field"><label>Quantidade liberada (sacas)</label><input type="number" id="f_libSacas" min="1" step="any" value="${sacasLiberadas(n)}" oninput="document.getElementById('f_libInfo').textContent = libInfoTexto(${Number(n.quantidade || 0)})"></div>
+    <div class="hint" id="f_libInfo" style="font-size:12px;color:var(--ink-soft);margin:-6px 0 14px"></div>
+    <div class="hint" style="font-size:12px;color:var(--ink-soft)">Contrato: ${fmtNum(n.quantidade)} sc. Se o comprador pagou só uma parte, coloque aqui só o que foi liberado — a Liberação sai com essa quantidade e a observação "liberação parcial". Volte e libere o restante depois.</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn-ghost" onclick="liberacaoModalAcao('${id}', 'salvar')">Só salvar</button>
+      <button class="btn-ghost" onclick="liberacaoModalAcao('${id}', 'email')">&#128231; Enviar por e-mail</button>
+      <button class="btn-primary" onclick="liberacaoModalAcao('${id}', 'gerar')">Gerar Liberação</button>
+    </div>`;
+  showModal();
+  document.getElementById("f_libInfo").textContent = libInfoTexto(Number(n.quantidade || 0));
+}
+function libInfoTexto(total) {
+  const v = Number(document.getElementById("f_libSacas").value);
+  if (!(v > 0)) return "Informe a quantidade.";
+  if (v > total) return `⚠️ Maior que o contrato (${fmtNum(total)} sc).`;
+  return v === total ? "Liberação total do contrato." : `Liberação parcial — falta liberar ${fmtNum(total - v)} sc.`;
+}
+async function liberacaoModalAcao(id, acao) {
+  const n = data.negocios.find(x => x.id === id);
+  const v = Number(document.getElementById("f_libSacas").value);
+  if (!n || !(v > 0)) { alert("Informe a quantidade liberada."); return; }
+  if (v > Number(n.quantidade || 0) && !confirm(`${fmtNum(v)} sc é mais que o contrato (${fmtNum(n.quantidade)} sc). Continuar mesmo assim?`)) return;
+  const { error } = await sb.from("nexus_negocios").update({ liberacao_sacas: v === Number(n.quantidade || 0) ? null : v }).eq("id", id);
+  if (error) { alert("Erro ao salvar: " + error.message); return; }
+  await loadNegocios(); renderEmbarquesPage();
+  closeModal();
+  if (acao === "gerar") gerarLiberacaoEmbarque(id);
+  else if (acao === "email") enviarLiberacaoPorEmail(id);
+}
 function montarLiberacaoEmbarqueHtml(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
   if (!n) return null;
@@ -3907,7 +3946,7 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
   const comprador = data.cadastros.find(c => c.id === n.cliente_id);
   if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a liberação."); return null; }
   if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return null; }
-  const sacas = Number(n.quantidade || 0);
+  const sacas = sacasLiberadas(n);
   const kg = sacas * 60;
   const armazem = n.armazem_id ? data.cadastros.find(c => c.id === n.armazem_id) : null;
   const destinatario = armazem ? armazem.nome : (n.local_origem || "—");
@@ -3948,7 +3987,7 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
   <h3>1. DETALHAMENTO DO EMBARQUE E ESPECIFICAÇÕES DO PRODUTO:</h3>
   <table class="dados">
     <tr><td class="label">Produto / Mercadoria</td><td>${(n.grao||"—").toUpperCase()} EM GRÃOS A GRANEL (PADRÃO COMERCIAL)</td></tr>
-    <tr><td class="label">Volume / Quantidade Liberada</td><td>${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG</td></tr>
+    <tr><td class="label">Volume / Quantidade Liberada</td><td>${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG${liberacaoParcial(n) ? ` — LIBERAÇÃO PARCIAL, de um total contratado de ${fmtNum(n.quantidade)} sacas` : ""}</td></tr>
     <tr><td class="label">Data Efetiva de Liberação</td><td>${fmtDate(n.data_inicio_embarque)} (Autorizado o carregamento a partir desta data)</td></tr>
     <tr><td class="label">Local de Carregamento e Retirada</td><td>${destinatario}</td></tr>
   </table>
@@ -3979,7 +4018,7 @@ async function gerarLiberacaoPdfNativo(negocioId) {
   const comprador = data.cadastros.find(c => c.id === n.cliente_id);
   if (!vendedor || !comprador) { alert("Este negócio precisa de comprador e produtor cadastrados para gerar a liberação."); return null; }
   if (!n.data_inicio_embarque) { alert("Este negócio ainda não tem data de início de embarque definida."); return null; }
-  const sacas = Number(n.quantidade || 0);
+  const sacas = sacasLiberadas(n);
   const kg = sacas * 60;
   const armazem = n.armazem_id ? data.cadastros.find(c => c.id === n.armazem_id) : null;
   const destinatario = armazem ? armazem.nome : (n.local_origem || "—");
@@ -4091,7 +4130,7 @@ async function gerarLiberacaoPdfNativo(negocioId) {
   titulo3("1. DETALHAMENTO DO EMBARQUE E ESPECIFICAÇÕES DO PRODUTO:");
   tabela([
     ["Produto / Mercadoria", `${(n.grao||"—").toUpperCase()} EM GRÃOS A GRANEL (PADRÃO COMERCIAL)`],
-    ["Volume / Quantidade Liberada", `${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG`],
+    ["Volume / Quantidade Liberada", `${fmtNum(sacas)} (${numeroPorExtenso(sacas)}) SACAS DE 60 KG — TOTALIZANDO ${fmtNum(kg)} KG${liberacaoParcial(n) ? ` — LIBERAÇÃO PARCIAL, de um total contratado de ${fmtNum(n.quantidade)} sacas` : ""}`],
     ["Data Efetiva de Liberação", `${fmtDate(n.data_inicio_embarque)} (Autorizado o carregamento a partir desta data)`],
     ["Local de Carregamento e Retirada", destinatario],
   ]);
