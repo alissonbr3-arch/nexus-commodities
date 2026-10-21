@@ -2385,7 +2385,7 @@ async function briefingCarregar(forcar) {
   if (st) st.textContent = "Carregando clima e notícias…";
   const [clima, noticias] = await Promise.all([
     fetch(`https://api.open-meteo.com/v1/forecast?latitude=${BR_CLIMA_LOCAL.lat}&longitude=${BR_CLIMA_LOCAL.lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&timezone=America%2FCampo_Grande&forecast_days=1`).then(r => r.json()).catch(() => null),
-    fetch("/.netlify/functions/noticias-agro").then(r => r.json()).catch(() => null),
+    fetch("/.netlify/functions/noticias-agro?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).catch(() => null), // sem cache: o botão Atualizar dados precisa trazer notícia nova
   ]);
   briefing.clima = clima && clima.current ? clima : null;
   const itens = (noticias && noticias.itens) || [];
