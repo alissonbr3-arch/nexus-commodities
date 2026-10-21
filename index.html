@@ -4823,6 +4823,43 @@ function renderComissoesFilterCorretorSelect() {
     + data.equipe.map(e => `<option value="${e.user_id}">${e.nome}</option>`).join("");
   sel.value = [...sel.options].some(o => o.value === atual) ? atual : "";
 }
+// ---------------- IMPOSTO SOBRE AS NOTAS FISCAIS (despesa automática) ----------------
+// Cada mês, 6% do valor das notas emitidas pelo app vira uma despesa de "Impostos" com vencimento no dia 20
+// do mês seguinte. Fica amarrada ao mês de emissão pela chave_auto (uma só por mês, sem duplicar mesmo com
+// duas pessoas com o painel aberto). Vale até o dia do vencimento: depois que passa, o valor não muda mais.
+const IMPOSTO_NF_PCT = 6, IMPOSTO_NF_DIA = 20;
+function notaEmitidaNoSistema(n) { return !!n.nota_fiscal_emitida_em && ["AUTHORIZED", "CANCELLATION_DENIED"].includes(n.nota_fiscal_status); }
+let sincNotasEmCurso = false, sincNotasUltimaTentativa = "";
+async function sincronizarDespesaNotas() {
+  if (sincNotasEmCurso || !data.negocios.length) return;
+  const porMes = {};
+  data.negocios.filter(notaEmitidaNoSistema).forEach(n => { const m = String(n.nota_fiscal_emitida_em).slice(0, 7); porMes[m] = (porMes[m] || 0) + Number(n.comissao || 0); });
+  (data.despesas || []).filter(d => d.chave_auto && d.chave_auto.startsWith("imposto-nf-")).forEach(d => { const m = d.chave_auto.slice(11); if (!(m in porMes)) porMes[m] = 0; });
+  const hoje = todayISO(), acoes = [];
+  for (const [mes, soma] of Object.entries(porMes)) {
+    const [y, m] = mes.split("-").map(Number), venc = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-${String(IMPOSTO_NF_DIA).padStart(2, "0")}`;
+    const valor = Math.round(soma * IMPOSTO_NF_PCT) / 100, chave = "imposto-nf-" + mes;
+    const existente = (data.despesas || []).find(d => d.chave_auto === chave);
+    const rotulo = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    const obs = `Lançada automaticamente: ${IMPOSTO_NF_PCT}% de ${fmtMoney(soma)} em notas fiscais emitidas em ${rotulo}. Vence no dia ${IMPOSTO_NF_DIA}.`;
+    if (!existente && valor > 0) acoes.push({ tipo: "novo", linha: { descricao: `Imposto sobre notas fiscais — ${rotulo} (${IMPOSTO_NF_PCT}%)`, categoria: "Impostos", valor, data: venc, obs, chave_auto: chave, created_by: currentUserId } });
+    else if (existente && existente.data >= hoje && Math.abs(Number(existente.valor) - valor) > 0.004) acoes.push(valor > 0 ? { tipo: "atualiza", id: existente.id, patch: { valor, obs } } : { tipo: "apaga", id: existente.id });
+  }
+  if (!acoes.length) return;
+  const assinatura = JSON.stringify(acoes.map(a => [a.tipo, a.id || a.linha.chave_auto, a.patch ? a.patch.valor : a.linha ? a.linha.valor : 0]));
+  if (assinatura === sincNotasUltimaTentativa) return; // já tentou isso e não mudou nada: não fica repetindo
+  sincNotasUltimaTentativa = assinatura; sincNotasEmCurso = true;
+  try {
+    for (const a of acoes) {
+      if (a.tipo === "novo") await sb.from("nexus_despesas").upsert([a.linha], { onConflict: "chave_auto", ignoreDuplicates: true });
+      else if (a.tipo === "atualiza") await sb.from("nexus_despesas").update(a.patch).eq("id", a.id);
+      else await sb.from("nexus_despesas").delete().eq("id", a.id);
+    }
+    await loadDespesas();
+    if (typeof renderDespesasPage === "function") renderDespesasPage();
+  } finally { sincNotasEmCurso = false; }
+}
+
 function renderComissoesPage() {
   const body = document.getElementById("comissoesBody");
   if (!body) return;
@@ -4882,6 +4919,13 @@ function renderComissoesPage() {
         </td>
       </tr>`;
     }).join("");
+  // Última linha: tudo que já teve nota fiscal emitida pelo app nesta lista, e o imposto (6%) que vira despesa sozinha.
+  const emitidasLista = list.filter(c => notaEmitidaNoSistema(c.negocio));
+  if (list.length > 0) {
+    const totalNotas = emitidasLista.reduce((s, c) => s + c.valor, 0), nNotas = new Set(emitidasLista.map(c => c.negocio.nota_fiscal_asaas_id).filter(Boolean)).size;
+    body.insertAdjacentHTML("beforeend", `<tr style="background:var(--gold-soft);font-weight:700"><td></td><td colspan="4">Notas fiscais emitidas${nNotas ? ` (${nNotas} nota${nNotas === 1 ? "" : "s"})` : ""}</td><td style="color:var(--gold)">${fmtMoney(totalNotas)}</td><td colspan="4" style="font-weight:500;color:var(--ink-soft)">Imposto de ${IMPOSTO_NF_PCT}%: <b style="color:var(--ink)">${fmtMoney(totalNotas * IMPOSTO_NF_PCT / 100)}</b> — vira despesa automática no dia ${IMPOSTO_NF_DIA} do mês seguinte à emissão</td></tr>`);
+  }
+  sincronizarDespesaNotas();
   renderComissoesBarraSelecao(list);
 
   const bodyC = document.getElementById("comissoesCorretorBody");
