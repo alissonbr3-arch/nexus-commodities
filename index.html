@@ -1909,21 +1909,30 @@ function diasUteisEntre(iniISO, fimISO) {
 function renderOfertadosDash() {
   const el = document.getElementById("ofertadosPanel");
   if (!el) return;
-  const meus = (data.intencoes || []).filter(it => it.status === "Ofertado" && it.owner_id === currentUserId);
-  if (!meus.length) { el.style.display = "none"; return; }
-  const totalSc = meus.reduce((s, it) => s + Number(it.quantidade_sacas || 0), 0);
+  const ABERTOS = ["Ofertado", "Intenção registrada", "Preço bateu"]; // ainda por negociar (Convertido e Perdido saem)
+  const abertos = (data.intencoes || []).filter(it => ABERTOS.includes(it.status));
+  const meusAbertos = abertos.filter(it => it.owner_id === currentUserId);
+  const meus = meusAbertos.filter(it => it.status === "Ofertado");
+  if (!meusAbertos.length) { el.style.display = "none"; return; }
+  const soma = lista => lista.reduce((s, it) => s + Number(it.quantidade_sacas || 0), 0);
+  const porGrao = lista => Object.entries(lista.reduce((o, it) => { o[it.grao] = (o[it.grao] || 0) + Number(it.quantidade_sacas || 0); return o; }, {})).sort((a, b) => b[1] - a[1]).map(([g, v]) => `${escapeHtml(g)} ${fmtNum(v)} sc`).join(" · ");
   el.style.display = "";
   el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
       <h3 style="margin:0">Meus ofertados — não esquece de dar retorno</h3>
       <button class="btn-edit-text" onclick="abrirFunilDoCorretor()">Ver no funil &rarr;</button>
     </div>
-    <div class="hint">${meus.length} oferta${meus.length === 1 ? "" : "s"} aguardando · ${fmtNum(totalSc)} sc no total</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px">
+    <div class="hint">${meus.length ? `${meus.length} oferta${meus.length === 1 ? "" : "s"} aguardando · ${fmtNum(soma(meus))} sc` : "Nenhum ofertado agora — hora de ofertar de novo."}</div>
+    ${meus.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px">
       ${meus.map(it => `<div class="funil-card" style="cursor:pointer" onclick="abrirFunilDoCorretor()">
         <div class="fc-name">${escapeHtml(nomeCadastro(it.produtor_id))}</div>
         <div class="fc-sub" style="display:flex;align-items:center;gap:5px">${graoIconHtml(it.grao)} ${escapeHtml(it.grao)} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="font-size:18px;font-weight:700;color:var(--gold)">${fmtMoney(it.preco_alvo)}</span><span style="font-size:11.5px;color:var(--ink-soft)">alvo · ofertado ${fmtDate((it.created_at || "").slice(0, 10))}</span></div>
       </div>`).join("")}
+    </div>` : ""}
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px 28px;align-items:baseline">
+      <div><div style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em">Volume para negociar — meu funil</div><div style="font-size:24px;font-weight:700;color:var(--gold)">${fmtNum(soma(meusAbertos))} sc <span style="font-size:13px;font-weight:400;color:var(--ink-soft)">${fmtNum(soma(meusAbertos) * 0.06)} t</span></div><div style="font-size:12px;color:var(--ink-soft)">${porGrao(meusAbertos)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em">Equipe toda</div><div style="font-size:18px;font-weight:600">${fmtNum(soma(abertos))} sc</div><div style="font-size:12px;color:var(--ink-soft)">${porGrao(abertos)}</div></div>
+      <div style="font-size:11.5px;color:var(--ink-dim);align-self:flex-end">Inclui ofertado, intenção registrada e preço bateu.</div>
     </div>`;
 }
 function abrirFunilDoCorretor() {
