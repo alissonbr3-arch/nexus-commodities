@@ -502,6 +502,7 @@
         </div>
 
         <div class="subpage active" id="sub-executivo">
+          <div class="panel-card" id="ofertadosPanel" style="display:none;margin-bottom:18px"></div>
           <div class="filters-row">
             <button class="period-btn" data-period="dia">Diário</button>
             <button class="period-btn" data-period="semana">Semanal</button>
@@ -510,7 +511,6 @@
             <button class="period-btn" data-period="total">Total</button>
           </div>
           <div class="cards" id="dashCards"></div>
-          <div class="panel-card" id="ofertadosPanel" style="display:none;margin-bottom:18px"></div>
           <div class="panel-card" id="minhaMetaPanel" style="display:none;margin-bottom:18px"></div>
           <div class="grid-2">
             <div class="panel-card">
@@ -1924,7 +1924,7 @@ function renderOfertadosDash() {
     <div class="hint">${meus.length ? `${meus.length} oferta${meus.length === 1 ? "" : "s"} aguardando · ${fmtNum(soma(meus))} sc` : "Nenhum ofertado agora — hora de ofertar de novo."}</div>
     ${meus.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px">
       ${meus.map(it => `<div class="funil-card" style="cursor:pointer" onclick="abrirFunilDoCorretor()">
-        <div class="fc-name">${escapeHtml(nomeCadastro(it.produtor_id))}</div>
+        <div class="fc-name"><b>${escapeHtml(nomeCadastro(it.produtor_id))}</b></div>
         <div class="fc-sub" style="display:flex;align-items:center;gap:5px">${graoIconHtml(it.grao)} ${escapeHtml(it.grao)} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="font-size:18px;font-weight:700;color:var(--gold)">${fmtMoney(it.preco_alvo)}</span><span style="font-size:11.5px;color:var(--ink-soft)">alvo · ofertado ${fmtDate((it.created_at || "").slice(0, 10))}</span></div>
         ${it.obs ? `<div class="fc-sub" style="margin-top:6px">${escapeHtml(it.obs)}</div>` : ""}
@@ -1937,7 +1937,7 @@ function renderOfertadosDash() {
     </div>
     <div style="overflow-x:auto;margin-top:12px"><table>
       <thead><tr><th>Produtor</th><th style="text-align:right">Qtde (sc)</th><th>Quer negociar</th><th style="text-align:right">Preço alvo</th><th>Situação</th><th>Observação</th></tr></thead>
-      <tbody>${[...meusAbertos].sort((a, b) => Number(b.quantidade_sacas || 0) - Number(a.quantidade_sacas || 0)).map(it => `<tr style="cursor:pointer" onclick="abrirFunilDoCorretor()"><td>${escapeHtml(nomeCadastro(it.produtor_id))}</td><td style="text-align:right">${fmtNum(it.quantidade_sacas)}</td><td>${escapeHtml(it.grao)}${it.comprador_id ? " → " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</td><td style="text-align:right">${fmtMoney(it.preco_alvo)}</td><td>${escapeHtml(it.status)}</td><td style="color:var(--ink-soft)">${escapeHtml(it.obs || "—")}</td></tr>`).join("")}</tbody>
+      <tbody>${[...meusAbertos].sort((a, b) => Number(b.quantidade_sacas || 0) - Number(a.quantidade_sacas || 0)).map(it => `<tr style="cursor:pointer" onclick="abrirFunilDoCorretor()"><td><b>${escapeHtml(nomeCadastro(it.produtor_id))}</b></td><td style="text-align:right">${fmtNum(it.quantidade_sacas)}</td><td><span style="display:inline-flex;align-items:center;gap:6px">${graoIconHtml(it.grao)} ${escapeHtml(it.grao)}</span>${it.comprador_id ? " → " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</td><td style="text-align:right">${fmtMoney(it.preco_alvo)}</td><td>${escapeHtml(it.status)}</td><td style="color:var(--ink-soft)">${escapeHtml(it.obs || "—")}</td></tr>`).join("")}</tbody>
     </table></div>`;
 }
 function abrirFunilDoCorretor() {
