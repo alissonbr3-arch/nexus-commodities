@@ -1927,13 +1927,18 @@ function renderOfertadosDash() {
         <div class="fc-name">${escapeHtml(nomeCadastro(it.produtor_id))}</div>
         <div class="fc-sub" style="display:flex;align-items:center;gap:5px">${graoIconHtml(it.grao)} ${escapeHtml(it.grao)} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="font-size:18px;font-weight:700;color:var(--gold)">${fmtMoney(it.preco_alvo)}</span><span style="font-size:11.5px;color:var(--ink-soft)">alvo · ofertado ${fmtDate((it.created_at || "").slice(0, 10))}</span></div>
+        ${it.obs ? `<div class="fc-sub" style="margin-top:6px">${escapeHtml(it.obs)}</div>` : ""}
       </div>`).join("")}
     </div>` : ""}
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px 28px;align-items:baseline">
       <div><div style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em">Volume para negociar — meu funil</div><div style="font-size:24px;font-weight:700;color:var(--gold)">${fmtNum(soma(meusAbertos))} sc <span style="font-size:13px;font-weight:400;color:var(--ink-soft)">${fmtNum(soma(meusAbertos) * 0.06)} t</span></div><div style="font-size:12px;color:var(--ink-soft)">${porGrao(meusAbertos)}</div></div>
       <div><div style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em">Equipe toda</div><div style="font-size:18px;font-weight:600">${fmtNum(soma(abertos))} sc</div><div style="font-size:12px;color:var(--ink-soft)">${porGrao(abertos)}</div></div>
       <div style="font-size:11.5px;color:var(--ink-dim);align-self:flex-end">Inclui ofertado, intenção registrada e preço bateu.</div>
-    </div>`;
+    </div>
+    <div style="overflow-x:auto;margin-top:12px"><table>
+      <thead><tr><th>Produtor</th><th style="text-align:right">Qtde (sc)</th><th>Quer negociar</th><th style="text-align:right">Preço alvo</th><th>Situação</th><th>Observação</th></tr></thead>
+      <tbody>${[...meusAbertos].sort((a, b) => Number(b.quantidade_sacas || 0) - Number(a.quantidade_sacas || 0)).map(it => `<tr style="cursor:pointer" onclick="abrirFunilDoCorretor()"><td>${escapeHtml(nomeCadastro(it.produtor_id))}</td><td style="text-align:right">${fmtNum(it.quantidade_sacas)}</td><td>${escapeHtml(it.grao)}${it.comprador_id ? " → " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</td><td style="text-align:right">${fmtMoney(it.preco_alvo)}</td><td>${escapeHtml(it.status)}</td><td style="color:var(--ink-soft)">${escapeHtml(it.obs || "—")}</td></tr>`).join("")}</tbody>
+    </table></div>`;
 }
 function abrirFunilDoCorretor() {
   funilFilterResponsavelId = currentUserId;
