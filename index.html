@@ -511,6 +511,7 @@
           </div>
           <div class="cards" id="dashCards"></div>
           <div class="panel-card" id="minhaMetaPanel" style="display:none"></div>
+          <div class="panel-card" id="ofertadosPanel" style="display:none"></div>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Volume por comprador</h3>
@@ -1833,7 +1834,7 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderCuriosidades(); renderMinhaMeta();
+  renderCuriosidades(); renderMinhaMeta(); renderOfertadosDash();
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
 }
 // ---------------- CURIOSIDADES (desde o primeiro negócio) ----------------
@@ -1903,6 +1904,32 @@ function diasUteisEntre(iniISO, fimISO) {
   let n = 0; const [y1, m1, d1] = iniISO.split("-").map(Number), [y2, m2, d2] = fimISO.split("-").map(Number);
   for (let d = new Date(y1, m1 - 1, d1); d <= new Date(y2, m2 - 1, d2); d.setDate(d.getDate() + 1)) { const w = d.getDay(); if (w !== 0 && w !== 6) n++; }
   return n;
+}
+// Ofertados do funil de cada corretor, sempre à vista no Dashboard pra ele lembrar de dar sequência.
+function renderOfertadosDash() {
+  const el = document.getElementById("ofertadosPanel");
+  if (!el) return;
+  const meus = (data.intencoes || []).filter(it => it.status === "Ofertado" && it.owner_id === currentUserId);
+  if (!meus.length) { el.style.display = "none"; return; }
+  const totalSc = meus.reduce((s, it) => s + Number(it.quantidade_sacas || 0), 0);
+  el.style.display = "";
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">Meus ofertados — não esquece de dar retorno</h3>
+      <button class="btn-edit-text" onclick="abrirFunilDoCorretor()">Ver no funil &rarr;</button>
+    </div>
+    <div class="hint">${meus.length} oferta${meus.length === 1 ? "" : "s"} aguardando · ${fmtNum(totalSc)} sc no total</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:10px">
+      ${meus.map(it => `<div class="funil-card" style="cursor:pointer" onclick="abrirFunilDoCorretor()">
+        <div class="fc-name">${escapeHtml(nomeCadastro(it.produtor_id))}</div>
+        <div class="fc-sub" style="display:flex;align-items:center;gap:5px">${graoIconHtml(it.grao)} ${escapeHtml(it.grao)} · ${fmtNum(it.quantidade_sacas)} sc${it.comprador_id ? " · " + escapeHtml(nomeCadastro(it.comprador_id)) : ""}</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="font-size:18px;font-weight:700;color:var(--gold)">${fmtMoney(it.preco_alvo)}</span><span style="font-size:11.5px;color:var(--ink-soft)">alvo · ofertado ${fmtDate((it.created_at || "").slice(0, 10))}</span></div>
+      </div>`).join("")}
+    </div>`;
+}
+function abrirFunilDoCorretor() {
+  funilFilterResponsavelId = currentUserId;
+  document.querySelector('.nav-item[data-page="funil"]').click();
+  renderFunil();
 }
 function renderMinhaMeta() {
   const el = document.getElementById("minhaMetaPanel");
@@ -6746,6 +6773,7 @@ function renderFunil() {
   const board = document.getElementById("funilBoard");
   if (!board) return;
   renderFunilFilterSelect();
+  renderOfertadosDash();
   const todas = funilFilterResponsavelId ? data.intencoes.filter(it => it.owner_id === funilFilterResponsavelId) : data.intencoes;
   board.innerHTML = FUNIL_STATUS.map(status => {
     const itens = todas.filter(it => it.status === status);
