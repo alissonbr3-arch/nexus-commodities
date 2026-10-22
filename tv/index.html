@@ -114,10 +114,10 @@
   .live-badge.on { background: var(--red-soft); color: var(--red); } .live-badge.on::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: piscar 1.2s infinite; }
   .live-badge.off { background: var(--gold-soft); color: var(--gold); }
   @keyframes piscar { 50% { opacity: .2; } }
-  .live-grid { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; min-height: 0; }
+  .live-grid { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 14px; min-height: 0; }
   .live-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: clamp(12px, 2vh, 22px) 22px; display: flex; flex-direction: column; min-height: 0; }
   .live-card .lc-nome { font-size: 15px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
-  .live-card .lc-preco { font-size: clamp(30px, 4.4vw, 62px); font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .live-card .lc-preco { white-space: nowrap; font-size: clamp(26px, 3.3vw, 54px); font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; line-height: 1.05; }
   .live-card .lc-preco small { font-size: 14px; font-weight: 600; color: var(--ink-dim); margin-left: 6px; }
   .live-card .lc-var { font-size: clamp(16px, 2.2vh, 22px); font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
   .live-card .lc-var.up { color: var(--green); } .live-card .lc-var.down { color: var(--red); }
@@ -219,7 +219,7 @@
         </div>
       </div>
       <div class="slide" data-nome="Chicago">
-        <div class="slide-title">Chicago — <b>soja, milho e dólar</b><span class="live-badge off" id="liveBadge">Carregando…</span></div>
+        <div class="slide-title">Mercado ao vivo — <b>soja, milho, Brent e dólar</b><span class="live-badge off" id="liveBadge">Carregando…</span></div>
         <div class="live-grid" id="liveGrid"></div>
       </div>
       <div class="slide" data-nome="Preços dos negócios">
@@ -552,7 +552,7 @@ const FATOR_TEMPO = {
 // controle) pulam direto pro painel; /tv/?painel=2 abre já nele; /tv/?paineis=1,2,5 gira só entre esses.
 const PAINEIS = [
   { num: 1, chave: "Mercado", nome: "Cotações" },
-  { num: 2, chave: "Chicago", nome: "Chicago ao vivo" },
+  { num: 2, chave: "Chicago", nome: "Mercado ao vivo" },
   { num: 3, chave: "Preços dos negócios", nome: "Preços dos negócios" },
   { num: 4, chave: "Curiosidades", nome: "Curiosidades" },
   { num: 5, chave: "Aniversariantes", nome: "Aniversariantes do dia" },
@@ -638,6 +638,7 @@ async function carregarDadosTv() {
   renderCotacoesTv(cotRows || []);
   renderDolarTv(dolarRow);
   renderMilhoB3Tv(cotRows || [], histRows || []);
+  dadosTv = { cot: cotRows || [], hist: histRows || [] }; renderLiveTv();
   renderChartTv(histRows || []);
   renderChartMensalTv(histRows || []);
   renderChartVolumeTv(todos.filter(n => n.data >= desde));
@@ -649,7 +650,7 @@ async function carregarDadosTv() {
 
 // ---------------- CHICAGO AO VIVO + ALERTA DE MOVIMENTO ----------------
 const FATOR_KG = { "ZSX26.CBT": 27.2155, "ZSH27.CBT": 27.2155, "ZC=F": 25.401 }; // kg por bushel
-const LIMITE_ALERTA = { Soja: 1, Milho: 1, "Dólar": 0.8 }; // % no dia; avisa de novo a cada múltiplo
+const LIMITE_ALERTA = { Soja: 1, Milho: 1, Brent: 2, "Dólar": 0.8 }; // % no dia; avisa de novo a cada múltiplo
 const liveCharts = {};
 function fmtHora(ts) { return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
 async function carregarIntraday() {
@@ -657,49 +658,67 @@ async function carregarIntraday() {
     const j = await (await fetch("/.netlify/functions/cotacoes-intraday?t=" + Math.floor(Date.now() / 60000))).json();
     if (!j.ok) return;
     const itens = j.itens;
-    const graos = itens.filter(i => i.grupo !== "Dólar" && i.horario);
+    ultimosIntraday = itens;
+    const graos = itens.filter(i => (i.grupo === "Soja" || i.grupo === "Milho") && i.horario); // Brent e dólar negociam quase 24h: não indicam pregão de grãos
     const vivoAgora = graos.some(i => Date.now() - i.horario * 1000 < 25 * 60 * 1000);
     const mudou = vivoAgora !== modoVivo;
     modoVivo = vivoAgora;
     const badge = document.getElementById("liveBadge");
     badge.className = "live-badge " + (vivoAgora ? "on" : "off");
     badge.textContent = vivoAgora ? "Ao vivo · atraso de ~15 min" : "Mercado fechado · último preço";
-    renderLiveTv(itens);
+    renderLiveTv();
     verificarAlertasMovimento(itens);
     if (mudou && slideTimer) mostrarSlide(playlistPos); // reordena a programação na hora
   } catch (e) {}
 }
-function renderLiveTv(itens) {
-  const dolar = (itens.find(i => i.grupo === "Dólar") || {}).preco || 5;
+// Como cada ativo aparece no cartão: prefixo/unidade, divisor (CBOT vem em centavos) e casas decimais.
+const UNIDADE_LIVE = {
+  Soja: { pref: "US$ ", div: 100, un: "/bushel", dec: 2 }, Milho: { pref: "US$ ", div: 100, un: "/bushel", dec: 2 },
+  Brent: { pref: "US$ ", div: 1, un: "/barril", dec: 2 }, "Dólar": { pref: "R$ ", div: 1, un: "", dec: 3 },
+  B3: { pref: "R$ ", div: 1, un: "/saca", dec: 2 },
+};
+const ORDEM_LIVE = ["ZSX26.CBT", "ZSH27.CBT", "ZC=F", "CCM", "BZ=F", "BRL=X"];
+let ultimosIntraday = [], dadosTv = { cot: [], hist: [] };
+function cartaoB3() {
+  const c = (dadosTv.cot || []).find(x => x.codigo === "CCM");
+  if (!c) return null;
+  const pts = (dadosTv.hist || []).filter(h => h.codigo === "CCM").sort((a, b) => a.data.localeCompare(b.data)).slice(-20);
+  return { codigo: "CCM", grupo: "B3", nome: `Milho B3 ${String(c.mes || "").replace(/^B3\s*/, "")}`, preco: Number(c.ultima), anterior: Number(c.previa), variacao: Number(c.varr), pct: Number(c.pct),
+    serie: pts.map(h => ({ rotulo: fmtDateBR(h.data).slice(0, 5), v: Number(h.ultima) })), obs: c.observacao || "Fechamento do pregão anterior", fechamentos: true };
+}
+function renderLiveTv() {
+  const itens = [...ultimosIntraday, cartaoB3()].filter(Boolean).sort((a, b) => ORDEM_LIVE.indexOf(a.codigo) - ORDEM_LIVE.indexOf(b.codigo));
+  if (!itens.length) return;
+  const dolar = (ultimosIntraday.find(i => i.grupo === "Dólar") || {}).preco || 5;
   document.getElementById("liveGrid").innerHTML = itens.map((i, k) => {
-    const dolarCard = i.grupo === "Dólar";
-    const div = dolarCard ? 1 : 100;
+    const u = UNIDADE_LIVE[i.grupo] || UNIDADE_LIVE.Brent;
     const sub = i.variacao > 0 ? "up" : i.variacao < 0 ? "down" : "";
     const seta = i.variacao > 0 ? "▲" : i.variacao < 0 ? "▼" : "■";
-    const saca = !dolarCard && FATOR_KG[i.codigo] ? (i.preco / 100 / FATOR_KG[i.codigo]) * 60 * dolar : null;
+    const saca = FATOR_KG[i.codigo] ? (i.preco / 100 / FATOR_KG[i.codigo]) * 60 * dolar : null;
     const vs = i.serie.map(p => p.v);
+    const rodape = i.fechamentos ? i.obs : `${vs.length ? `Máx ${fmtNum2(Math.max(...vs) / u.div)} · Mín ${fmtNum2(Math.min(...vs) / u.div)} · ` : ""}${i.horario ? "último negócio " + fmtHora(i.horario * 1000) : ""}`;
     return `<div class="live-card">
       <div class="lc-nome">${i.nome}</div>
-      <div class="lc-preco">${dolarCard ? "R$ " : "US$ "}${Number(i.preco / div).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: dolarCard ? 3 : 2 })}${dolarCard ? "" : "<small>/bushel</small>"}</div>
-      <div class="lc-var ${sub}">${seta} ${fmtSigned(i.variacao / div)} (${fmtSigned(i.pct)}%)</div>
+      <div class="lc-preco">${u.pref}${Number(i.preco / u.div).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: u.dec })}${u.un ? `<small>${u.un}</small>` : ""}</div>
+      <div class="lc-var ${sub}">${seta} ${fmtSigned(i.variacao / u.div)} (${fmtSigned(i.pct)}%)</div>
       <div class="lc-saca">${saca ? `≈ R$ <b>${fmtNum2(saca)}</b> / saca de 60 kg` : "&nbsp;"}</div>
       <div class="lc-chart"><canvas id="liveChart${k}"></canvas></div>
-      <div class="lc-foot">${vs.length ? `Máx ${fmtNum2(Math.max(...vs) / div)} · Mín ${fmtNum2(Math.min(...vs) / div)} · ` : ""}${i.horario ? "último negócio " + fmtHora(i.horario * 1000) : ""}</div>
+      <div class="lc-foot">${rodape}</div>
     </div>`;
   }).join("");
+  Object.values(liveCharts).forEach(ch => ch.destroy());
   itens.forEach((i, k) => {
+    const u = UNIDADE_LIVE[i.grupo] || UNIDADE_LIVE.Brent;
     const cor = i.variacao >= 0 ? "#4caf6d" : "#e15c5c";
     const canvas = document.getElementById("liveChart" + k);
     if (!canvas || !i.serie.length) return;
-    if (liveCharts[k]) liveCharts[k].destroy();
+    const datasets = [{ data: i.serie.map(p => p.v), borderColor: cor, backgroundColor: cor + "22", fill: true, tension: 0.25, borderWidth: 2.5, pointRadius: i.fechamentos ? 3 : 0, pointBackgroundColor: cor }];
+    if (!i.fechamentos) datasets.push({ data: i.serie.map(() => i.anterior), borderColor: "#656d76", borderDash: [5, 5], borderWidth: 1.2, pointRadius: 0, fill: false });
     liveCharts[k] = new Chart(canvas, {
       type: "line",
-      data: { labels: i.serie.map(p => fmtHora(p.t * 1000)), datasets: [
-        { data: i.serie.map(p => p.v), borderColor: cor, backgroundColor: cor + "22", fill: true, tension: 0.25, borderWidth: 2.5, pointRadius: 0 },
-        { data: i.serie.map(() => i.anterior), borderColor: "#656d76", borderDash: [5, 5], borderWidth: 1.2, pointRadius: 0, fill: false },
-      ] },
+      data: { labels: i.serie.map(p => p.rotulo || fmtHora(p.t * 1000)), datasets },
       options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: { x: { display: false }, y: { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9", maxTicksLimit: 4, callback: v => fmtNum2(v / (i.grupo === "Dólar" ? 1 : 100)) } } } },
+        scales: { x: { display: !!i.fechamentos, grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 6 } }, y: { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9", maxTicksLimit: 4, callback: v => fmtNum2(v / u.div) } } } },
     });
   });
 }
@@ -724,12 +743,12 @@ function proximoAlerta() {
   alertaMostrando = true; mostrarAlertaMovimento(filaAlertas.shift());
 }
 function mostrarAlertaMovimento(i) {
-  const alta = i.pct > 0, dolarCard = i.grupo === "Dólar", div = dolarCard ? 1 : 100;
+  const alta = i.pct > 0, u = UNIDADE_LIVE[i.grupo] || UNIDADE_LIVE.Soja;
   const box = document.getElementById("alertaMov");
   box.className = (alta ? "up" : "down");
   document.getElementById("amIc").textContent = alta ? "📈" : "📉";
   document.getElementById("amT").textContent = `${i.nome.toUpperCase()} ${alta ? "em alta" : "em queda"} de ${fmtNum2(Math.abs(i.pct))}% hoje`;
-  document.getElementById("amS").textContent = `${dolarCard ? "R$ " : "US$ "}${fmtNum2(i.preco / div)}${dolarCard ? "" : "/bushel"} · ontem ${fmtNum2(i.anterior / div)}`;
+  document.getElementById("amS").textContent = `${u.pref}${fmtNum2(i.preco / u.div)}${u.un} · ontem ${fmtNum2(i.anterior / u.div)}`;
   requestAnimationFrame(() => box.classList.add("show"));
   setTimeout(() => { box.classList.remove("show"); setTimeout(() => { alertaMostrando = false; proximoAlerta(); }, 700); }, 15000);
 }
