@@ -601,7 +601,7 @@ const liveCharts = {};
 function fmtHora(ts) { return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
 async function carregarIntraday() {
   try {
-    const j = await (await fetch("/.netlify/functions/cotacoes-intraday?t=" + Math.floor(Date.now() / 60000))).json();
+    const j = await (await fetch("/.netlify/functions/cotacoes-intraday?t=" + Math.floor(Date.now() / 180000))).json();
     if (!j.ok) return;
     const itens = j.itens;
     ultimosIntraday = itens;
@@ -888,7 +888,7 @@ function iniciarApp() {
   carregarNoticiasTv();
   iniciarSlides();
   iniciarRadio();
-  carregarIntraday(); setInterval(carregarIntraday, 60000);
+  carregarIntraday(); setInterval(carregarIntraday, 180000); // a cada 3 min (a fonte já tem ~15 min de atraso; economiza créditos do Netlify)
   carregarPessoasTv().then(() => { const d = new URLSearchParams(location.search).get("demo"); if (d) setTimeout(() => tvDemo(d), 3000); });
   setInterval(carregarPessoasTv, 300000);
   setInterval(carregarDadosTv, 60000);

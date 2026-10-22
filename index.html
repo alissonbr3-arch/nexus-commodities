@@ -630,7 +630,7 @@
         </div>
         <div class="subpage" id="sub-investimentos" style="display:none">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-            <div class="hint" style="margin:0">Suas posições em bolsa — só você vê. Preço atual com atraso de ~15 min, atualizado a cada minuto.</div>
+            <div class="hint" style="margin:0">Suas posições em bolsa — só você vê. Preço atual com atraso de ~15 min, atualizado a cada 2 minutos.</div>
             <button class="btn-primary" onclick="openInvestimentoModal(null)">+ Novo investimento</button>
           </div>
           <div class="cards" id="invCards"></div>
@@ -6944,7 +6944,7 @@ function abrirInvestimentos() {
   atualizarPrecosBolsa().then(renderInvestimentos);
   renderInvestimentos();
   clearInterval(invTimer);
-  invTimer = setInterval(() => { if (document.getElementById("sub-investimentos")?.style.display === "block") atualizarPrecosBolsa().then(renderInvestimentos); else clearInterval(invTimer); }, 60000);
+  invTimer = setInterval(() => { if (document.getElementById("sub-investimentos")?.style.display === "block") atualizarPrecosBolsa().then(renderInvestimentos); else clearInterval(invTimer); }, 120000);
 }
 function renderInvestimentos() {
   const body = document.getElementById("invBody"); if (!body) return;
