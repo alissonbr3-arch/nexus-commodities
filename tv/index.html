@@ -646,6 +646,7 @@ function renderLiveTv() {
       <div class="lc-preco">${u.pref}${Number(i.preco / u.div).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: u.dec })}${u.un ? `<small>${u.un}</small>` : ""}</div>
       <div class="lc-var ${sub}">${seta} ${fmtSigned(i.variacao / u.div)} (${fmtSigned(i.pct)}%)</div>
       <div class="lc-saca">${saca ? `≈ R$ <b>${fmtNum2(saca)}</b> / saca de 60 kg` : "&nbsp;"}</div>
+      ${i.grupo === "Soja" ? (() => { const pr = Number(((dadosTv.cot || []).find(c => c.codigo === i.codigo) || {}).premio); return `<div class="lc-saca" style="margin-top:3px">${pr ? `Prêmio (basis): <b>${pr > 0 ? "+" : ""}US$ ${fmtNum2(pr)}</b>/bu` : "&nbsp;"}</div>`; })() : ""}
       <div class="lc-chart"><canvas id="liveChart${k}"></canvas></div>
       <div class="lc-foot">${rodape}</div>
     </div>`;
