@@ -6831,8 +6831,8 @@ async function saveIntencao(id) {
   const payload = { produtor_id: v("f_intProdutor") || null, grao: v("f_intGrao"), quantidade_sacas: n("f_intQuantidade"), preco_alvo: n("f_intPrecoAlvo"), preco_referencia: n("f_intPrecoRef"),
     comprador_id: v("f_intComprador") || null, status: v("f_intStatus"), obs: v("f_intObs") };
   if (!payload.produtor_id) { alert("Selecione um produtor."); return; }
-  if (id) { await sb.from("nexus_intencoes").update(payload).eq("id", id); }
-  else { await sb.from("nexus_intencoes").insert([{ ...payload, owner_id: currentUserId, created_by: currentUserId }]); }
+  const { error } = id ? await sb.from("nexus_intencoes").update(payload).eq("id", id) : await sb.from("nexus_intencoes").insert([{ ...payload, owner_id: currentUserId, created_by: currentUserId }]);
+  if (error) { alert("Não consegui salvar a intenção: " + error.message); return; } // antes falhava calado e a janela fechava como se tivesse salvo
   await loadIntencoes(); closeModal(); renderFunil();
 }
 document.getElementById("addIntencaoBtn").addEventListener("click", () => openIntencaoModal(null));
