@@ -499,6 +499,7 @@
           <button class="subtab-btn" data-subtab="produtores">Produtores</button>
           <button class="subtab-btn" data-subtab="corretores">Corretores</button>
           <button class="subtab-btn" data-subtab="analitico">Analítico</button>
+          <button class="subtab-btn" data-subtab="investimentos">Investimentos</button>
         </div>
 
         <div class="subpage active" id="sub-executivo">
@@ -627,6 +628,19 @@
             </table>
           </div>
         </div>
+        <div class="subpage" id="sub-investimentos" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <div class="hint" style="margin:0">Suas posições em bolsa — só você vê. Preço atual com atraso de ~15 min, atualizado a cada minuto.</div>
+            <button class="btn-primary" onclick="openInvestimentoModal(null)">+ Novo investimento</button>
+          </div>
+          <div class="cards" id="invCards"></div>
+          <div class="panel-card" style="overflow-x:auto"><table>
+            <thead><tr><th>Contrato</th><th>Posição</th><th style="text-align:right">Contratos</th><th style="text-align:right">Preço de compra</th><th style="text-align:right">Preço do dia</th><th style="text-align:right">Ganho / perda</th><th style="text-align:right">%</th><th></th></tr></thead>
+            <tbody id="invBody"></tbody>
+          </table></div>
+          <div class="hint" id="invRodape" style="margin-top:10px"></div>
+        </div>
+
         <div class="subpage" id="sub-analitico" style="display:none">
           <div class="panel-card">
             <h3>Faixa de preço negociado — safras vigentes</h3>
@@ -1338,7 +1352,7 @@ function onCpfCnpjInput(id) {
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "mes";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1389,7 +1403,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig(), loadPrecoEnvio()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
   renderAll();
   navRestaurar();
   wireRealtime();
@@ -1415,6 +1429,7 @@ async function loadReceitas() { const { data: rows, error } = await sb.from("nex
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
+async function loadInvestimentos() { const { data: rows, error } = await sb.from("nexus_investimentos").select("*").order("data_compra", { ascending: false }); if (!error) data.investimentos = rows || []; }
 async function loadIntencoes() { const { data: rows, error } = await sb.from("nexus_intencoes").select("*").order("created_at", { ascending: false }); if (!error) data.intencoes = rows || []; }
 async function loadFazendas() { const { data: rows, error } = await sb.from("nexus_fazendas").select("*").order("nome"); if (!error) data.fazendas = rows || []; }
 
@@ -1590,6 +1605,7 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     if (btn.dataset.subtab === "produtores") renderDashboardProdutores();
     if (btn.dataset.subtab === "corretores") renderDashboardCorretores();
     if (btn.dataset.subtab === "analitico") renderDashboardAnalitico();
+    if (btn.dataset.subtab === "investimentos") abrirInvestimentos();
   });
 });
 document.querySelectorAll(".period-btn").forEach(btn => {
@@ -6878,6 +6894,166 @@ function convertIntencao(intencaoId) {
   document.getElementById("f_quantidade").value = it.quantidade_sacas || "";
   document.getElementById("f_preco").value = it.preco_alvo || "";
   if (it.comprador_id) { document.getElementById("f_clienteSelect").value = it.comprador_id; onClienteSelectChange(); }
+}
+
+// ---------------- INVESTIMENTOS (posições em bolsa de cada corretor) ----------------
+// Cada corretor cadastra os contratos que comprou/vendeu na bolsa; o painel busca o preço do dia e calcula o
+// ganho ou a perda. Os dados são só do dono (cada um vê o seu). Resultado = (preço do dia − preço de compra)
+// × contratos × multiplicador, com o sinal invertido nas posições vendidas. O multiplicador é "quanto vale
+// 1 ponto de preço por contrato" e pode ser corrigido no cadastro se o tamanho do contrato for outro.
+const MESES_LETRA = [["F", "Jan", 1], ["G", "Fev", 2], ["H", "Mar", 3], ["J", "Abr", 4], ["K", "Mai", 5], ["M", "Jun", 6], ["N", "Jul", 7], ["Q", "Ago", 8], ["U", "Set", 9], ["V", "Out", 10], ["X", "Nov", 11], ["Z", "Dez", 12]];
+const ATIVOS_BOLSA = {
+  CCM: { nome: "Milho B3 (CCM)", fonte: "tv", moeda: "BRL", mult: 450, meses: "FHKNUX", unidade: "R$/saca · contrato de 450 sacas", simbolo: (L, a) => `BMFBOVESPA:CCM${L}${a}` },
+  ZS: { nome: "Soja CBOT", fonte: "yahoo", moeda: "USD", mult: 50, meses: "FHKNQUX", unidade: "centavos de US$/bushel · contrato de 5.000 bu", simbolo: (L, a) => `ZS${L}${String(a).slice(2)}.CBT` },
+  ZC: { nome: "Milho CBOT", fonte: "yahoo", moeda: "USD", mult: 50, meses: "HKNUZ", unidade: "centavos de US$/bushel · contrato de 5.000 bu", simbolo: (L, a) => `ZC${L}${String(a).slice(2)}.CBT` },
+  DOL: { nome: "Dólar B3 (DOL)", fonte: "tv", moeda: "BRL", mult: 50, meses: "FGHJKMNQUVXZ", unidade: "pontos (R$ por US$ 1.000) · contrato de US$ 50 mil", simbolo: (L, a) => `BMFBOVESPA:DOL${L}${a}` },
+  WDO: { nome: "Mini dólar B3 (WDO)", fonte: "tv", moeda: "BRL", mult: 10, meses: "FGHJKMNQUVXZ", unidade: "pontos · contrato de US$ 10 mil", simbolo: (L, a) => `BMFBOVESPA:WDO${L}${a}` },
+  BGI: { nome: "Boi gordo B3 (BGI)", fonte: "tv", moeda: "BRL", mult: 330, meses: "FGHJKMNQUVXZ", unidade: "R$/arroba · contrato de 330 @", simbolo: (L, a) => `BMFBOVESPA:BGI${L}${a}` },
+  OUTRO: { nome: "Outro (preço manual)", fonte: "manual", moeda: "BRL", mult: 1, meses: "", unidade: "você informa o preço do dia" },
+};
+let precosBolsa = {}, invTimer = null;
+function vencimentosDisponiveis(chave) {
+  const a = ATIVOS_BOLSA[chave], hoje = new Date(), out = [];
+  for (let k = 0; k < 28 && out.length < 8; k++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1), [L, ab] = (MESES_LETRA.find(m => m[2] === d.getMonth() + 1) || []);
+    if (a.meses.includes(L)) out.push({ letra: L, ano: d.getFullYear(), rotulo: `${ab}/${String(d.getFullYear()).slice(2)}` });
+  }
+  return out;
+}
+function chavePrecoInv(i) { return i.fonte === "manual" ? null : `${i.fonte}:${i.simbolo}`; }
+function precoAtualInv(i) {
+  if (i.status === "Encerrada") return Number(i.preco_saida);
+  if (i.fonte === "manual") return i.preco_manual == null ? null : Number(i.preco_manual);
+  const p = precosBolsa[chavePrecoInv(i)];
+  return p ? p.preco : null;
+}
+function resultadoInv(i) {
+  const atual = precoAtualInv(i);
+  if (atual == null) return null;
+  const sinal = i.lado === "Vendido" ? -1 : 1, base = Number(i.contratos) * Number(i.multiplicador);
+  return { valor: (atual - Number(i.preco_compra)) * base * sinal, pct: Number(i.preco_compra) ? ((atual / Number(i.preco_compra)) - 1) * 100 * sinal : 0, investido: Number(i.preco_compra) * base };
+}
+const fmtMoedaInv = (v, moeda) => (moeda === "USD" ? "US$ " : "R$ ") + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const corGP = v => v > 0 ? "var(--green)" : v < 0 ? "var(--red)" : "var(--ink)";
+async function atualizarPrecosBolsa() {
+  const simbolos = [...new Set((data.investimentos || []).filter(i => i.status === "Aberta" && i.fonte !== "manual").map(chavePrecoInv))];
+  if (!simbolos.length) { precosBolsa = {}; return; }
+  try { const j = await (await fetch("/.netlify/functions/cotacao-bolsa?s=" + encodeURIComponent(simbolos.join(",")))).json(); if (j.ok) precosBolsa = j.precos || {}; } catch {}
+}
+function abrirInvestimentos() {
+  atualizarPrecosBolsa().then(renderInvestimentos);
+  renderInvestimentos();
+  clearInterval(invTimer);
+  invTimer = setInterval(() => { if (document.getElementById("sub-investimentos")?.style.display === "block") atualizarPrecosBolsa().then(renderInvestimentos); else clearInterval(invTimer); }, 60000);
+}
+function renderInvestimentos() {
+  const body = document.getElementById("invBody"); if (!body) return;
+  const lista = data.investimentos || [];
+  const calc = lista.map(i => ({ i, r: resultadoInv(i) }));
+  const abertas = calc.filter(x => x.i.status === "Aberta"), fechadas = calc.filter(x => x.i.status === "Encerrada");
+  const soma = (xs, moeda) => xs.filter(x => x.i.moeda === moeda && x.r).reduce((s, x) => s + x.r.valor, 0);
+  const dolar = dolarAtual() || 0;
+  const totalBRL = soma(abertas, "BRL") + soma(abertas, "USD") * dolar, realizado = soma(fechadas, "BRL") + soma(fechadas, "USD") * dolar;
+  const investido = abertas.filter(x => x.r).reduce((s, x) => s + x.r.investido * (x.i.moeda === "USD" ? dolar : 1), 0);
+  const card = (t, v, sub, cor) => `<div class="card"><div class="top-row"><div class="label">${t}</div></div><div class="value" style="${cor ? "color:" + cor : ""}">${v}</div><div class="foot">${sub || ""}</div></div>`;
+  document.getElementById("invCards").innerHTML =
+    card("Resultado em aberto", fmtMoedaInv(totalBRL, "BRL"), `${abertas.length} posição${abertas.length === 1 ? "" : "ões"} aberta${abertas.length === 1 ? "" : "s"}`, corGP(totalBRL)) +
+    card("Valor investido (em aberto)", fmtMoedaInv(investido, "BRL"), "preço de compra × contratos × multiplicador") +
+    card("Resultado em %", investido ? ((totalBRL / investido) * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%" : "—", "sobre o valor investido", corGP(totalBRL)) +
+    card("Já realizado (encerradas)", fmtMoedaInv(realizado, "BRL"), `${fechadas.length} encerrada${fechadas.length === 1 ? "" : "s"}`, corGP(realizado));
+  const linha = ({ i, r }) => {
+    const atual = precoAtualInv(i), enc = i.status === "Encerrada", dec = i.moeda === "USD" && i.ativo !== "OUTRO" ? 2 : 2;
+    return `<tr${enc ? ' style="opacity:.65"' : ""}>
+      <td><b>${escapeHtml(i.descricao)}</b><div style="font-size:11.5px;color:var(--ink-soft)">${i.data_compra ? "desde " + fmtDate(i.data_compra) : ""}${enc ? " · encerrada em " + fmtDate(i.data_saida) : ""}${i.obs ? " · " + escapeHtml(i.obs) : ""}</div></td>
+      <td>${escapeHtml(i.lado)}</td>
+      <td style="text-align:right">${fmtNum(i.contratos)}</td>
+      <td style="text-align:right">${fmtNum2Inv(i.preco_compra)}</td>
+      <td style="text-align:right">${atual == null ? "—" : fmtNum2Inv(atual)}${enc ? "<div style='font-size:10.5px;color:var(--ink-soft)'>saída</div>" : ""}</td>
+      <td style="text-align:right;font-weight:700;color:${r ? corGP(r.valor) : "var(--ink)"}">${r ? (r.valor > 0 ? "+" : "") + fmtMoedaInv(r.valor, i.moeda) : "—"}</td>
+      <td style="text-align:right;color:${r ? corGP(r.valor) : "var(--ink)"}">${r ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(2).replace(".", ",") + "%" : "—"}</td>
+      <td style="white-space:nowrap"><button class="btn-edit-text" onclick="openInvestimentoModal('${i.id}')">Editar</button>${enc ? "" : `<button class="btn-edit-text" onclick="encerrarInvestimento('${i.id}')">Encerrar</button>`}<button class="btn-danger-text" onclick="excluirInvestimento('${i.id}')">Excluir</button></td></tr>`;
+  };
+  body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum investimento cadastrado. Clique em "+ Novo investimento".</td></tr>` : [...abertas, ...fechadas].map(linha).join("");
+  document.getElementById("invRodape").textContent = lista.length ? `Resultado em dólar convertido pelo câmbio de hoje (R$ ${dolar.toLocaleString("pt-BR", { minimumFractionDigits: 4 })}). Não considera corretagem, emolumentos, impostos nem ajuste diário — é uma estimativa pelo preço do dia.` : "";
+}
+function fmtNum2Inv(v) { return Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 }); }
+function openInvestimentoModal(id) {
+  const it = id ? data.investimentos.find(x => x.id === id) : { ativo: "CCM", vencimento: "", lado: "Comprado", contratos: "", preco_compra: "", data_compra: todayISO(), multiplicador: ATIVOS_BOLSA.CCM.mult, preco_manual: "", obs: "", descricao: "", moeda: "BRL", fonte: "tv" };
+  document.getElementById("modalContent").innerHTML = `
+    <h3>${id ? "Editar investimento" : "Novo investimento em bolsa"}</h3>
+    <div class="field-row">
+      <div class="field"><label>Ativo</label><select id="f_invAtivo" onchange="invAtivoMudou()">${Object.entries(ATIVOS_BOLSA).map(([k, a]) => `<option value="${k}" ${it.ativo === k ? "selected" : ""}>${a.nome}</option>`).join("")}</select></div>
+      <div class="field" id="f_invVencWrap"><label>Vencimento</label><select id="f_invVenc"></select></div>
+    </div>
+    <div class="field" id="f_invDescWrap" style="display:none"><label>Descrição</label><input type="text" id="f_invDesc" value="${escapeHtml(it.ativo === "OUTRO" ? it.descricao : "")}" placeholder="Ex.: Ação PETR4"></div>
+    <div class="field-row">
+      <div class="field"><label>Posição</label><select id="f_invLado"><option ${it.lado === "Comprado" ? "selected" : ""}>Comprado</option><option ${it.lado === "Vendido" ? "selected" : ""}>Vendido</option></select></div>
+      <div class="field"><label>Nº de contratos</label><input type="number" step="any" min="0" id="f_invContratos" value="${it.contratos}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Preço de compra</label><input type="number" step="any" id="f_invPreco" value="${it.preco_compra}"></div>
+      <div class="field"><label>Data da compra</label><input type="date" id="f_invData" value="${it.data_compra || todayISO()}"></div>
+    </div>
+    <div class="hint" id="f_invUnidade" style="margin:-4px 0 10px"></div>
+    <div class="field-row">
+      <div class="field"><label>Multiplicador <span style="font-weight:400;color:var(--ink-soft)">(quanto vale 1 ponto por contrato)</span></label><input type="number" step="any" id="f_invMult" value="${it.multiplicador}"></div>
+      <div class="field"><label>Moeda do resultado</label><select id="f_invMoeda"><option value="BRL" ${it.moeda === "BRL" ? "selected" : ""}>R$</option><option value="USD" ${it.moeda === "USD" ? "selected" : ""}>US$</option></select></div>
+    </div>
+    <div class="field" id="f_invManualWrap" style="display:none"><label>Preço do dia (manual)</label><input type="number" step="any" id="f_invManual" value="${it.preco_manual ?? ""}"></div>
+    <div class="field"><label>Observação</label><input type="text" id="f_invObs" value="${escapeHtml(it.obs || "")}"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="salvarInvestimento('${id || ""}')">Salvar</button></div>`;
+  showModal();
+  window.__invEdit = it;
+  invAtivoMudou(true);
+}
+function invAtivoMudou(inicial) {
+  const k = document.getElementById("f_invAtivo").value, a = ATIVOS_BOLSA[k], it = window.__invEdit || {};
+  const venc = document.getElementById("f_invVenc"), manual = k === "OUTRO";
+  document.getElementById("f_invVencWrap").style.display = manual ? "none" : "";
+  document.getElementById("f_invDescWrap").style.display = manual ? "" : "none";
+  document.getElementById("f_invManualWrap").style.display = manual ? "" : "none";
+  venc.innerHTML = vencimentosDisponiveis(k).map(v => `<option value="${v.letra}${v.ano}" ${it.ativo === k && it.vencimento === v.letra + v.ano ? "selected" : ""}>${v.rotulo}</option>`).join("");
+  document.getElementById("f_invUnidade").textContent = "Preço em: " + a.unidade;
+  if (!(inicial && it.ativo === k && it.id)) { document.getElementById("f_invMult").value = a.mult; document.getElementById("f_invMoeda").value = a.moeda; }
+}
+async function salvarInvestimento(id) {
+  const k = document.getElementById("f_invAtivo").value, a = ATIVOS_BOLSA[k], num = x => Number(document.getElementById(x).value);
+  const contratos = num("f_invContratos"), preco = document.getElementById("f_invPreco").value;
+  if (!(contratos > 0) || preco === "") { alert("Informe o número de contratos e o preço de compra."); return; }
+  let descricao, vencimento = null, simbolo = null;
+  if (k === "OUTRO") { descricao = document.getElementById("f_invDesc").value.trim(); if (!descricao) { alert("Dê um nome ao investimento."); return; } }
+  else {
+    vencimento = document.getElementById("f_invVenc").value; const L = vencimento[0], ano = vencimento.slice(1);
+    simbolo = a.simbolo(L, ano); descricao = `${a.nome} ${(MESES_LETRA.find(m => m[0] === L) || [])[1]}/${ano.slice(2)}`;
+  }
+  const payload = { ativo: k, descricao, vencimento, fonte: a.fonte, simbolo, moeda: document.getElementById("f_invMoeda").value, multiplicador: num("f_invMult") || 1,
+    lado: document.getElementById("f_invLado").value, contratos, preco_compra: Number(preco), data_compra: document.getElementById("f_invData").value || todayISO(),
+    preco_manual: k === "OUTRO" && document.getElementById("f_invManual").value !== "" ? num("f_invManual") : null, obs: document.getElementById("f_invObs").value.trim() || null, updated_at: new Date().toISOString() };
+  const { error } = id ? await sb.from("nexus_investimentos").update(payload).eq("id", id) : await sb.from("nexus_investimentos").insert([payload]);
+  if (error) { alert("Não consegui salvar: " + error.message); return; }
+  await loadInvestimentos(); closeModal(); await atualizarPrecosBolsa(); renderInvestimentos();
+}
+function encerrarInvestimento(id) {
+  const i = data.investimentos.find(x => x.id === id); if (!i) return;
+  const atual = precoAtualInv(i);
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Encerrar posição — ${escapeHtml(i.descricao)}</h3>
+    <div class="field"><label>Preço de saída (em que preço você zerou)</label><input type="number" step="any" id="f_invSaida" value="${atual == null ? "" : atual}"></div>
+    <div class="hint">Sugestão: o preço do dia. O ganho ou a perda passa pra "Já realizado".</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="confirmarEncerramento('${id}')">Encerrar</button></div>`;
+  showModal();
+}
+async function confirmarEncerramento(id) {
+  const saida = Number(document.getElementById("f_invSaida").value);
+  if (!(saida > 0)) { alert("Informe o preço de saída."); return; }
+  const { error } = await sb.from("nexus_investimentos").update({ status: "Encerrada", preco_saida: saida, data_saida: todayISO(), updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) { alert("Não consegui encerrar: " + error.message); return; }
+  await loadInvestimentos(); closeModal(); renderInvestimentos();
+}
+async function excluirInvestimento(id) {
+  if (!(await askConfirm("O investimento sai do cadastro (não dá pra desfazer).", "Excluir investimento", "Excluir"))) return;
+  await sb.from("nexus_investimentos").delete().eq("id", id);
+  await loadInvestimentos(); renderInvestimentos();
 }
 
 // ---------------- EQUIPE / AVATAR ----------------
