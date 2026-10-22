@@ -89,7 +89,7 @@ export function lerMilhoB3(html) {
 // Preço do dia (atraso de 15 min) do mesmo contrato, pelo scanner público do TradingView (dados da B3).
 // Não é fonte oficial: se falhar, o card continua com o fechamento do Notícias Agrícolas.
 const CODIGO_MES_B3 = { Jan: "F", Mar: "H", Mai: "K", Jul: "N", Set: "U", Nov: "X" };
-async function milhoB3AoVivo(mesRotulo) {
+export async function milhoB3AoVivo(mesRotulo) {
   const m = String(mesRotulo || "").match(/(\w{3})\/(\d{2})/);
   const letra = m && CODIGO_MES_B3[m[1]];
   if (!letra) return null;
@@ -101,6 +101,18 @@ async function milhoB3AoVivo(mesRotulo) {
     const j = await r.json();
     const [close, modo] = (j.data && j.data[0] && j.data[0].d) || [];
     return close > 0 && /delayed|streaming/.test(String(modo)) ? Number(close) : null;
+  } catch { return null; }
+}
+// Dá pra usar o preço do dia? Dia útil, pregão já aberto (B3 abre 9h de Brasília = 8h em Campo Grande) e o
+// fechamento de hoje ainda não saiu no Notícias Agrícolas.
+export function pregaoB3Aberto(b3, agora = new Date()) {
+  const local = new Date(agora.getTime() - 4 * 3600 * 1000), dia = local.getUTCDay(), min = local.getUTCHours() * 60 + local.getUTCMinutes();
+  return dia >= 1 && dia <= 5 && min >= 8 * 60 + 15 && min <= 19 * 60 && !!b3 && !!b3.data && b3.data < local.toISOString().slice(0, 10);
+}
+export async function lerFechamentoMilhoB3() {
+  try {
+    const r = await fetch("https://www.noticiasagricolas.com.br/cotacoes/milho/milho-b3-prego-regular", { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" } });
+    return r.ok ? lerMilhoB3(await r.text()) : null;
   } catch { return null; }
 }
 export async function atualizarMilhoB3() {
@@ -119,7 +131,7 @@ export async function atualizarMilhoB3() {
     const hojeLocal = agoraLocal.toISOString().slice(0, 10), diaSemana = agoraLocal.getUTCDay();
     const minutos = agoraLocal.getUTCHours() * 60 + agoraLocal.getUTCMinutes();
     let aoVivo = null;
-    if (diaSemana >= 1 && diaSemana <= 5 && minutos >= 9 * 60 + 30 && minutos <= 19 * 60 && b3.data && b3.data < hojeLocal) aoVivo = await milhoB3AoVivo(b3.mes);
+    if (diaSemana >= 1 && diaSemana <= 5 && minutos >= 8 * 60 + 15 && minutos <= 19 * 60 && b3.data && b3.data < hojeLocal) aoVivo = await milhoB3AoVivo(b3.mes);
     if (aoVivo) {
       anterior = b3.ultima; ultima = aoVivo; pct = (aoVivo / b3.ultima - 1) * 100;
       observacao = `Preço do dia · atraso de 15 min · ${String(agoraLocal.getUTCHours()).padStart(2, "0")}:${String(agoraLocal.getUTCMinutes()).padStart(2, "0")}`;

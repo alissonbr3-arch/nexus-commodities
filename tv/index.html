@@ -626,12 +626,14 @@ let ultimosIntraday = [], dadosTv = { cot: [], hist: [] };
 function cartaoB3() {
   const c = (dadosTv.cot || []).find(x => x.codigo === "CCM");
   if (!c) return null;
+  const vivo = ultimosIntraday.find(x => x.codigo === "CCM"); // preço do dia, atualizado a cada minuto (atraso de ~15 min)
   const pts = (dadosTv.hist || []).filter(h => h.codigo === "CCM").sort((a, b) => a.data.localeCompare(b.data)).slice(-20);
   return { codigo: "CCM", grupo: "B3", nome: `Milho B3 ${String(c.mes || "").replace(/^B3\s*/, "")}`, preco: Number(c.ultima), anterior: Number(c.previa), variacao: Number(c.varr), pct: Number(c.pct),
-    serie: pts.map(h => ({ rotulo: fmtDateBR(h.data).slice(0, 5), v: Number(h.ultima) })), obs: c.observacao || "Fechamento do pregão anterior", fechamentos: true };
+    serie: pts.map(h => ({ rotulo: fmtDateBR(h.data).slice(0, 5), v: Number(h.ultima) })), obs: c.observacao || "Fechamento do pregão anterior", fechamentos: true,
+    ...(vivo ? { preco: vivo.preco, anterior: vivo.anterior, variacao: vivo.variacao, pct: vivo.pct, obs: `Preço do dia · atraso de 15 min · ${fmtHora(vivo.horario * 1000)} · ref. fechamento anterior` } : {}) };
 }
 function renderLiveTv() {
-  const itens = [...ultimosIntraday, cartaoB3()].filter(Boolean).sort((a, b) => ORDEM_LIVE.indexOf(a.codigo) - ORDEM_LIVE.indexOf(b.codigo));
+  const itens = [...ultimosIntraday.filter(i => i.codigo !== "CCM"), cartaoB3()].filter(Boolean).sort((a, b) => ORDEM_LIVE.indexOf(a.codigo) - ORDEM_LIVE.indexOf(b.codigo));
   if (!itens.length) return;
   const dolar = (ultimosIntraday.find(i => i.grupo === "Dólar") || {}).preco || 5;
   document.getElementById("liveGrid").innerHTML = itens.map((i, k) => {

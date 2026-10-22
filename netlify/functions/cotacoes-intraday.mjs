@@ -15,6 +15,18 @@ function json(body, status = 200) {
   });
 }
 
+import { lerFechamentoMilhoB3, milhoB3AoVivo, pregaoB3Aberto } from "./_cotacoes-lib.mjs";
+
+// Milho B3: preço do dia (atraso de ~15 min) quando o pregão está aberto e o fechamento de hoje ainda não saiu;
+// fora disso não devolve nada e a TV segue com o fechamento gravado no sistema.
+async function milhoB3() {
+  const b3 = await lerFechamentoMilhoB3();
+  if (!pregaoB3Aberto(b3)) return null;
+  const preco = await milhoB3AoVivo(b3.mes);
+  if (!preco) return null;
+  return { codigo: "CCM", nome: "Milho " + b3.mes, grupo: "B3", preco, anterior: b3.ultima, variacao: preco - b3.ultima, pct: (preco / b3.ultima - 1) * 100, horario: Math.floor(Date.now() / 1000), serie: [] };
+}
+
 export default async () => {
   const respostas = await Promise.allSettled(ATIVOS.map(async a => {
     const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.codigo)}?interval=5m&range=1d`, {
@@ -30,6 +42,8 @@ export default async () => {
     return { ...a, preco, anterior, variacao: anterior ? preco - anterior : 0, pct: anterior ? ((preco - anterior) / anterior) * 100 : 0, horario: meta.regularMarketTime || null, serie };
   }));
   const itens = respostas.filter(r => r.status === "fulfilled").map(r => r.value);
+  const b3 = await milhoB3().catch(() => null);
+  if (b3) itens.push(b3);
   if (!itens.length) return json({ ok: false, erro: "Nenhuma cotação respondeu." }, 502);
   return json({ ok: true, itens, atualizado_em: new Date().toISOString() });
 };
