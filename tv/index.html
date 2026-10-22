@@ -139,6 +139,10 @@
   #fechado .fc-ic { font-size: 84px; } #fechado .fc-t { font-size: clamp(36px, 5vw, 76px); font-weight: 900; color: var(--gold); letter-spacing: .02em; margin-top: 6px; }
   #fechado .fc-l1 { font-size: clamp(22px, 2.8vw, 40px); font-weight: 700; margin-top: 18px; } #fechado .fc-l2 { font-size: clamp(16px, 1.8vw, 26px); color: var(--ink-soft); margin-top: 10px; }
   #confete { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+  .b3-top { display: flex; align-items: center; gap: 22px; margin-bottom: 8px; }
+  .b3-preco { white-space: nowrap; font-size: clamp(34px, 4.4vw, 60px); font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; line-height: 1; }
+  .b3-var { font-size: clamp(16px, 2vw, 24px); font-weight: 800; font-variant-numeric: tabular-nums; } .b3-var.up { color: var(--green); } .b3-var.down { color: var(--red); }
+  .b3-obs { font-size: 12.5px; color: var(--ink-dim); margin-top: 4px; }
   .placeholder { color: var(--ink-dim); font-size: 13px; padding: 20px 0; text-align: center; }
 
   #loginBox {
@@ -182,8 +186,6 @@
       </div>
     </header>
 
-    <div class="dolar-strip" id="dolarStripTv"></div>
-
     <div class="slides" id="slides">
       <div class="slide active" data-nome="Mercado">
         <div class="main-grid">
@@ -195,6 +197,11 @@
             </div>
           </div>
           <div class="col">
+            <div class="panel b3-panel" style="flex:1">
+              <h2>Milho B3 — <span id="b3Mes">Nov/26</span> (R$/saca de 60 kg)</h2>
+              <div class="b3-top"><div class="b3-preco" id="b3Preco">—</div><div><div class="b3-var" id="b3Var"></div><div class="b3-obs" id="b3Obs"></div></div></div>
+              <div class="chart-box"><canvas id="tvChartB3"></canvas></div>
+            </div>
             <div class="panel" style="flex:1">
               <h2>Tendência de preços — Mensal (R$/saca)</h2>
               <div class="chart-box"><canvas id="tvChartMensal"></canvas></div>
@@ -266,6 +273,7 @@ function relogioTick() {
 
 function renderDolarTv(d) {
   const el = document.getElementById("dolarStripTv");
+  if (!el) return; // faixa do dólar PTAX foi retirada do topo da TV (o dólar fica no Chicago ao vivo)
   if (!d) { el.innerHTML = `<div class="placeholder">Sem cotação de dólar cadastrada.</div>`; return; }
   const ptax = d.ptax_auto != null ? Number(d.ptax_auto) : Number(d.ptax);
   const varClass = Number(d.variacao) > 0 ? "up" : Number(d.variacao) < 0 ? "down" : "";
@@ -297,13 +305,37 @@ function renderCotacoesTv(lista) {
 
 // Milho CBOT sai do gráfico: escala de preço muito diferente da Soja, achata a linha.
 // Continua aparecendo normalmente no card de cotação, só não entra nos gráficos.
-const CODIGO_FORA_DO_GRAFICO = "ZC=F";
+const CODIGO_FORA_DO_GRAFICO = ["ZC=F", "CCM"]; // CCM (Milho B3) tem gráfico próprio
+
+// Milho B3: preço (fechamento ou preço do dia, com 15 min de atraso) e a curva dos últimos fechamentos.
+let tvChartB3Instance = null;
+function renderMilhoB3Tv(cotacoes, hist) {
+  const c = (cotacoes || []).find(x => x.codigo === "CCM");
+  if (!c) return;
+  document.getElementById("b3Mes").textContent = String(c.mes || "").replace(/^B3\s*/, "");
+  document.getElementById("b3Preco").textContent = fmtMoney(c.ultima);
+  const sub = Number(c.pct) > 0 ? "up" : Number(c.pct) < 0 ? "down" : "";
+  const vb = document.getElementById("b3Var"); vb.className = "b3-var " + sub;
+  vb.textContent = `${Number(c.pct) > 0 ? "▲" : Number(c.pct) < 0 ? "▼" : "■"} ${fmtSigned(c.varr)} (${fmtSigned(c.pct)}%)`;
+  document.getElementById("b3Obs").textContent = c.observacao || "Fechamento do pregão anterior";
+  const pts = (hist || []).filter(h => h.codigo === "CCM").sort((a, b) => a.data.localeCompare(b.data)).slice(-30);
+  const canvas = document.getElementById("tvChartB3");
+  if (tvChartB3Instance) { tvChartB3Instance.destroy(); tvChartB3Instance = null; }
+  if (pts.length < 2) return;
+  const cor = Number(pts[pts.length - 1].ultima) >= Number(pts[0].ultima) ? "#4caf6d" : "#e15c5c";
+  tvChartB3Instance = new Chart(canvas, {
+    type: "line",
+    data: { labels: pts.map(h => fmtDateBR(h.data).slice(0, 5)), datasets: [{ data: pts.map(h => Number(h.ultima)), borderColor: cor, backgroundColor: cor + "22", fill: true, tension: 0.25, borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: cor }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } },
+      scales: { y: { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9", callback: v => fmtNum2(v) } }, x: { grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 8 } } } },
+  });
+}
 
 let tvChartInstance = null;
 const PALETTE_TV = ["#e0b23f", "#4a8bb0", "#6fa348", "#c0574a", "#8a6bbf", "#3f9e91"];
 function renderChartTv(hist) {
   const canvas = document.getElementById("tvChart");
-  const dados = (hist || []).filter(h => h.codigo !== CODIGO_FORA_DO_GRAFICO);
+  const dados = (hist || []).filter(h => !CODIGO_FORA_DO_GRAFICO.includes(h.codigo));
   if (dados.length === 0) {
     if (tvChartInstance) { tvChartInstance.destroy(); tvChartInstance = null; }
     return;
@@ -331,7 +363,7 @@ function renderChartTv(hist) {
 let tvChartMensalInstance = null;
 function renderChartMensalTv(hist) {
   const canvas = document.getElementById("tvChartMensal");
-  const dados = (hist || []).filter(h => h.codigo !== CODIGO_FORA_DO_GRAFICO);
+  const dados = (hist || []).filter(h => !CODIGO_FORA_DO_GRAFICO.includes(h.codigo));
   if (dados.length === 0) {
     if (tvChartMensalInstance) { tvChartMensalInstance.destroy(); tvChartMensalInstance = null; }
     return;
@@ -582,6 +614,7 @@ async function carregarDadosTv() {
   const todos = negociosRows || [];
   renderCotacoesTv(cotRows || []);
   renderDolarTv(dolarRow);
+  renderMilhoB3Tv(cotRows || [], histRows || []);
   renderChartTv(histRows || []);
   renderChartMensalTv(histRows || []);
   renderChartVolumeTv(todos.filter(n => n.data >= desde));

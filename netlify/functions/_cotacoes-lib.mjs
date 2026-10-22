@@ -138,6 +138,40 @@ export async function atualizarMilhoB3() {
   } catch (e) { return { codigo: "CCM", ok: false, erro: String(e) }; }
 }
 
+// Prêmio (basis) da soja: tabela diária "Prêmio Soja Paranaguá" do Notícias Agrícolas (US$/bushel por mês de
+// embarque). Cada contrato de soja (Nov/26, Mar/27…) recebe o prêmio do próprio mês; mês que o site ainda
+// não publicou (ele só lista uns 4 meses à frente) mantém o último valor. Substitui o prêmio digitado à mão.
+const semAcento = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+export async function atualizarPremioSoja() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
+  try {
+    const r = await fetch("https://www.noticiasagricolas.com.br/cotacoes/soja/premio-soja-paranagua-pr", { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" } });
+    if (!r.ok) return { premio: true, ok: false, erro: `HTTP ${r.status}` };
+    const html = await r.text();
+    const tb = (html.match(/<table[^>]*class="cot-fisicas"[\s\S]*?<\/table>/g) || [])[0];
+    if (!tb) return { premio: true, ok: false, erro: "não achei a tabela de prêmios" };
+    const tabela = {};
+    for (const m of tb.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
+      const c = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(x => x[1].replace(/<[^>]+>/g, "").trim());
+      if (c.length >= 2 && /^[A-Za-zçÇãÃéÉ]+\/\d{2}$/.test(c[0])) { const v = parseFloat(c[1].replace(",", ".")); if (!isNaN(v)) tabela[semAcento(c[0])] = v; }
+    }
+    const lista = await (await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?produto=eq.Soja&select=codigo,mes`, { headers: sbHeaders })).json();
+    const aplicados = [];
+    for (const c of lista) {
+      const ano = /^ZS[FGHJKMNQUVXZ](\d{2})/.exec(c.codigo || "");
+      const premio = ano ? tabela[`${semAcento(c.mes)}/${ano[1]}`] : undefined;
+      if (premio == null) continue;
+      await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?codigo=eq.${encodeURIComponent(c.codigo)}`, { method: "PATCH", headers: sbHeaders, body: JSON.stringify({ premio }) });
+      aplicados.push({ codigo: c.codigo, mes: c.mes, premio });
+      // O prêmio geral das Configurações acompanha o contrato vigente (usado no preço da praça).
+      const cfg = (await (await fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=soja_contrato_vigente`, { headers: sbHeaders })).json())[0];
+      if (cfg && semAcento(cfg.soja_contrato_vigente) === semAcento(c.mes)) await fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1`, { method: "PATCH", headers: sbHeaders, body: JSON.stringify({ soja_premio_basis: premio }) });
+    }
+    return { premio: true, ok: true, aplicados, tabela };
+  } catch (e) { return { premio: true, ok: false, erro: String(e) }; }
+}
+
 export async function atualizarCotacoes() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) {
@@ -211,5 +245,6 @@ export async function atualizarCotacoes() {
   }
 
   resultados.push(await atualizarMilhoB3());
+  resultados.push(await atualizarPremioSoja());
   return { ok: true, cambio, dolar, atualizadoEm: new Date().toISOString(), resultados };
 }
