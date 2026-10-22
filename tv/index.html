@@ -290,6 +290,7 @@ function renderCotacoesTv(lista) {
       <div class="preco">${fmtNum2(c.ultima)}</div>
       <div class="row2"><span class="${varClass}">${fmtSigned(c.varr)}</span><span class="${varClass}">(${fmtSigned(c.pct)}%)</span></div>
       ${c.preco_saca_brl ? `<div class="saca">R$/saca: <b>${fmtMoney(c.preco_saca_brl)}</b></div>` : ""}
+      ${c.produto === "Soja" && Number(c.premio) ? `<div class="saca">Prêmio (basis): <b>${Number(c.premio) > 0 ? "+" : ""}US$ ${fmtNum2(c.premio)}</b>/bu</div>` : ""}
     </div>`;
   }).join("");
 }

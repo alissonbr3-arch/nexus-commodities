@@ -6971,7 +6971,7 @@ function calcularPrecoPraca() {
   const cot = data.cotacoes.find(c => c.produto === "Soja" && c.mes === contrato);
   const cbotSaca = cot ? Number(cot.preco_saca_brl || 0) : 0;
   const dolar = dolarAtual();
-  const premioUsdBu = Number(data.config.soja_premio_basis || 0);
+  const premioUsdBu = cot && Number(cot.premio) ? Number(cot.premio) : Number(data.config.soja_premio_basis || 0); // o prêmio do próprio contrato (Cotações) vale mais que o geral
   const taxaUsdTon = Number(data.config.soja_taxa_portuaria || 0);
   const freteRsTon = Number(data.config.soja_frete || 0);
   const premio = premioUsdBu * BUSHEL_POR_SACA_SOJA * dolar;
@@ -7004,7 +7004,9 @@ async function salvarPrecoPraca() {
     updated_at: new Date().toISOString(),
   };
   await sb.from("nexus_config").update(payload).eq("id", 1);
-  await loadConfig(); renderConfiguracoes(); renderWorkspace();
+  // O prêmio do contrato vigente também fica na cotação dele, que é o que a TV mostra.
+  await sb.from("nexus_cotacoes").update({ premio: payload.soja_premio_basis }).eq("produto", "Soja").eq("mes", payload.soja_contrato_vigente);
+  await loadConfig(); await loadCotacoes(); renderConfiguracoes(); renderWorkspace();
   const msg = document.getElementById("cfgPracaSavedMsg");
   msg.style.display = "block"; setTimeout(() => msg.style.display = "none", 2000);
 }
