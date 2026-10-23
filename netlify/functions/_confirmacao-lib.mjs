@@ -27,7 +27,7 @@ function linhasPagamento(n) {
       return [`DATA DE PAGAMENTO (${i + 1}ª PARC)`, `${fmtDate(p.data)} — ${valor}`];
     });
   }
-  const linhas = [[`DATA DE PAGAMENTO${extras.length ? " (1ª PARC)" : ""}`, fmtDate(n.data_pagamento) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
+  const linhas = [[`DATA DE PAGAMENTO${extras.length ? " (1ª PARC)" : ""}`, (n.pagamento_dias_apos_entrega != null ? `${n.pagamento_dias_apos_entrega} DIAS APÓS A ENTREGA (previsto ${fmtDate(n.data_pagamento)})` : fmtDate(n.data_pagamento)) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
   extras.forEach((p, i) => {
     const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
     linhas.push([`DATA DE PAGAMENTO (${i + 2}ª PARC)`, `${fmtDate(p.data)} — ${valor}`]);
