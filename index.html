@@ -1335,6 +1335,26 @@ function linhasPagamento(n) {
   });
   return linhas;
 }
+// As parcelas de pagamento do negócio pro Relatório de Negócios: [{data, sacas, valor}], seguindo a mesma
+// leitura de linhasPagamento (parcelas extras / extras como lista completa) e, no "carga a carga", uma
+// parcela por carga recebida + a estimativa do que ainda falta chegar. Valor = líquido proporcional às sacas
+// (parcela em R$ entra pelo próprio valor); a 1ª parcela implícita fica com o restante do líquido.
+function parcelasRelatorio(n) {
+  const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
+  const deExtra = p => p.unidade === "sc" ? { data: p.data, sacas: Number(p.valor || 0), valor: Number(p.valor || 0) * precoLiquido } : { data: p.data, sacas: null, valor: Number(p.valor || 0) };
+  if (n.pagamento_dias_apos_entrega != null) {
+    const dias = Number(n.pagamento_dias_apos_entrega);
+    const lista = [...cargasDoNegocio(n)].filter(c => c.data).sort((a, b) => a.data.localeCompare(b.data)).map(c => ({ data: somarDiasISO(c.data, dias), sacas: Number(c.sacas || 0), valor: Number(c.sacas || 0) * precoLiquido, carga: c.data }));
+    const falta = Number(n.quantidade || 0) - sacasRecebidas(n);
+    if (lista.length && !n.embarque_finalizado_em && falta > 0.5 && n.data_fim_embarque) lista.push({ data: somarDiasISO(n.data_fim_embarque, dias), sacas: falta, valor: falta * precoLiquido, estimativa: true });
+    return lista.length ? lista : [{ data: n.data_pagamento, sacas: Number(n.quantidade || 0), valor: liquidoTotal }];
+  }
+  const extras = n.pagamentos_extra || [];
+  if (!extras.length) return [{ data: n.data_pagamento, sacas: Number(n.quantidade || 0), valor: liquidoTotal }];
+  if (extras[0].data === n.data_pagamento) return extras.map(deExtra);
+  const resto = extras.map(deExtra), somaResto = resto.reduce((s, p) => s + p.valor, 0);
+  return [{ data: n.data_pagamento, sacas: quantidadePrimeiraParcela(n), valor: liquidoTotal - somaResto }, ...resto];
+}
 function fmtMoney(n) { return "R$ " + Number(n||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 // Diz se um documento é CPF (até 11 dígitos) ou CNPJ (mais de 11 dígitos) — alguns produtores
 // rurais são cadastrados como pessoa jurídica (CNPJ) em vez de CPF, então o rótulo na
@@ -5865,7 +5885,7 @@ function gerarRelatorioProdutor() {
   if (produtores.length === 0) return;
   const safrasSelecionadas = Array.from(document.querySelectorAll(".rel-safra-chk:checked")).map(chk => chk.value);
   if (safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
-  const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||""));
+  const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||"") || (a.numero_contrato||"").localeCompare(b.numero_contrato||"", "pt-BR", { numeric: true }));
   if (negocios.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
@@ -5883,6 +5903,7 @@ function gerarRelatorioProdutor() {
     if (!gruposCultura.has(chave)) gruposCultura.set(chave, { grao: n.grao || "—", safra: n.safra || "", negocios: [] });
     gruposCultura.get(chave).negocios.push(n);
   }
+  const cronograma = []; // todos os pagamentos (parcela a parcela), pra montar o cronograma em ordem de data no fim
   const gruposCulturaOrdenados = [...gruposCultura.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
 
   const blocos = gruposCulturaOrdenados.map(g => {
@@ -5894,12 +5915,20 @@ function gerarRelatorioProdutor() {
       valorGrupo += liquidoTotal;
       const recebido = !!n.check_pagamento;
       const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
+      const parcelas = parcelasRelatorio(n), varias = parcelas.length > 1;
+      parcelas.forEach((p, i) => cronograma.push({ ...p, n, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "", recebido }));
+      // Mais de um pagamento: a linha do negócio diz quantas parcelas são, e cada parcela vem logo abaixo
+      // com a sua quantidade, valor e data.
+      const linhasParcelas = varias ? parcelas.map((p, i) => `<tr style="font-size:10.5px;color:#444;background:#fafafa">
+        <td colspan="${grupo ? 4 : 3}" style="padding-left:22px">↳ ${i + 1}ª parcela${p.carga ? ` — carga recebida em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}</td>
+        <td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td></td><td>${fmtMoney(p.valor)}</td><td>${fmtDate(p.data)}</td><td></td>
+      </tr>`).join("") : "";
       return `<tr>
         <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${compradorNome}</td>
         <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
-        <td>${fmtDate(n.data_pagamento)}</td>
+        <td>${varias ? `${parcelas.length} parcelas` : fmtDate(parcelas[0].data)}</td>
         <td><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
-      </tr>`;
+      </tr>${linhasParcelas}`;
     }).join("");
     return `
     <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${g.grao.toUpperCase()}${g.safra ? " — SAFRA " + g.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${g.negocios.length} negócio${g.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
@@ -5908,6 +5937,18 @@ function gerarRelatorioProdutor() {
       <tbody>${linhasGrupo}</tbody>
     </table>`;
   }).join("");
+
+  cronograma.sort((a, b) => (a.data || "9999").localeCompare(b.data || "9999") || (a.n.numero_contrato || "").localeCompare(b.n.numero_contrato || "", "pt-BR", { numeric: true }));
+  const blocoCronograma = `
+    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">CRONOGRAMA DE PAGAMENTOS <span style="font-weight:normal;color:#555;font-size:11px">(${cronograma.length} pagamento${cronograma.length === 1 ? "" : "s"}, em ordem de data)</span></h3>
+    <table class="linhas">
+      <thead><tr><th>Data de Pgto</th><th>Contrato</th>${grupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Parcela</th><th>Qtd (sc)</th><th>Valor Líquido</th><th>Recebimento</th></tr></thead>
+      <tbody>${cronograma.map(p => `<tr>
+        <td><b>${fmtDate(p.data)}</b>${p.estimativa ? ` <span style="color:#555;font-size:10px">(estimativa)</span>` : ""}</td><td>${p.n.numero_contrato || "—"}</td>${grupo ? `<td>${nomeCadastro(p.n.produtor_id)}</td>` : ""}<td>${p.n.cliente_id ? nomeCadastro(p.n.cliente_id) : (p.n.contraparte || "—")}</td>
+        <td>${p.parcela || "única"}</td><td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td>${fmtMoney(p.valor)}</td>
+        <td><span style="font-size:9.5px;font-weight:bold;color:${p.recebido?"#2f7d32":"#a6741a"}">${p.recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
+      </tr>`).join("")}</tbody>
+    </table>`;
 
   const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? ` — ${tipoCpfCnpj(p.cpf)} ${p.cpf}` : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
 
@@ -5941,6 +5982,7 @@ function gerarRelatorioProdutor() {
     ${dadosProdutores}
   </table>
   ${blocos}
+  ${blocoCronograma}
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios no período</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
