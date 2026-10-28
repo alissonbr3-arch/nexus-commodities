@@ -124,22 +124,31 @@
   .live-card .lc-chart { flex: 1; min-height: 80px; position: relative; margin-top: 12px; }
   .live-card .lc-foot { font-size: 12px; color: var(--ink-dim); margin-top: 8px; }
 
-  /* Quadro de cotações (estilo tabela de praça) */
-  .quadro { flex: 1; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; min-height: 0; }
-  .quadro table { width: 100%; height: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  .quadro th { background: var(--card-alt); color: var(--ink-soft); font-size: clamp(11px, 1.5vh, 14px); font-weight: 800; text-transform: uppercase; letter-spacing: .07em; text-align: right; padding: clamp(8px, 1.5vh, 14px) 22px; border-bottom: 2px solid var(--gold); }
-  .quadro th:first-child, .quadro td:first-child { text-align: left; }
-  .quadro td { padding: 0 22px; border-bottom: 1px solid var(--border); text-align: right; font-size: clamp(16px, 2.6vh, 28px); font-weight: 700; white-space: nowrap; }
-  .quadro tr:last-child td { border-bottom: none; }
-  .quadro tr.destaque td { background: var(--gold-soft); }
-  .quadro .q-prod { font-size: clamp(17px, 2.8vh, 30px); font-weight: 800; }
-  .quadro .q-ref { font-size: clamp(11px, 1.6vh, 15px); color: var(--ink-soft); font-weight: 600; margin-top: 3px; }
-  .quadro .q-saca { color: var(--gold); font-size: clamp(20px, 3.4vh, 38px); font-weight: 900; }
-  .quadro tr.destaque .q-saca { font-size: clamp(24px, 4.2vh, 46px); }
-  .quadro .q-var.up { color: var(--green); } .quadro .q-var.down { color: var(--red); } .quadro .q-var { font-size: clamp(14px, 2.2vh, 24px); }
-  .quadro .q-hora { color: var(--ink-dim); font-size: clamp(11px, 1.6vh, 15px); font-weight: 600; }
-  .quadro svg { display: block; margin-left: auto; }
-  .quadro-rodape { font-size: 12.5px; color: var(--ink-dim); }
+  /* Quadro de cotações (no formato das plataformas de cotação: bolsa + FOB/FAS porto + praça) */
+  .quadro { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .qd-tab { width: 100%; table-layout: auto; border-collapse: collapse; font-variant-numeric: tabular-nums; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .qd-tab th, .qd-tab td { padding: clamp(6px, 1.25vh, 14px) clamp(6px, 0.7vw, 14px); text-align: right; white-space: nowrap; border-right: 1px solid var(--border); }
+  .qd-tab th:last-child, .qd-tab td:last-child { border-right: none; }
+  .qd-tab .grp th { font-size: clamp(13px, min(2.2vh, 1.1vw), 22px); font-weight: 800; color: var(--gold); text-align: center; background: var(--card-alt); border-bottom: 1px solid var(--border); }
+  .qd-tab .grp th.branco { color: var(--ink); }
+  .qd-tab .grp .status { font-size: .75em; font-weight: 600; margin-left: 14px; } .qd-tab .grp .status.on { color: var(--green); } .qd-tab .grp .status.off { color: var(--ink-dim); }
+  .qd-tab .cols th { font-size: clamp(12px, min(1.9vh, 0.95vw), 19px); font-weight: 600; color: var(--ink-soft); text-align: center; border-bottom: 2px solid var(--gold); }
+  .qd-tab td { height: clamp(44px, 8.5vh, 100px); font-size: clamp(14px, min(3.1vh, 1.34vw), 34px); font-weight: 700; border-bottom: 1px solid var(--border); }
+  .qd-tab tbody tr:nth-child(even) td { background: rgba(255,255,255,.025); }
+  .qd-tab tbody tr:last-child td { border-bottom: none; }
+  .qd-tab td.prod, .qd-tab td.mes, .qd-tab td.cod { text-align: left; }
+  .qd-tab td.prod { font-weight: 800; } .qd-tab td.prod small, .qd-tab td small { font-size: .45em; font-weight: 600; color: var(--ink-soft); margin-left: 2px; }
+  .qd-tab td.prod.milho { color: var(--ink-soft); }
+  .qd-tab td.sep, .qd-tab th.sep { border-left: 2px solid var(--gold); }
+  .qd-tab .up { color: var(--green); } .qd-tab .down { color: var(--red); } .qd-tab .na { color: var(--ink-dim); }
+  .qd-tab td.destaque { color: var(--gold); font-weight: 900; }
+  .qd-baixo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .qd-dolar { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .qd-dolar th { font-size: clamp(14px, 2vh, 20px); font-weight: 600; color: var(--ink-soft); background: var(--card-alt); padding: clamp(6px, 1.1vh, 12px); }
+  .qd-dolar td { font-size: clamp(15px, 2.8vh, 30px); font-weight: 700; padding: clamp(6px, 1.1vh, 12px) 18px; border-top: 1px solid var(--border); text-align: right; }
+  .qd-dolar td:first-child { text-align: left; }
+  .qd-nota { font-size: clamp(11px, 1.5vh, 14px); color: var(--ink-dim); line-height: 1.5; padding-top: 4px; }
+  .qd-nota b { color: var(--ink-soft); }
 
   /* Aniversariantes */
   .aniv-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); grid-auto-rows: minmax(150px, 220px); gap: 18px; align-content: center; min-height: 0; }
@@ -243,9 +252,7 @@
         <div class="curios-grid" id="curiosTv"></div>
       </div>
       <div class="slide" data-nome="Cotações">
-        <div class="slide-title">Quadro de <b>cotações</b> — R$ por saca de 60 kg</div>
         <div class="quadro" id="quadroCot"></div>
-        <div class="quadro-rodape" id="quadroRodape"></div>
       </div>
       <div class="slide" data-nome="Aniversariantes" data-off="1">
         <div class="slide-title">🎂 Aniversariantes <b>de hoje</b></div>
@@ -606,56 +613,65 @@ async function carregarDadosTv() {
 
 
 // ---------------- QUADRO DE COTAÇÕES ----------------
-// Tabela única com as cotações que a Nexus acompanha, tudo convertido em R$/saca de 60 kg. A primeira linha é o
-// preço estimado da praça (mesma conta da aba Cotações do painel: CBOT do contrato vigente + prêmio − porto − frete).
-const BUSHEL_POR_SACA_SOJA = 60 / 27.2155, BUSHEL_POR_TON = 1000 / 27.2155, TON_POR_SACA = 60 / 1000;
-function sparkSvg(vals) {
-  if (vals.length < 2) return "";
-  const w = 150, h = 40, min = Math.min(...vals), max = Math.max(...vals), r = max - min || 1;
-  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * w).toFixed(1)},${(h - 3 - (v - min) / r * (h - 6)).toFixed(1)}`).join(" ");
-  const cor = vals[vals.length - 1] >= vals[0] ? "#4caf6d" : "#e15c5c";
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
-}
+// Mesmo formato das plataformas de cotação que o produtor já conhece: bolsa (CBOT/B3) e, pra soja, o preço FOB no
+// porto (CBOT + prêmio, em US$/t), o FAS no porto (FOB − desembarque, por saca) e o Ex-Works em São Gabriel do Oeste
+// (FAS − frete). Prêmio vem do próprio contrato em Cotações; o contrato vigente usa o prêmio geral se não tiver.
+const BUSHEL_POR_TON = 1000 / 27.2155, TON_POR_SACA = 60 / 1000;
+const MES_CODIGO = { F: "JAN", G: "FEV", H: "MAR", J: "ABR", K: "MAI", M: "JUN", N: "JUL", Q: "AGO", U: "SET", V: "OUT", X: "NOV", Z: "DEZ" };
+let ultimoQuadro = null;
 function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
+  ultimoQuadro = [cot, hist, dolarRow, cfg];
   const el = document.getElementById("quadroCot"); if (!el) return;
-  const porCodigo = c => cot.find(x => x.codigo === c);
-  const serie = codigo => hist.filter(h => h.codigo === codigo && Number(h.preco_saca_brl)).slice(-30).map(h => Number(h.preco_saca_brl));
-  const varSaca = c => Number(c.ultima) ? Number(c.preco_saca_brl) * Number(c.varr) / Number(c.ultima) : 0;
-  const linhas = [];
-  const contrato = cfg.soja_contrato_vigente || "Novembro";
-  const soja = cot.find(c => c.produto === "Soja" && c.mes === contrato);
+  const n2 = v => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const n4 = v => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  const nb = v => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+  const cls = v => Number(v) > 0 ? "up" : Number(v) < 0 ? "down" : "";
+  const na = '<span class="na">--</span>';
   const dolar = Number(dolarRow?.ptax_auto || dolarRow?.atual || dolarRow?.ptax || 0);
-  if (soja && dolar) {
-    const premio = (Number(soja.premio) || Number(cfg.soja_premio_basis) || 0) * BUSHEL_POR_SACA_SOJA * dolar;
-    const total = Number(soja.preco_saca_brl) + premio - Number(cfg.soja_taxa_portuaria || 0) * TON_POR_SACA * dolar - Number(cfg.soja_frete || 0) * TON_POR_SACA;
-    linhas.push({ destaque: true, prod: "Soja", ref: `Praça São Gabriel do Oeste · base CBOT ${contrato}`, cot: "—", saca: total, v: varSaca(soja), pct: Number(soja.pct), spark: serie(soja.codigo), hora: soja.updated_at });
-    // Porto de Paranaguá: (CBOT do contrato vigente + prêmio) em US$/bushel → US$/tonelada, menos a taxa de desembarque no porto.
-    const premioBu = Number(soja.premio) || Number(cfg.soja_premio_basis) || 0;
-    const portoTon = (Number(soja.ultima) / 100 + premioBu) * BUSHEL_POR_TON - Number(cfg.soja_taxa_portuaria || 0);
-    linhas.push({ destaque: true, prod: "Soja", ref: `Porto de Paranaguá · CBOT ${contrato} + prêmio − desembarque`, cot: `US$ ${fmtNum2(portoTon)}/t`, saca: portoTon * dolar * TON_POR_SACA, v: varSaca(soja), pct: Number(soja.pct), spark: serie(soja.codigo), hora: soja.updated_at });
-  }
-  const cbot = (c, nome, ref) => c && linhas.push({ prod: nome, ref, cot: `US$ ${fmtNum2(Number(c.ultima) / 100)}/bu`, saca: Number(c.preco_saca_brl), v: varSaca(c), pct: Number(c.pct), spark: serie(c.codigo), hora: c.updated_at });
-  cbot(porCodigo("ZSX26.CBT"), "Soja", "Chicago (CBOT) · Novembro/26");
-  cbot(porCodigo("ZSH27.CBT"), "Soja", "Chicago (CBOT) · Março/27");
-  const b3 = porCodigo("CCM");
-  if (b3) linhas.push({ prod: "Milho", ref: `B3 · ${(b3.mes || "").replace(/^B3\s*/, "")}`, cot: "—", saca: Number(b3.ultima), v: Number(b3.varr), pct: Number(b3.pct), spark: serie("CCM"), hora: b3.updated_at });
-  cbot(porCodigo("ZC=F"), "Milho", "Chicago (CBOT) · contínuo");
-  const usd = porCodigo("USD/BRL");
-  if (usd) linhas.push({ prod: "Dólar", ref: "Comercial · USD/BRL", cot: `R$ ${Number(usd.ultima).toLocaleString("pt-BR", { minimumFractionDigits: 4 })}`, saca: null, v: Number(usd.varr), pct: Number(usd.pct), spark: [], hora: usd.updated_at, dolar: true });
+  const contrato = cfg.soja_contrato_vigente || "Novembro";
+  const desembarque = Number(cfg.soja_taxa_portuaria || 0), freteTon = Number(cfg.soja_frete || 0);
+  const mesDe = c => { const m = /^[A-Z]{2}([FGHJKMNQUVXZ])(\d{2})/.exec(c.codigo || ""); if (m) return `${MES_CODIGO[m[1]]}/${m[2]}`; const b = /(\w{3})\/(\d{2})/.exec(c.mes || ""); return b ? `${b[1].toUpperCase()}/${b[2]}` : "CONT."; };
+  const ordem = c => { const m = /^[A-Z]{2}([FGHJKMNQUVXZ])(\d{2})/.exec(c.codigo || ""); return m ? Number(m[2]) * 12 + "FGHJKMNQUVXZ".indexOf(m[1]) : 9999; };
+  const soja = cot.filter(c => c.produto === "Soja").sort((a, b) => ordem(a) - ordem(b));
+  const milhoCbot = cot.filter(c => c.produto === "Milho" && c.codigo !== "CCM");
+  const milhoB3 = cot.filter(c => c.codigo === "CCM");
+  const linhas = [...soja, ...milhoCbot, ...milhoB3].map(c => {
+    const b3 = c.codigo === "CCM";
+    const premio = c.produto !== "Soja" ? null : Number(c.premio) || (c.mes === contrato ? Number(cfg.soja_premio_basis) || null : null);
+    let porto = "";
+    if (premio != null && dolar) {
+      const cbotBu = Number(c.ultima) / 100;
+      const fobTon = (cbotBu + premio) * BUSHEL_POR_TON;
+      const fasSacaUsd = (fobTon - desembarque) * TON_POR_SACA;
+      const exwSacaUsd = fasSacaUsd - freteTon / dolar * TON_POR_SACA;
+      const exwBasis = exwSacaUsd / TON_POR_SACA / BUSHEL_POR_TON - cbotBu; // diferença do Ex-Works pra Chicago, em US$/bushel
+      porto = `<td class="sep ${cls(premio)}">${premio > 0 ? "+" : ""}${n2(premio)}</td><td>${n2(fobTon)}<small>p/t</small></td>
+        <td class="sep">${n2(fasSacaUsd)}<small>p/sc</small></td><td>${n2(fasSacaUsd * dolar)}<small>p/sc</small></td>
+        <td class="sep ${cls(exwBasis)}">${n2(exwBasis)}<small>p/bu</small></td><td>${n2(exwSacaUsd)}<small>p/sc</small></td><td class="destaque">${n2(exwSacaUsd * dolar)}<small>p/sc</small></td>`;
+    } else porto = `<td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td>${na}</td>`;
+    return `<tr><td class="prod ${c.produto === "Milho" ? "milho" : ""}">${c.produto.toUpperCase()}<small>${b3 ? "B3" : "CBOT"}</small></td>
+      <td class="mes">${mesDe(c)}</td><td class="cod">${(c.codigo || "").replace(".CBT", "")}</td>
+      <td>${nb(c.ultima)}</td><td class="${cls(c.varr)}">${n2(c.varr)}</td><td class="${cls(c.pct)}">${n2(c.pct)}</td><td>${nb(c.previa)}</td>${porto}</tr>`;
+  });
   if (!linhas.length) { el.innerHTML = `<div class="placeholder">Sem cotações cadastradas.</div>`; return; }
-  const hora = t => t ? new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "") : "—";
-  el.innerHTML = `<table><thead><tr><th>Produto</th><th>Cotação</th><th>R$ / saca</th><th>Variação no dia</th><th>Últimos 30 pregões</th><th>Atualizado</th></tr></thead><tbody>${linhas.map(l => {
-    const cls = l.v > 0 ? "up" : l.v < 0 ? "down" : "", seta = l.v > 0 ? "▲" : l.v < 0 ? "▼" : "■";
-    const val = l.dolar ? l.cot : fmtMoney(l.saca);
-    return `<tr class="${l.destaque ? "destaque" : ""}">
-      <td><div class="q-prod">${l.prod}</div><div class="q-ref">${l.ref}</div></td>
-      <td>${l.dolar ? "—" : l.cot}</td>
-      <td class="q-saca">${val}</td>
-      <td class="q-var ${cls}">${seta} ${l.dolar ? (l.v > 0 ? "+" : "") + l.v.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : fmtSigned(l.v)} <span style="font-size:.8em">(${fmtSigned(l.pct)}%)</span></td>
-      <td>${sparkSvg(l.spark)}</td>
-      <td class="q-hora">${hora(l.hora)}</td></tr>`;
-  }).join("")}</tbody></table>`;
-  document.getElementById("quadroRodape").textContent = `Praça e porto são estimativas: porto = (CBOT + prêmio) por tonelada − desembarque; praça = porto − frete. Câmbio ${dolar ? "R$ " + dolar.toLocaleString("pt-BR", { minimumFractionDigits: 4 }) : "—"}. Chicago com atraso de ~15 min. Consulte seu corretor Nexus para fechar negócio.`;
+  const status = modoVivo ? `<span class="status on">● Mercado aberto</span>` : `<span class="status off">Mercado fechado</span>`;
+  const d = dolarRow || {};
+  el.innerHTML = `<table class="qd-tab">
+      <thead><tr class="grp"><th colspan="7">Bolsas — Cotações ${status}</th><th colspan="2" class="sep">FOB — Porto Paranaguá</th><th colspan="2" class="sep">FAS — Porto Paranaguá</th><th colspan="3" class="sep branco">São Gabriel do Oeste — MS</th></tr>
+      <tr class="cols"><th style="text-align:left">Produto</th><th style="text-align:left">Mês</th><th style="text-align:left">Código</th><th>Última</th><th>Var</th><th>%</th><th>Prévia</th>
+        <th class="sep">Prêmio</th><th>USD</th><th class="sep">USD</th><th>R$</th><th class="sep">Ex-Works</th><th>USD</th><th>R$</th></tr></thead>
+      <tbody>${linhas.join("")}</tbody></table>
+    <div class="qd-baixo">
+      <div class="qd-nota"><b>Como ler:</b> soja e milho CBOT em centavos de US$ por bushel; milho B3 em R$ por saca. <b>FOB</b> = (CBOT + prêmio) em US$/tonelada no porto.
+        <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Ex-Works São Gabriel</b> = FAS − frete (R$ ${n2(freteTon)}/t); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
+        Câmbio R$ ${dolar ? n4(dolar) : "--"}. Chicago com atraso de ~15 min. Valores de referência — consulte seu corretor Nexus.</div>
+      <table class="qd-dolar"><thead><tr><th colspan="2">Dólar Comercial</th></tr></thead><tbody>
+        <tr><td>Atual</td><td>${d.atual != null ? n4(d.atual) : "--"}</td></tr>
+        <tr><td>Anterior</td><td>${d.anterior != null ? n4(d.anterior) : "--"}</td></tr>
+        <tr><td>Variação</td><td class="${cls(d.variacao)}">${d.variacao != null ? n4(d.variacao) : "--"}</td></tr>
+        <tr><td>PTAX</td><td>${d.ptax_auto != null ? n4(d.ptax_auto) : d.ptax != null ? n4(d.ptax) : "--"}</td></tr>
+      </tbody></table>
+    </div>`;
 }
 
 // ---------------- CHICAGO AO VIVO + ALERTA DE MOVIMENTO ----------------
@@ -679,6 +695,7 @@ async function carregarIntraday() {
     renderLiveTv();
     verificarAlertasMovimento(itens);
     if (mudou && slideTimer) mostrarSlide(playlistPos); // reordena a programação na hora
+    if (mudou && ultimoQuadro) renderQuadroCotacoes(...ultimoQuadro);
   } catch (e) {}
 }
 // Como cada ativo aparece no cartão: prefixo/unidade, divisor (CBOT vem em centavos) e casas decimais.
