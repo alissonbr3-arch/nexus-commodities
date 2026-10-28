@@ -94,7 +94,6 @@
   .dots b { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--card); border: 1px solid var(--border); color: var(--ink-dim); font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; transition: background .3s, color .3s; }
   .dots b.on { background: var(--gold); border-color: var(--gold); color: #171207; }
   .painel-tag { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); background: var(--gold-soft); border: 1px solid var(--gold); border-radius: 12px; padding: 2px 10px; }
-  .slide iframe.simconsult { flex: 1; width: 100%; border: 1px solid var(--border); border-radius: 14px; background: #fff; min-height: 0; }
   .two-cols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-height: 0; }
   .preco-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
   .preco-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; }
@@ -493,8 +492,8 @@ function renderCuriosidadesTv(negocios) {
 // o Chicago ao vivo entra duas vezes no ciclo e fica mais tempo; fora do pregão ele aparece uma vez, rápido.
 let playlistPos = 0, slideTimer = null, modoVivo = false;
 const FATOR_TEMPO = {
-  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Curiosidades": 0.6, "Aniversariantes": 1, "SimConsult": 1.25 },
-  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Curiosidades": 0.75, "Aniversariantes": 1.25, "SimConsult": 1.25 },
+  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Curiosidades": 0.6, "Aniversariantes": 1 },
+  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Curiosidades": 0.75, "Aniversariantes": 1.25 },
 };
 // Cada painel tem número e nome fixos (o número não muda com a ordem do rodízio). Teclas 1–9 (ou os números do
 // controle) pulam direto pro painel; /tv/?painel=2 abre já nele; /tv/?paineis=1,2,5 gira só entre esses.
@@ -504,15 +503,14 @@ const PAINEIS = [
   { num: 3, chave: "Preços dos negócios", nome: "Preços dos negócios" },
   { num: 4, chave: "Curiosidades", nome: "Curiosidades" },
   { num: 5, chave: "Aniversariantes", nome: "Aniversariantes do dia" },
-  { num: 6, chave: "SimConsult", nome: "SimConsult" },
 ];
 const painelDe = chave => PAINEIS.find(p => p.chave === chave) || { num: "", nome: chave };
 const SO_PAINEIS = (new URLSearchParams(location.search).get("paineis") || "").split(",").map(Number).filter(Boolean);
 function montarPlaylist() {
   const ok = new Set([...document.querySelectorAll("#slides .slide")].filter(el => el.dataset.off !== "1").map(el => el.dataset.nome));
   const base = modoVivo
-    ? ["Chicago", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades", "SimConsult"]
-    : ["Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades", "SimConsult"];
+    ? ["Chicago", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"]
+    : ["Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"];
   let lista = base.filter(n => ok.has(n));
   if (SO_PAINEIS.length) { const so = lista.filter(n => SO_PAINEIS.includes(painelDe(n).num)); if (so.length) lista = so; }
   return lista.length ? lista : ["Mercado"];
@@ -529,18 +527,7 @@ function mostrarSlide(pos) {
   const fator = (FATOR_TEMPO[modoVivo ? "vivo" : "parado"] || {})[nome] || 1;
   slideTimer = setTimeout(() => mostrarSlide(playlistPos + 1), Math.round(TEMPO_BASE * fator * 1000));
 }
-// Experimental: com /tv?simconsult=1 entra no rodízio uma tela com o SimConsult (plataforma.simconsult.com.br)
-// aberta dentro da TV. Depende de o SimConsult permitir ser exibido em outra página e de manter o
-// login nesse quadro — se ficar em branco ou pedir login a cada volta, não dá pra usar assim.
-function adicionarSlideSimConsult() {
-  if (new URLSearchParams(location.search).get("simconsult") !== "1") return;
-  const el = document.createElement("div");
-  el.className = "slide"; el.dataset.nome = "SimConsult";
-  el.innerHTML = '<iframe class="simconsult" src="https://plataforma.simconsult.com.br/" allow="fullscreen"></iframe>';
-  document.getElementById("slides").insertBefore(el, document.getElementById("slideDots"));
-}
 function iniciarSlides() {
-  adicionarSlideSimConsult();
   const inicial = Number(new URLSearchParams(location.search).get("painel")) || 0;
   mostrarSlide(Math.max(0, montarPlaylist().indexOf((PAINEIS.find(p => p.num === inicial) || {}).chave)));
   document.addEventListener("keydown", e => {
