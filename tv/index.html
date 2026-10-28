@@ -133,7 +133,7 @@
   .qd-tab .grp th.branco { color: var(--ink); }
   .qd-tab .grp .status { font-size: .75em; font-weight: 600; margin-left: 14px; } .qd-tab .grp .status.on { color: var(--green); } .qd-tab .grp .status.off { color: var(--ink-dim); }
   .qd-tab .cols th { font-size: clamp(12px, min(1.9vh, 0.95vw), 19px); font-weight: 600; color: var(--ink-soft); text-align: center; border-bottom: 2px solid var(--gold); }
-  .qd-tab td { height: clamp(44px, 8.5vh, 100px); font-size: clamp(14px, min(3.1vh, 1.34vw), 34px); font-weight: 700; border-bottom: 1px solid var(--border); }
+  .qd-tab td { height: clamp(40px, min(8.5vh, calc(52vh / var(--linhas, 4))), 100px); font-size: clamp(14px, min(3.1vh, 1.34vw), 34px); font-weight: 700; border-bottom: 1px solid var(--border); }
   .qd-tab tbody tr:nth-child(even) td { background: rgba(255,255,255,.025); }
   .qd-tab tbody tr:last-child td { border-bottom: none; }
   .qd-tab td.prod, .qd-tab td.mes, .qd-tab td.cod { text-align: left; }
@@ -146,7 +146,8 @@
   .qd-dolar { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
   .qd-dolar th { font-size: clamp(14px, 2vh, 20px); font-weight: 600; color: var(--ink-soft); background: var(--card-alt); padding: clamp(6px, 1.1vh, 12px); }
   .qd-dolar td { font-size: clamp(15px, 2.8vh, 30px); font-weight: 700; padding: clamp(6px, 1.1vh, 12px) 18px; border-top: 1px solid var(--border); text-align: right; }
-  .qd-dolar td:first-child { text-align: left; }
+  .qd-dolar td { text-align: center; } .qd-dolar .cols th { font-size: clamp(11px, 1.6vh, 16px); background: transparent; padding-top: 4px; padding-bottom: 0; }
+  .qd-dolar .up { color: var(--green); } .qd-dolar .down { color: var(--red); }
   .qd-nota { font-size: clamp(11px, 1.5vh, 14px); color: var(--ink-dim); line-height: 1.5; padding-top: 4px; }
   .qd-nota b { color: var(--ink-soft); }
 
@@ -632,10 +633,20 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
   const desembarque = Number(cfg.soja_taxa_portuaria || 0), freteTon = Number(cfg.soja_frete || 0);
   const mesDe = c => { const m = /^[A-Z]{2}([FGHJKMNQUVXZ])(\d{2})/.exec(c.codigo || ""); if (m) return `${MES_CODIGO[m[1]]}/${m[2]}`; const b = /(\w{3})\/(\d{2})/.exec(c.mes || ""); return b ? `${b[1].toUpperCase()}/${b[2]}` : "CONT."; };
   const ordem = c => { const m = /^[A-Z]{2}([FGHJKMNQUVXZ])(\d{2})/.exec(c.codigo || ""); return m ? Number(m[2]) * 12 + "FGHJKMNQUVXZ".indexOf(m[1]) : 9999; };
-  const soja = cot.filter(c => c.produto === "Soja").sort((a, b) => ordem(a) - ordem(b));
-  const milhoCbot = cot.filter(c => c.produto === "Milho" && c.codigo !== "CCM");
-  const milhoB3 = cot.filter(c => c.codigo === "CCM");
-  const linhas = [...soja, ...milhoCbot, ...milhoB3].map(c => {
+  // O preço da tabela de cotações só é regravado de hora em hora; o intraday (a cada 3 min, atraso de ~15 min) passa
+  // por cima quando tem o mesmo contrato. O Milho B3 do quadro são os dois primeiros vencimentos do intraday.
+  const vivo = Object.fromEntries((ultimosIntraday || []).map(i => [i.codigo, i]));
+  const comVivo = c => { const i = vivo[c.codigo]; return i ? { ...c, ultima: i.preco, varr: i.variacao, pct: i.pct, previa: i.anterior } : c; };
+  const LETRA_B3 = { Jan: "F", Mar: "H", Mai: "K", Jul: "N", Set: "U", Nov: "X" };
+  const b3Vivo = ["CCM-1", "CCM-2"].map(k => vivo[k]).filter(Boolean).map(i => {
+    const m = /(\w{3})\/(\d{2})/.exec(i.nome) || [];
+    return { produto: "Milho", mes: `B3 ${m[1]}/${m[2]}`, codigo: "CCM", cod: LETRA_B3[m[1]] ? `CC${LETRA_B3[m[1]]}${m[2]}` : "CCM", ultima: i.preco, varr: i.variacao, pct: i.pct, previa: i.anterior };
+  });
+  const brent = vivo["BZ=F"] ? [{ produto: "Petróleo", bolsa: "Brent", mes: "", codigo: "BZ=F", ultima: vivo["BZ=F"].preco, varr: vivo["BZ=F"].variacao, pct: vivo["BZ=F"].pct, previa: vivo["BZ=F"].anterior }] : [];
+  const soja = cot.filter(c => c.produto === "Soja").sort((a, b) => ordem(a) - ordem(b)).map(comVivo);
+  const milhoCbot = cot.filter(c => c.produto === "Milho" && c.codigo !== "CCM").map(comVivo);
+  const milhoB3 = b3Vivo.length ? b3Vivo : cot.filter(c => c.codigo === "CCM");
+  const linhas = [...soja, ...milhoCbot, ...milhoB3, ...brent].map(c => {
     const b3 = c.codigo === "CCM";
     const premio = c.produto !== "Soja" ? null : Number(c.premio) || (c.mes === contrato ? Number(cfg.soja_premio_basis) || null : null);
     let porto = "";
@@ -649,14 +660,15 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
         <td class="sep">${n2(fasSacaUsd)}<small>p/sc</small></td><td>${n2(fasSacaUsd * dolar)}<small>p/sc</small></td>
         <td class="sep ${cls(exwBasis)}">${n2(exwBasis)}<small>p/bu</small></td><td>${n2(exwSacaUsd)}<small>p/sc</small></td><td class="destaque">${n2(exwSacaUsd * dolar)}<small>p/sc</small></td>`;
     } else porto = `<td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td>${na}</td>`;
-    return `<tr><td class="prod ${c.produto === "Milho" ? "milho" : ""}">${c.produto.toUpperCase()}<small>${b3 ? "B3" : "CBOT"}</small></td>
-      <td class="mes">${mesDe(c)}</td><td class="cod">${(c.codigo || "").replace(".CBT", "")}</td>
+    return `<tr><td class="prod ${c.produto === "Milho" ? "milho" : ""}">${c.produto.toUpperCase()}<small>${c.bolsa || (b3 ? "B3" : "CBOT")}</small></td>
+      <td class="mes">${c.mes === "" ? "CONT." : mesDe(c)}</td><td class="cod">${c.cod || (c.codigo || "").replace(".CBT", "")}</td>
       <td>${nb(c.ultima)}</td><td class="${cls(c.varr)}">${n2(c.varr)}</td><td class="${cls(c.pct)}">${n2(c.pct)}</td><td>${nb(c.previa)}</td>${porto}</tr>`;
   });
   if (!linhas.length) { el.innerHTML = `<div class="placeholder">Sem cotações cadastradas.</div>`; return; }
   const status = modoVivo ? `<span class="status on">● Mercado aberto</span>` : `<span class="status off">Mercado fechado</span>`;
-  const d = dolarRow || {};
-  el.innerHTML = `<table class="qd-tab">
+  const usdVivo = vivo["BRL=X"];
+  const d = usdVivo ? { ...dolarRow, atual: usdVivo.preco, anterior: usdVivo.anterior, variacao: usdVivo.variacao } : dolarRow || {};
+  el.innerHTML = `<table class="qd-tab" style="--linhas:${linhas.length}">
       <thead><tr class="grp"><th colspan="7">Bolsas — Cotações ${status}</th><th colspan="2" class="sep">FOB — Porto Paranaguá</th><th colspan="2" class="sep">FAS — Porto Paranaguá</th><th colspan="3" class="sep branco">São Gabriel do Oeste — MS</th></tr>
       <tr class="cols"><th style="text-align:left">Produto</th><th style="text-align:left">Mês</th><th style="text-align:left">Código</th><th>Última</th><th>Var</th><th>%</th><th>Prévia</th>
         <th class="sep">Prêmio</th><th>USD</th><th class="sep">USD</th><th>R$</th><th class="sep">Ex-Works</th><th>USD</th><th>R$</th></tr></thead>
@@ -665,11 +677,9 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       <div class="qd-nota"><b>Como ler:</b> soja e milho CBOT em centavos de US$ por bushel; milho B3 em R$ por saca. <b>FOB</b> = (CBOT + prêmio) em US$/tonelada no porto.
         <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Ex-Works São Gabriel</b> = FAS − frete (R$ ${n2(freteTon)}/t); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
         Câmbio R$ ${dolar ? n4(dolar) : "--"}. Chicago com atraso de ~15 min. Valores de referência — consulte seu corretor Nexus.</div>
-      <table class="qd-dolar"><thead><tr><th colspan="2">Dólar Comercial</th></tr></thead><tbody>
-        <tr><td>Atual</td><td>${d.atual != null ? n4(d.atual) : "--"}</td></tr>
-        <tr><td>Anterior</td><td>${d.anterior != null ? n4(d.anterior) : "--"}</td></tr>
-        <tr><td>Variação</td><td class="${cls(d.variacao)}">${d.variacao != null ? n4(d.variacao) : "--"}</td></tr>
-        <tr><td>PTAX</td><td>${d.ptax_auto != null ? n4(d.ptax_auto) : d.ptax != null ? n4(d.ptax) : "--"}</td></tr>
+      <table class="qd-dolar"><thead><tr><th colspan="4">Dólar Comercial</th></tr><tr class="cols"><th>Atual</th><th>Anterior</th><th>Variação</th><th>PTAX</th></tr></thead><tbody>
+        <tr><td>${d.atual != null ? n4(d.atual) : "--"}</td><td>${d.anterior != null ? n4(d.anterior) : "--"}</td>
+          <td class="${cls(d.variacao)}">${d.variacao != null ? n4(d.variacao) : "--"}</td><td>${d.ptax_auto != null ? n4(d.ptax_auto) : d.ptax != null ? n4(d.ptax) : "--"}</td></tr>
       </tbody></table>
     </div>`;
 }
@@ -695,7 +705,7 @@ async function carregarIntraday() {
     renderLiveTv();
     verificarAlertasMovimento(itens);
     if (mudou && slideTimer) mostrarSlide(playlistPos); // reordena a programação na hora
-    if (mudou && ultimoQuadro) renderQuadroCotacoes(...ultimoQuadro);
+    if (ultimoQuadro) renderQuadroCotacoes(...ultimoQuadro); // NexusConsult acompanha o intraday
   } catch (e) {}
 }
 // Como cada ativo aparece no cartão: prefixo/unidade, divisor (CBOT vem em centavos) e casas decimais.
