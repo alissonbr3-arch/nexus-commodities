@@ -608,7 +608,7 @@ async function carregarDadosTv() {
 // ---------------- QUADRO DE COTAÇÕES ----------------
 // Tabela única com as cotações que a Nexus acompanha, tudo convertido em R$/saca de 60 kg. A primeira linha é o
 // preço estimado da praça (mesma conta da aba Cotações do painel: CBOT do contrato vigente + prêmio − porto − frete).
-const BUSHEL_POR_SACA_SOJA = 60 / 27.2155, TON_POR_SACA = 60 / 1000;
+const BUSHEL_POR_SACA_SOJA = 60 / 27.2155, BUSHEL_POR_TON = 1000 / 27.2155, TON_POR_SACA = 60 / 1000;
 function sparkSvg(vals) {
   if (vals.length < 2) return "";
   const w = 150, h = 40, min = Math.min(...vals), max = Math.max(...vals), r = max - min || 1;
@@ -629,6 +629,10 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
     const premio = (Number(soja.premio) || Number(cfg.soja_premio_basis) || 0) * BUSHEL_POR_SACA_SOJA * dolar;
     const total = Number(soja.preco_saca_brl) + premio - Number(cfg.soja_taxa_portuaria || 0) * TON_POR_SACA * dolar - Number(cfg.soja_frete || 0) * TON_POR_SACA;
     linhas.push({ destaque: true, prod: "Soja", ref: `Praça São Gabriel do Oeste · base CBOT ${contrato}`, cot: "—", saca: total, v: varSaca(soja), pct: Number(soja.pct), spark: serie(soja.codigo), hora: soja.updated_at });
+    // Porto de Paranaguá: (CBOT do contrato vigente + prêmio) em US$/bushel → US$/tonelada, menos a taxa de desembarque no porto.
+    const premioBu = Number(soja.premio) || Number(cfg.soja_premio_basis) || 0;
+    const portoTon = (Number(soja.ultima) / 100 + premioBu) * BUSHEL_POR_TON - Number(cfg.soja_taxa_portuaria || 0);
+    linhas.push({ destaque: true, prod: "Soja", ref: `Porto de Paranaguá · CBOT ${contrato} + prêmio − desembarque`, cot: `US$ ${fmtNum2(portoTon)}/t`, saca: portoTon * dolar * TON_POR_SACA, v: varSaca(soja), pct: Number(soja.pct), spark: serie(soja.codigo), hora: soja.updated_at });
   }
   const cbot = (c, nome, ref) => c && linhas.push({ prod: nome, ref, cot: `US$ ${fmtNum2(Number(c.ultima) / 100)}/bu`, saca: Number(c.preco_saca_brl), v: varSaca(c), pct: Number(c.pct), spark: serie(c.codigo), hora: c.updated_at });
   cbot(porCodigo("ZSX26.CBT"), "Soja", "Chicago (CBOT) · Novembro/26");
@@ -651,7 +655,7 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       <td>${sparkSvg(l.spark)}</td>
       <td class="q-hora">${hora(l.hora)}</td></tr>`;
   }).join("")}</tbody></table>`;
-  document.getElementById("quadroRodape").textContent = `Preço da praça é estimativa (CBOT + prêmio − porto − frete, câmbio ${dolar ? "R$ " + dolar.toLocaleString("pt-BR", { minimumFractionDigits: 4 }) : "—"}). Chicago com atraso de ~15 min. Consulte seu corretor Nexus para fechar negócio.`;
+  document.getElementById("quadroRodape").textContent = `Praça e porto são estimativas: porto = (CBOT + prêmio) por tonelada − desembarque; praça = porto − frete. Câmbio ${dolar ? "R$ " + dolar.toLocaleString("pt-BR", { minimumFractionDigits: 4 }) : "—"}. Chicago com atraso de ~15 min. Consulte seu corretor Nexus para fechar negócio.`;
 }
 
 // ---------------- CHICAGO AO VIVO + ALERTA DE MOVIMENTO ----------------
