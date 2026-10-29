@@ -748,11 +748,15 @@
             <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
             <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
           </div>
+          <div id="pe_soja_extras"></div>
+          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('soja')">+ Outro preço de soja</button></div>
           <div class="field-row">
             <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_disp_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
             <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
             <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
           </div>
+          <div id="pe_milho_extras"></div>
+          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('milho')">+ Outro preço de milho</button></div>
           <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
           <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
@@ -2619,6 +2623,7 @@ function precoEnvioPreencherForm() {
   const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v ?? ""; };
   set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref); set("pe_soja_disp_obs", d.soja_disp_obs); set("pe_soja_fut_obs", d.soja_fut_obs); set("pe_milho_disp_obs", d.milho_disp_obs); set("pe_milho_fut_obs", d.milho_fut_obs);
   set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs); set("pe_texto", d.texto || PE_TEXTO_PADRAO);
+  ["soja", "milho"].forEach(g => { const box = document.getElementById(`pe_${g}_extras`); if (box && !box.contains(document.activeElement)) { box.innerHTML = ""; (d[`${g}_extras`] || []).forEach(x => precoEnvioAddExtra(g, x)); } });
   const st = document.getElementById("pe_status");
   if (st) {
     if (!d.atualizado_em) st.textContent = "";
@@ -2630,6 +2635,23 @@ function precoEnvioPreencherForm() {
 // Texto padrão da mensagem. Variáveis: {{SAUDACAO}} (bom dia/boa tarde/boa noite), {{NOME}}, {{DATA}}, {{PRECOS}} (as linhas de
 // preço de cada cliente) e {{OBS}} (a observação). O corretor pode editar em "Editar texto da mensagem".
 const PE_TEXTO_PADRAO = "{{SAUDACAO}}, {{NOME}}!\n\nPreços de hoje ({{DATA}}):\n\n{{PRECOS}}\n\n{{OBS}}\n\n*Nexus Commodities*";
+// Preços extras de cada grão (ex.: "Pagamento 10/11", "Pagamento Jan/27"): quantas linhas o corretor quiser, cada uma
+// com nome, preço e aviso opcional. Entram na mensagem logo depois do disponível/futuro do grão.
+function precoEnvioAddExtra(grao, x = {}) {
+  const box = document.getElementById(`pe_${grao}_extras`); if (!box) return;
+  const row = document.createElement("div"); row.className = "field-row pe-extra"; row.style.gridTemplateColumns = "1fr 1fr auto";
+  row.innerHTML = `<div class="field"><label>Nome do preço</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
+    <div class="field"><label>${grao === "soja" ? "Soja" : "Milho"} (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"><input type="text" class="pe-x-obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px"></div>
+    <div class="field" style="flex:0 0 auto;align-self:flex-end"><button class="btn-danger-text" title="Remover este preço" onclick="this.closest('.pe-extra').remove(); precoEnvioPrevia()">Remover</button></div>`;
+  row.querySelector(".pe-x-rot").value = x.rotulo || ""; row.querySelector(".pe-x-preco").value = x.preco ?? ""; row.querySelector(".pe-x-obs").value = x.obs || "";
+  box.appendChild(row);
+  if (!x.rotulo && x.preco == null) row.querySelector(".pe-x-rot").focus();
+}
+function precoEnvioExtras(grao) {
+  return [...document.querySelectorAll(`#pe_${grao}_extras .pe-extra`)].map(r => ({
+    rotulo: r.querySelector(".pe-x-rot").value.trim(), preco: r.querySelector(".pe-x-preco").value === "" ? null : Number(r.querySelector(".pe-x-preco").value), obs: r.querySelector(".pe-x-obs").value.trim(),
+  })).filter(x => x.preco != null);
+}
 // Mensagem com {{SAUDACAO}} e {{NOME}}. Todo cliente recebe todas as linhas de preço preenchidas.
 function precoEnvioTemplate() {
   const sd = precoEnvioNum("pe_soja_disp"), sf = precoEnvioNum("pe_soja_fut"), md = precoEnvioNum("pe_milho_disp"), mf = precoEnvioNum("pe_milho_fut");
@@ -2638,8 +2660,9 @@ function precoEnvioTemplate() {
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const qual = id => (document.getElementById(id)?.value || "").trim();
   const linha = (rot, v, q) => `• ${rot}: ${q ? q + " " : ""}*${fmtMoney(v)}/sc*`;
-  const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null].filter(Boolean);
-  const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null].filter(Boolean);
+  const extras = g => precoEnvioExtras(g).map(x => linha(x.rotulo || "Outro preço", x.preco, x.obs));
+  const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null, ...extras("soja")].filter(Boolean);
+  const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null, ...extras("milho")].filter(Boolean);
   if (!blocoSoja.length && !blocoMilho.length) return "";
   const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : ""].filter(Boolean).join("\n\n");
   let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
@@ -2674,6 +2697,7 @@ async function salvarPrecoEnvio() {
   const row = { user_id: currentUserId, soja_disp: precoEnvioNum("pe_soja_disp"), soja_fut: precoEnvioNum("pe_soja_fut"), soja_fut_ref: (document.getElementById("pe_soja_ref").value || "").trim(),
     milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
     soja_disp_obs: (document.getElementById("pe_soja_disp_obs").value || "").trim(), soja_fut_obs: (document.getElementById("pe_soja_fut_obs").value || "").trim(), milho_disp_obs: (document.getElementById("pe_milho_disp_obs").value || "").trim(), milho_fut_obs: (document.getElementById("pe_milho_fut_obs").value || "").trim(),
+    soja_extras: precoEnvioExtras("soja"), milho_extras: precoEnvioExtras("milho"),
     obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString() };
   const { error } = await sb.from("nexus_preco_whatsapp_usuario").upsert(row, { onConflict: "user_id" });
   if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
