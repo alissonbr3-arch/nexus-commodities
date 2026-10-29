@@ -294,6 +294,7 @@
   .field label { display: block; font-size: 12px; font-weight: 500; color: var(--ink-soft); margin-bottom: 4px; }
   .field input, .field select, .field textarea { width: 100%; }
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-row.pe-linha { grid-template-columns: 1fr 1fr 1fr 70px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
   .totals-strip { display: flex; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -743,18 +744,12 @@
         <div class="page-sub">Seus preços, sua mensagem e sua lista: cada corretor tem a própria janela. Mande pelo WhatsApp pra cada cliente, um a um — nada sai automático.</div>
         <div class="panel-card" id="precoEnvioPanel">
           <div class="hint">Confira a prévia e clique em "Enviar no meu WhatsApp": abre o WhatsApp do seu computador com a mensagem já escrita, é só apertar Enter. Não usa a conta da Nexus.</div>
-          <div class="field-row">
-            <div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"><input type="text" id="pe_soja_disp_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
-            <div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
-            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div>
-          </div>
+          <div class="field-row pe-linha"><div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_soja_disp_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div></div><div></div></div>
+          <div class="field-row pe-linha"><div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <div id="pe_soja_extras"></div>
           <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('soja')">+ Outro preço de soja</button></div>
-          <div class="field-row">
-            <div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_disp_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
-            <div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px" title="Ex.: vejo chance de / ideia de / podendo testar"></div>
-            <div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div>
-          </div>
+          <div class="field-row pe-linha"><div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_disp_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div></div><div></div></div>
+          <div class="field-row pe-linha"><div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <div id="pe_milho_extras"></div>
           <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('milho')">+ Outro preço de milho</button></div>
           <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
@@ -2639,13 +2634,14 @@ const PE_TEXTO_PADRAO = "{{SAUDACAO}}, {{NOME}}!\n\nPreços de hoje ({{DATA}}):\
 // com nome, preço e aviso opcional. Entram na mensagem logo depois do disponível/futuro do grão.
 function precoEnvioAddExtra(grao, x = {}) {
   const box = document.getElementById(`pe_${grao}_extras`); if (!box) return;
-  const row = document.createElement("div"); row.className = "field-row pe-extra"; row.style.gridTemplateColumns = "1fr 1fr auto";
-  row.innerHTML = `<div class="field"><label>Nome do preço</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
-    <div class="field"><label>${grao === "soja" ? "Soja" : "Milho"} (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"><input type="text" class="pe-x-obs" list="pe_quals" placeholder="Aviso antes do preço (opcional)" oninput="precoEnvioPrevia()" style="margin-top:4px;font-size:12px"></div>
-    <div class="field" style="flex:0 0 auto;align-self:flex-end"><button class="btn-danger-text" title="Remover este preço" onclick="this.closest('.pe-extra').remove(); precoEnvioPrevia()">Remover</button></div>`;
+  const row = document.createElement("div"); row.className = "field-row pe-linha pe-extra";
+  row.innerHTML = `<div class="field"><label>Outro preço de ${grao} (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"></div>
+    <div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" class="pe-x-obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()"></div>
+    <div class="field"><label>Nome que aparece na mensagem</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
+    <div class="field" style="align-self:end"><button class="btn-danger-text" title="Remover este preço" onclick="this.closest('.pe-extra').remove(); precoEnvioPrevia()">Remover</button></div>`;
   row.querySelector(".pe-x-rot").value = x.rotulo || ""; row.querySelector(".pe-x-preco").value = x.preco ?? ""; row.querySelector(".pe-x-obs").value = x.obs || "";
   box.appendChild(row);
-  if (!x.rotulo && x.preco == null) row.querySelector(".pe-x-rot").focus();
+  if (!x.rotulo && x.preco == null) row.querySelector(".pe-x-preco").focus();
 }
 function precoEnvioExtras(grao) {
   return [...document.querySelectorAll(`#pe_${grao}_extras .pe-extra`)].map(r => ({
