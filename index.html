@@ -7152,7 +7152,7 @@ function renderInvestimentos() {
       <td style="text-align:right">${atual == null ? "—" : fmtNum2Inv(atual)}${enc ? "<div style='font-size:10.5px;color:var(--ink-soft)'>saída</div>" : ""}</td>
       <td style="text-align:right;font-weight:700;color:${r ? corGP(r.valor) : "var(--ink)"}">${r ? (r.valor > 0 ? "+" : "") + fmtMoedaInv(r.valor, i.moeda) : "—"}</td>
       <td style="text-align:right;color:${r ? corGP(r.valor) : "var(--ink)"}">${r ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(2).replace(".", ",") + "%" : "—"}</td>
-      <td style="white-space:nowrap"><button class="btn-edit-text" onclick="openInvestimentoModal('${i.id}')">Editar</button>${enc ? "" : `<button class="btn-edit-text" onclick="encerrarInvestimento('${i.id}')">Encerrar</button>`}<button class="btn-danger-text" onclick="excluirInvestimento('${i.id}')">Excluir</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="btn-edit-text" onclick="openInvestimentoModal('${i.id}')">Editar</button>${enc ? "" : `<button class="btn-edit-text" onclick="aumentarInvestimento('${i.id}')" title="Comprei (ou vendi) mais do mesmo contrato">+ Aumentar</button><button class="btn-edit-text" onclick="encerrarInvestimento('${i.id}')">Encerrar</button>`}<button class="btn-danger-text" onclick="excluirInvestimento('${i.id}')">Excluir</button></td></tr>`;
   };
   body.innerHTML = lista.length === 0 ? `<tr class="empty-row"><td colspan="8">Nenhum investimento cadastrado. Clique em "+ Novo investimento".</td></tr>` : [...abertas, ...fechadas].map(linha).join("");
   document.getElementById("invRodape").textContent = lista.length ? `Resultado em dólar convertido pelo câmbio de hoje (R$ ${dolar.toLocaleString("pt-BR", { minimumFractionDigits: 4 })}). Não considera corretagem, emolumentos, impostos nem ajuste diário — é uma estimativa pelo preço do dia.` : "";
@@ -7227,6 +7227,41 @@ function encerrarInvestimento(id) {
     <div class="hint">Sugestão: o preço do dia. Pra encerrar só uma parte, diminua os contratos: essa parte vai pra "Já realizado" e o resto continua aberto, com o mesmo preço de compra.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="confirmarEncerramento('${id}')">Encerrar</button></div>`;
   showModal();
+}
+// Aumentar a posição: mais contratos do mesmo vencimento em outro preço; o preço de compra vira o médio ponderado.
+function aumentarInvestimento(id) {
+  const i = data.investimentos.find(x => x.id === id); if (!i) return;
+  const atual = precoAtualInv(i);
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Aumentar posição — ${escapeHtml(i.descricao)}</h3>
+    <div class="hint" style="margin-bottom:10px">Hoje: ${fmtNum(i.contratos)} contrato${Number(i.contratos) === 1 ? "" : "s"} ${i.lado === "Vendido" ? "vendido" : "comprado"}${Number(i.contratos) === 1 ? "" : "s"} a ${fmtNum2Inv(i.preco_compra)}.</div>
+    <div class="field-row">
+      <div class="field"><label>Contratos a mais</label><input type="number" step="any" min="0" id="f_invMaisQtd" oninput="previaAumento('${id}')"></div>
+      <div class="field"><label>Preço desses contratos</label><input type="number" step="any" id="f_invMaisPreco" value="${atual == null ? "" : atual}" oninput="previaAumento('${id}')"></div>
+    </div>
+    <div id="f_invMaisPrevia" style="font-size:12.5px;margin:4px 0 6px"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="confirmarAumento('${id}')">Salvar</button></div>`;
+  showModal(); previaAumento(id); document.getElementById("f_invMaisQtd").focus();
+}
+function calcAumento(i) {
+  const q0 = Number(i.contratos), p0 = Number(i.preco_compra), q1 = Number(document.getElementById("f_invMaisQtd").value), p1 = Number(document.getElementById("f_invMaisPreco").value);
+  if (!(q1 > 0) || !(p1 > 0)) return null;
+  return { total: q0 + q1, medio: (q0 * p0 + q1 * p1) / (q0 + q1) };
+}
+function previaAumento(id) {
+  const i = data.investimentos.find(x => x.id === id), el = document.getElementById("f_invMaisPrevia"); if (!i || !el) return;
+  const c = calcAumento(i);
+  el.innerHTML = c ? `Fica: <b>${fmtNum(c.total)} contratos</b> a preço médio <b>${fmtNum2Inv(Math.round(c.medio * 1000) / 1000)}</b>` : `<span style="color:var(--ink-soft)">Informe quantos contratos a mais e o preço.</span>`;
+}
+async function confirmarAumento(id) {
+  const i = data.investimentos.find(x => x.id === id); if (!i) return;
+  const c = calcAumento(i);
+  if (!c) { alert("Informe quantos contratos a mais e o preço."); return; }
+  const q1 = Number(document.getElementById("f_invMaisQtd").value), p1 = Number(document.getElementById("f_invMaisPreco").value);
+  const nota = `+${fmtNum(q1)} a ${fmtNum2Inv(p1)} em ${fmtDate(todayISO())}`;
+  const { error } = await sb.from("nexus_investimentos").update({ contratos: c.total, preco_compra: Math.round(c.medio * 10000) / 10000, obs: i.obs ? `${i.obs} · ${nota}` : nota, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) { alert("Não consegui aumentar a posição: " + error.message); return; }
+  await loadInvestimentos(); closeModal(); renderInvestimentos();
 }
 // Encerramento total ou parcial. No parcial, a parte zerada vira uma posição encerrada à parte (mesma compra, com o
 // preço de saída) e a posição original fica aberta com os contratos que sobraram.
