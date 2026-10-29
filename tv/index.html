@@ -649,7 +649,8 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
   const milhoB3 = b3Vivo.length ? b3Vivo : cot.filter(c => c.codigo === "CCM");
   const linhas = [...soja, ...milhoCbot, ...milhoB3, ...brent].map(c => {
     const b3 = c.codigo === "CCM";
-    const premio = c.produto !== "Soja" ? null : Number(c.premio) || (c.mes === contrato ? Number(cfg.soja_premio_basis) || null : null);
+    // Soja sempre tem as colunas de porto/praça: prêmio do contrato (0,00 vale), e o contrato vigente usa o prêmio geral se o dele estiver zerado.
+    const premio = c.produto !== "Soja" ? null : Number(c.premio) || (c.mes === contrato ? Number(cfg.soja_premio_basis) || 0 : 0);
     let porto = "";
     if (premio != null && dolar) {
       const cbotBu = Number(c.ultima) / 100;
