@@ -50,10 +50,11 @@ export default async (req) => {
   }
 
   // email_confirm: um cliente que recebeu o convite e nunca abriu também passa a conseguir entrar com essa senha.
+  // senha_provisoria: no primeiro login o portal pede pro cliente trocar por uma senha dele.
   const upd = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${cad.user_id}`, {
     method: "PUT",
     headers: { ...adminHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ password: String(senha), email_confirm: true }),
+    body: JSON.stringify({ password: String(senha), email_confirm: true, user_metadata: { senha_provisoria: true } }),
   });
   if (!upd.ok) {
     const e = await upd.json().catch(() => ({}));

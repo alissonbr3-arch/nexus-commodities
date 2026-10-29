@@ -126,8 +126,8 @@
     <h1 id="loginTitle">Portal do Cliente</h1>
     <div class="sub" id="loginSub">Acompanhe seus negócios com a Nexus</div>
     <div id="loginFormWrap">
-      <div class="field"><label>E-mail</label><input type="email" id="loginEmail" placeholder="voce@email.com"></div>
-      <div class="field"><label>Senha</label><input type="password" id="loginPassword" placeholder="••••••••"></div>
+      <div class="field"><label>E-mail</label><input type="email" id="loginEmail" placeholder="voce@email.com" autocomplete="username"></div>
+      <div class="field"><label>Senha</label><input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password"></div>
       <button class="btn-primary" id="loginBtn">Entrar</button>
       <div style="text-align:center;margin-top:12px"><a href="#" id="forgotPasswordLink" style="color:var(--ink-soft);font-size:11.5px;text-decoration:underline">Esqueci minha senha</a></div>
     </div>
@@ -147,14 +147,16 @@
 </div>
 
 <div id="trocarSenhaBox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center;padding:16px">
-  <div class="login-box" style="max-width:360px;width:100%">
-    <h1 style="font-size:18px">Trocar senha</h1>
-    <div class="field"><label>Nova senha</label><input type="password" id="tsSenha1" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
+  <form class="login-box" id="tsForm" style="max-width:360px;width:100%" action="#" autocomplete="on">
+    <h1 style="font-size:18px" id="tsTitulo">Trocar senha</h1>
+    <div class="sub" id="tsAviso" style="display:none;margin-bottom:12px">Sua senha atual é provisória (criada pelo seu corretor). Crie agora uma senha só sua — o navegador oferece pra salvar, aí você não precisa digitar de novo.</div>
+    <input type="email" id="tsUsuario" name="username" autocomplete="username" style="display:none">
+    <div class="field"><label>Nova senha</label><input type="password" id="tsSenha1" name="new-password" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
     <div class="field"><label>Confirme a nova senha</label><input type="password" id="tsSenha2" placeholder="Repita a senha" autocomplete="new-password"></div>
-    <button class="btn-primary" id="tsSalvarBtn">Salvar nova senha</button>
-    <div style="text-align:center;margin-top:12px"><a href="#" id="tsCancelar" style="color:var(--ink-soft);font-size:11.5px;text-decoration:underline">Cancelar</a></div>
+    <button type="submit" class="btn-primary" id="tsSalvarBtn">Salvar nova senha</button>
+    <div style="text-align:center;margin-top:12px" id="tsCancelarWrap"><a href="#" id="tsCancelar" style="color:var(--ink-soft);font-size:11.5px;text-decoration:underline">Cancelar</a></div>
     <div class="login-error" id="tsMsg"></div>
-  </div>
+  </form>
 </div>
 
 <div id="appShell">
@@ -297,7 +299,7 @@ async function doSetPassword() {
   if (p1 !== p2) { errEl.textContent = "As senhas não conferem."; return; }
   const btn = document.getElementById("setPasswordBtn");
   btn.disabled = true; btn.textContent = "Salvando...";
-  const { error } = await sb.auth.updateUser({ password: p1 });
+  const { error } = await sb.auth.updateUser({ password: p1, data: { senha_provisoria: false } });
   btn.disabled = false; btn.textContent = "Salvar senha e entrar";
   if (error) { errEl.textContent = "Não foi possível salvar a senha. Peça um novo convite ao seu corretor."; return; }
   history.replaceState(null, "", window.location.pathname);
@@ -332,20 +334,28 @@ document.getElementById("forgotPasswordBtn").addEventListener("click", async () 
 
 document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); });
 // Trocar a senha já logado (ex.: o corretor definiu uma senha e o cliente quer pôr a dele).
-document.getElementById("trocarSenhaBtn").addEventListener("click", () => {
+// obrigatoria = senha provisória (definida pelo corretor): sem "Cancelar", o cliente cria a senha dele no primeiro login.
+async function abrirTrocarSenha(obrigatoria = false) {
   ["tsSenha1", "tsSenha2"].forEach(id => document.getElementById(id).value = ""); document.getElementById("tsMsg").textContent = "";
+  const { data: u } = await sb.auth.getUser(); document.getElementById("tsUsuario").value = u?.user?.email || "";
+  document.getElementById("tsTitulo").textContent = obrigatoria ? "Crie sua senha" : "Trocar senha";
+  document.getElementById("tsAviso").style.display = obrigatoria ? "" : "none";
+  document.getElementById("tsCancelarWrap").style.display = obrigatoria ? "none" : "";
   document.getElementById("trocarSenhaBox").style.display = "flex"; document.getElementById("tsSenha1").focus();
-});
+}
+document.getElementById("trocarSenhaBtn").addEventListener("click", () => abrirTrocarSenha(false));
 document.getElementById("tsCancelar").addEventListener("click", e => { e.preventDefault(); document.getElementById("trocarSenhaBox").style.display = "none"; });
-document.getElementById("tsSalvarBtn").addEventListener("click", async () => {
+document.getElementById("tsForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
   const p1 = document.getElementById("tsSenha1").value, p2 = document.getElementById("tsSenha2").value, msg = document.getElementById("tsMsg");
   msg.style.color = "";
   if (p1.length < 6) { msg.textContent = "A senha precisa ter pelo menos 6 caracteres."; return; }
   if (p1 !== p2) { msg.textContent = "As senhas não conferem."; return; }
   const btn = document.getElementById("tsSalvarBtn"); btn.disabled = true;
-  const { error } = await sb.auth.updateUser({ password: p1 });
+  const { error } = await sb.auth.updateUser({ password: p1, data: { senha_provisoria: false } });
   btn.disabled = false;
-  if (error) { msg.textContent = "Não foi possível trocar a senha: " + error.message; return; }
+  if (error) { msg.textContent = /different from the old/i.test(error.message) ? "A nova senha precisa ser diferente da provisória." : "Não foi possível trocar a senha: " + error.message; return; }
+  if (window.PasswordCredential && navigator.credentials) { try { await navigator.credentials.store(new PasswordCredential({ id: document.getElementById("tsUsuario").value, password: p1 })); } catch (e) {} }
   msg.style.color = "var(--green)"; msg.textContent = "Senha trocada! Use a nova senha no próximo acesso.";
   setTimeout(() => { document.getElementById("trocarSenhaBox").style.display = "none"; }, 1800);
 });
@@ -374,6 +384,8 @@ async function showApp() {
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("appShell").classList.add("active");
   if (!bootstrapped) { bootstrapped = true; await boot(); }
+  const { data: u } = await sb.auth.getUser();
+  if (u?.user?.user_metadata?.senha_provisoria && !modoPreview) abrirTrocarSenha(true);
 }
 
 document.querySelectorAll(".tab-btn").forEach(btn => {
