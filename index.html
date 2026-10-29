@@ -723,15 +723,16 @@
           <div class="chart-wrap"><canvas id="cotacoesHistoricoChart"></canvas></div>
         </div>
 
-        <div class="ws-card" style="max-width:420px;margin-top:16px">
+        <div class="ws-card" style="max-width:620px;margin-top:16px">
           <div class="ws-name" style="margin-bottom:4px">Preço da praça — Soja (São Gabriel do Oeste)</div>
-          <div class="ws-sub" style="margin-bottom:16px">Preço praça = CBOT do contrato vigente (R$/saca) + Prêmio (basis) − Taxa portuária/Embarque − Frete, convertidos pro câmbio do dia. Aparece no topo do Workspace.</div>
-          <div class="field"><label>Contrato vigente</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Novembro</option><option>Março</option></select></div>
+          <div class="ws-sub" style="margin-bottom:16px">Preço praça = CBOT do contrato (R$/saca) + Prêmio (basis) − Taxa portuária/Embarque − Frete, convertidos pro câmbio do dia. Cada contrato tem o prêmio e o frete dele (usados no NexusConsult da TV); o vigente aparece no topo do Workspace.</div>
           <div class="field-row">
-            <div class="field"><label>Prêmio / basis (USD/bushel)</label><input type="number" step="0.0001" id="f_cfgPremio" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
+            <div class="field"><label>Contrato vigente (topo do Workspace)</label><select id="f_cfgContratoVigente" onchange="atualizarPreviewPrecoPraca()"><option>Novembro</option><option>Março</option></select></div>
             <div class="field"><label>Taxa portuária / Embarque (USD/tonelada)</label><input type="number" step="0.01" id="f_cfgTaxaPortuaria" oninput="atualizarPreviewPrecoPraca()"></div>
           </div>
-          <div class="field"><label>Frete (R$/tonelada)</label><input type="number" step="0.01" id="f_cfgFrete" oninput="atualizarPreviewPrecoPraca()"></div>
+          <div class="field"><label>Frete geral (R$/tonelada) <span style="font-weight:400;color:var(--ink-soft)">— vale pro contrato que estiver com o frete vazio</span></label><input type="number" step="0.01" id="f_cfgFrete" oninput="atualizarPreviewPrecoPraca()"></div>
+          <div id="cfgPracaContratos" style="margin:4px 0 10px"></div>
+          <div class="hint" style="margin:-4px 0 10px">O prêmio é puxado sozinho, de hora em hora, da tabela de prêmios de Paranaguá (Notícias Agrícolas), pra cada mês que o site publica (hoje vai até Jan/27). Mês que ainda não aparece lá (ex.: Mar/27) fica com o valor digitado aqui.</div>
           <div id="cfgPrecoPracaPreview" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px"></div>
           <button class="btn-primary" onclick="salvarPrecoPraca()">Salvar</button>
           <div id="cfgPracaSavedMsg" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Salvo!</div>
@@ -2421,9 +2422,9 @@ function renderCotacoes() {
     </tr>`).join("");
 
   document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Novembro";
-  document.getElementById("f_cfgPremio").value = data.config.soja_premio_basis || 0;
   document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
+  renderPracaContratos();
   atualizarPreviewPrecoPraca();
   renderCotacoesHistoricoChart();
   renderCotacoes5AnosChart();
@@ -7422,33 +7423,52 @@ function calcularPrecoPraca() {
   const total = cbotSaca + premio - taxa - frete;
   return { contrato, cbotSaca, premio, taxa, frete, total, dolar, temCotacao: !!cot, atualizadoEm: cot?.updated_at };
 }
+// Prêmio e frete de cada contrato de soja, um embaixo do outro, com o preço da praça que dá em cada um.
+const ORDEM_MES_SOJA = ["Setembro", "Novembro", "Janeiro", "Março", "Maio", "Julho", "Agosto"];
+function sojaContratosPraca() { return (data.cotacoes || []).filter(c => c.produto === "Soja").sort((a, b) => ORDEM_MES_SOJA.indexOf(a.mes) - ORDEM_MES_SOJA.indexOf(b.mes)); }
+function renderPracaContratos() {
+  const box = document.getElementById("cfgPracaContratos"); if (!box) return;
+  const lista = sojaContratosPraca();
+  box.innerHTML = lista.length ? lista.map(c => `<div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px">
+      <div style="font-size:12.5px;font-weight:600;padding-bottom:9px">Soja ${escapeHtml(c.mes)} <span style="font-weight:400;color:var(--ink-soft)">${escapeHtml((c.codigo || "").replace(".CBT", ""))}</span></div>
+      <div class="field" style="margin:0"><label>Prêmio (USD/bushel)</label><input type="number" step="0.0001" id="f_ppPremio_${c.id}" value="${c.premio ?? 0}" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
+      <div class="field" style="margin:0"><label>Frete (R$/tonelada)</label><input type="number" step="0.01" id="f_ppFrete_${c.id}" value="${c.frete ?? ""}" placeholder="Geral" oninput="atualizarPreviewPrecoPraca()"></div>
+    </div>`).join("") : `<div class="hint">Nenhuma cotação de soja cadastrada.</div>`;
+}
 function atualizarPreviewPrecoPraca() {
   const el = document.getElementById("cfgPrecoPracaPreview");
   if (!el) return;
-  const contrato = v("f_cfgContratoVigente");
-  const cot = data.cotacoes.find(c => c.produto === "Soja" && c.mes === contrato);
-  const cbotSaca = cot ? Number(cot.preco_saca_brl || 0) : 0;
-  const dolar = dolarAtual();
-  const premio = n("f_cfgPremio") * BUSHEL_POR_SACA_SOJA * dolar;
+  if (!document.getElementById("cfgPracaContratos")?.children.length) renderPracaContratos();
+  const vigente = v("f_cfgContratoVigente"), dolar = dolarAtual();
   const taxa = n("f_cfgTaxaPortuaria") * TON_POR_SACA * dolar;
-  const frete = n("f_cfgFrete") * TON_POR_SACA;
-  const total = cbotSaca + premio - taxa - frete;
-  el.innerHTML = cot
-    ? `CBOT ${contrato}: ${fmtMoney(cbotSaca)} + Prêmio ${fmtMoney(premio)} − Taxa ${fmtMoney(taxa)} − Frete ${fmtMoney(frete)} (câmbio ${dolar.toLocaleString("pt-BR",{minimumFractionDigits:4})}) = <strong style="color:var(--gold)">${fmtMoney(total)}/saca</strong>`
-    : `Cotação de Soja ${contrato} ainda não tem R$/saca calculado — atualize em Cotações primeiro.`;
+  const linhas = sojaContratosPraca().map(c => {
+    const pEl = document.getElementById(`f_ppPremio_${c.id}`), fEl = document.getElementById(`f_ppFrete_${c.id}`);
+    const cbotSaca = Number(c.preco_saca_brl || 0);
+    const premio = Number(pEl?.value || 0) * BUSHEL_POR_SACA_SOJA * dolar;
+    const frete = (fEl && fEl.value !== "" ? Number(fEl.value) : n("f_cfgFrete")) * TON_POR_SACA;
+    const total = cbotSaca + premio - taxa - frete;
+    return cbotSaca ? `<div${c.mes === vigente ? ' style="color:var(--ink)"' : ""}>${c.mes === vigente ? "★ " : ""}Soja ${escapeHtml(c.mes)}: CBOT ${fmtMoney(cbotSaca)} + Prêmio ${fmtMoney(premio)} − Taxa ${fmtMoney(taxa)} − Frete ${fmtMoney(frete)} = <strong style="color:var(--gold)">${fmtMoney(total)}/saca</strong></div>`
+      : `<div>Soja ${escapeHtml(c.mes)}: ainda sem R$/saca calculado — atualize em Cotações primeiro.</div>`;
+  });
+  el.innerHTML = linhas.join("") + `<div style="margin-top:4px">Câmbio ${dolar.toLocaleString("pt-BR",{minimumFractionDigits:4})}. ★ = contrato vigente (topo do Workspace).</div>`;
 }
 async function salvarPrecoPraca() {
+  const contratos = sojaContratosPraca().map(c => {
+    const pEl = document.getElementById(`f_ppPremio_${c.id}`), fEl = document.getElementById(`f_ppFrete_${c.id}`);
+    return { id: c.id, mes: c.mes, premio: Number(pEl?.value || 0), frete: fEl && fEl.value !== "" ? Number(fEl.value) : null };
+  });
+  const vig = contratos.find(c => c.mes === v("f_cfgContratoVigente"));
   const payload = {
     soja_contrato_vigente: v("f_cfgContratoVigente"),
-    soja_premio_basis: n("f_cfgPremio"),
+    soja_premio_basis: vig ? vig.premio : Number(data.config.soja_premio_basis || 0), // o geral acompanha o do contrato vigente
     soja_taxa_portuaria: n("f_cfgTaxaPortuaria"),
     soja_frete: n("f_cfgFrete"),
     updated_at: new Date().toISOString(),
   };
   await sb.from("nexus_config").update(payload).eq("id", 1);
-  // O prêmio do contrato vigente também fica na cotação dele, que é o que a TV mostra.
-  await sb.from("nexus_cotacoes").update({ premio: payload.soja_premio_basis }).eq("produto", "Soja").eq("mes", payload.soja_contrato_vigente);
-  await loadConfig(); await loadCotacoes(); renderConfiguracoes(); renderWorkspace();
+  // Prêmio e frete de cada contrato ficam na cotação dele (é o que o NexusConsult da TV usa).
+  for (const c of contratos) await sb.from("nexus_cotacoes").update({ premio: c.premio, frete: c.frete }).eq("id", c.id);
+  await loadConfig(); await loadCotacoes(); renderConfiguracoes(); renderWorkspace(); renderPracaContratos(); atualizarPreviewPrecoPraca();
   const msg = document.getElementById("cfgPracaSavedMsg");
   msg.style.display = "block"; setTimeout(() => msg.style.display = "none", 2000);
 }
