@@ -656,7 +656,8 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       const cbotBu = Number(c.ultima) / 100;
       const fobTon = (cbotBu + premio) * BUSHEL_POR_TON;
       const fasSacaUsd = (fobTon - desembarque) * TON_POR_SACA;
-      const exwSacaUsd = fasSacaUsd - freteTon / dolar * TON_POR_SACA;
+      const freteC = c.frete != null ? Number(c.frete) : freteTon; // cada contrato pode ter o frete dele (disponível x futuro)
+      const exwSacaUsd = fasSacaUsd - freteC / dolar * TON_POR_SACA;
       const exwBasis = exwSacaUsd / TON_POR_SACA / BUSHEL_POR_TON - cbotBu; // diferença do Ex-Works pra Chicago, em US$/bushel
       porto = `<td class="sep ${cls(premio)}">${premio > 0 ? "+" : ""}${n2(premio)}</td><td>${n2(fobTon)}<small>p/t</small></td>
         <td class="sep">${n2(fasSacaUsd)}<small>p/sc</small></td><td>${n2(fasSacaUsd * dolar)}<small>p/sc</small></td>
@@ -677,7 +678,7 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       <tbody>${linhas.join("")}</tbody></table>
     <div class="qd-baixo">
       <div class="qd-nota"><b>Como ler:</b> soja e milho CBOT em centavos de US$ por bushel; milho B3 em R$ por saca. <b>FOB</b> = (CBOT + prêmio) em US$/tonelada no porto.
-        <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Ex-Works São Gabriel</b> = FAS − frete (R$ ${n2(freteTon)}/t); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
+        <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Ex-Works São Gabriel</b> = FAS − frete (${(() => { const f = soja.filter(c => c.frete != null); return f.length ? soja.map(c => `${mesDe(c)} R$ ${n2(c.frete != null ? c.frete : freteTon)}/t`).join(", ") : `R$ ${n2(freteTon)}/t`; })()}); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
         Câmbio R$ ${dolar ? n4(dolar) : "--"}. Chicago com atraso de ~15 min. Valores de referência — consulte seu corretor Nexus.</div>
       <table class="qd-dolar"><thead><tr><th colspan="4">Dólar Comercial</th></tr><tr class="cols"><th>Atual</th><th>Anterior</th><th>Variação</th><th>PTAX</th></tr></thead><tbody>
         <tr><td>${d.atual != null ? n4(d.atual) : "--"}</td><td>${d.anterior != null ? n4(d.anterior) : "--"}</td>

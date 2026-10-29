@@ -702,7 +702,7 @@
           <thead><tr>
             <th data-sort="produto">Produto</th><th data-sort="mes">Mês</th><th data-sort="codigo">Código</th>
             <th data-sort="ultima">Última</th><th data-sort="varr">Var</th><th data-sort="pct">%</th>
-            <th data-sort="previa">Prévia</th><th data-sort="preco_saca_brl">R$/saca</th><th data-sort="premio">Prêmio (USD)</th>
+            <th data-sort="previa">Prévia</th><th data-sort="preco_saca_brl">R$/saca</th><th data-sort="premio">Prêmio (USD)</th><th data-sort="frete">Frete (R$/t)</th>
             <th data-sort="fob_usd">FOB (USD/sc)</th><th data-sort="fob_real">FOB (R$/sc)</th>
             <th data-sort="fas_usd">FAS (USD/sc)</th><th data-sort="fas_real">FAS (R$/sc)</th><th></th>
           </tr></thead>
@@ -2404,7 +2404,7 @@ document.getElementById("editDolarBtn").addEventListener("click", openDolarModal
 function renderCotacoes() {
   let list = data.cotacoes || []; const st = sortState.cotacoes; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("cotacoesBody");
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="14">Nenhuma cotação cadastrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="15">Nenhuma cotação cadastrada.</td></tr>` :
     list.map(c => `<tr>
       <td>${c.produto}</td><td>${c.mes||"—"}</td><td>${c.codigo||"—"}</td>
       <td>${Number(c.ultima).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
@@ -2412,6 +2412,7 @@ function renderCotacoes() {
       <td>${Number(c.previa).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${c.preco_saca_brl ? fmtMoney(c.preco_saca_brl) : "—"}</td>
       <td>${Number(c.premio).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+      <td>${c.frete != null ? Number(c.frete).toLocaleString("pt-BR",{minimumFractionDigits:2}) : `<span style="color:var(--ink-soft)" title="Usa o frete geral de Configurações">geral</span>`}</td>
       <td>${Number(c.fob_usd).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${Number(c.fob_real).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
       <td>${Number(c.fas_usd).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
@@ -2940,14 +2941,14 @@ function openCotacaoModal(id) {
     <div class="field"><label>Código</label><input type="text" id="f_codigo" value="${item.codigo||""}" placeholder="ZSU26"></div>
     <div class="field-row"><div class="field"><label>Última</label><input type="number" step="0.01" id="f_ultima" value="${item.ultima}"></div><div class="field"><label>Prévia</label><input type="number" step="0.01" id="f_previa" value="${item.previa}"></div></div>
     <div class="field-row"><div class="field"><label>Var</label><input type="number" step="0.01" id="f_varr" value="${item.varr}"></div><div class="field"><label>%</label><input type="number" step="0.01" id="f_pct" value="${item.pct}"></div></div>
-    <div class="field"><label>Prêmio (USD)</label><input type="number" step="0.01" id="f_premio" value="${item.premio}"></div>
+    <div class="field-row"><div class="field"><label>Prêmio (USD)</label><input type="number" step="0.01" id="f_premio" value="${item.premio}"></div><div class="field"><label>Frete até o porto (R$/t)</label><input type="number" step="0.01" id="f_frete" value="${item.frete ?? ""}" placeholder="Vazio = frete geral (R$ ${Number(data.config.soja_frete || 0).toLocaleString("pt-BR")})"></div></div>
     <div class="field-row"><div class="field"><label>FOB (USD/sc)</label><input type="number" step="0.01" id="f_fobUsd" value="${item.fob_usd}"></div><div class="field"><label>FOB (R$/sc)</label><input type="number" step="0.01" id="f_fobReal" value="${item.fob_real}"></div></div>
     <div class="field-row"><div class="field"><label>FAS (USD/sc)</label><input type="number" step="0.01" id="f_fasUsd" value="${item.fas_usd}"></div><div class="field"><label>FAS (R$/sc)</label><input type="number" step="0.01" id="f_fasReal" value="${item.fas_real}"></div></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveCotacao('${id || ""}')">Salvar</button></div>`;
   showModal();
 }
 async function saveCotacao(id) {
-  const payload = { produto: v("f_produto")||"—", mes: v("f_mes"), codigo: v("f_codigo"), ultima: n("f_ultima"), previa: n("f_previa"), varr: n("f_varr"), pct: n("f_pct"), premio: n("f_premio"), fob_usd: n("f_fobUsd"), fob_real: n("f_fobReal"), fas_usd: n("f_fasUsd"), fas_real: n("f_fasReal") };
+  const payload = { produto: v("f_produto")||"—", mes: v("f_mes"), codigo: v("f_codigo"), ultima: n("f_ultima"), previa: n("f_previa"), varr: n("f_varr"), pct: n("f_pct"), premio: n("f_premio"), frete: v("f_frete") === "" ? null : Number(v("f_frete")), fob_usd: n("f_fobUsd"), fob_real: n("f_fobReal"), fas_usd: n("f_fasUsd"), fas_real: n("f_fasReal") };
   if (id) await sb.from("nexus_cotacoes").update(payload).eq("id", id); else await sb.from("nexus_cotacoes").insert([payload]);
   await loadCotacoes(); closeModal(); renderCotacoes();
 }
@@ -7414,7 +7415,7 @@ function calcularPrecoPraca() {
   const dolar = dolarAtual();
   const premioUsdBu = cot && Number(cot.premio) ? Number(cot.premio) : Number(data.config.soja_premio_basis || 0); // o prêmio do próprio contrato (Cotações) vale mais que o geral
   const taxaUsdTon = Number(data.config.soja_taxa_portuaria || 0);
-  const freteRsTon = Number(data.config.soja_frete || 0);
+  const freteRsTon = cot && cot.frete != null ? Number(cot.frete) : Number(data.config.soja_frete || 0); // frete do próprio contrato, se tiver
   const premio = premioUsdBu * BUSHEL_POR_SACA_SOJA * dolar;
   const taxa = taxaUsdTon * TON_POR_SACA * dolar;
   const frete = freteRsTon * TON_POR_SACA;
