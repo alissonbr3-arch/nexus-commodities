@@ -1,0 +1,17 @@
+{
+  "name": "Nexus Commodities — Portal do Cliente",
+  "short_name": "Nexus",
+  "description": "Portal do cliente da Nexus Commodities — seus negócios, pagamentos e embarques.",
+  "id": "/portal/",
+  "start_url": "/portal/",
+  "scope": "/portal/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192-v2.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-maskable-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
