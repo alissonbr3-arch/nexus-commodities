@@ -598,7 +598,7 @@ async function carregarDadosTv() {
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
     sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
     sb.from("nexus_negocios").select("data, grao, safra, quantidade, preco, preco_liquido, funrural_forma, comissao, comissao_pagador, cliente_id, produtor_id, contraparte").is("deleted_at", null).limit(5000),
-    sb.from("nexus_config").select("fundersul_saca, fundems_saca, funrural_pct, soja_contrato_vigente, soja_premio_basis, soja_taxa_portuaria, soja_frete").eq("id", 1).single(),
+    sb.from("nexus_config").select("fundersul_saca, fundems_saca, funrural_pct, soja_contrato_vigente, soja_premio_basis, soja_taxa_portuaria, soja_frete, milho_desconto_b3").eq("id", 1).single(),
     sb.from("nexus_cadastros").select("id, categoria_comprador").eq("tipo", "Comprador"),
   ]);
   const todos = negociosRows || [];
@@ -662,6 +662,11 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       porto = `<td class="sep ${cls(premio)}">${premio > 0 ? "+" : ""}${n2(premio)}</td><td>${n2(fobTon)}<small>p/t</small></td>
         <td class="sep">${n2(fasSacaUsd)}<small>p/sc</small></td><td>${n2(fasSacaUsd * dolar)}<small>p/sc</small></td>
         <td class="sep ${cls(exwBasis)}">${n2(exwBasis)}<small>p/bu</small></td><td>${n2(exwSacaUsd)}<small>p/sc</small></td><td class="destaque">${n2(exwSacaUsd * dolar)}<small>p/sc</small></td>`;
+    } else if (b3 && c === milhoB3[0] && dolar) {
+      // Milho em São Gabriel = B3 do 1º vencimento menos o desconto da praça (Configurações → Preço da praça).
+      const desc = Number(cfg.milho_desconto_b3 ?? 17), sg = Number(c.ultima) - desc;
+      porto = `<td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td>
+        <td class="sep down">-${n2(desc)}<small>R$/sc</small></td><td>${n2(sg / dolar)}<small>p/sc</small></td><td class="destaque">${n2(sg)}<small>p/sc</small></td>`;
     } else porto = `<td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td class="sep">${na}</td><td>${na}</td><td>${na}</td>`;
     return `<tr><td class="prod ${c.produto === "Milho" ? "milho" : ""}">${c.produto.toUpperCase()}<small>${c.bolsa || (b3 ? "B3" : "CBOT")}</small></td>
       <td class="mes">${c.mes === "" ? "CONT." : mesDe(c)}</td><td class="cod">${c.cod || (c.codigo || "").replace(".CBT", "")}</td>
@@ -678,7 +683,7 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
       <tbody>${linhas.join("")}</tbody></table>
     <div class="qd-baixo">
       <div class="qd-nota"><b>Como ler:</b> soja e milho CBOT em centavos de US$ por bushel; milho B3 em R$ por saca. <b>FOB</b> = (CBOT + prêmio) em US$/tonelada no porto.
-        <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Ex-Works São Gabriel</b> = FAS − frete (${(() => { const f = soja.filter(c => c.frete != null); return f.length ? soja.map(c => `${mesDe(c)} R$ ${n2(c.frete != null ? c.frete : freteTon)}/t`).join(", ") : `R$ ${n2(freteTon)}/t`; })()}); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
+        <b>FAS</b> = FOB − desembarque (US$ ${n2(desembarque)}/t), por saca de 60 kg. <b>Milho São Gabriel</b> = B3 do 1º vencimento − R$ ${n2(Number(cfg.milho_desconto_b3 ?? 17))}/sc. <b>Ex-Works São Gabriel</b> (soja) = FAS − frete (${(() => { const f = soja.filter(c => c.frete != null); return f.length ? soja.map(c => `${mesDe(c)} R$ ${n2(c.frete != null ? c.frete : freteTon)}/t`).join(", ") : `R$ ${n2(freteTon)}/t`; })()}); a coluna Ex-Works é a diferença pra Chicago em US$/bushel.
         Câmbio R$ ${dolar ? n4(dolar) : "--"}. Chicago com atraso de ~15 min. Valores de referência — consulte seu corretor Nexus.</div>
       <table class="qd-dolar"><thead><tr><th colspan="4">Dólar Comercial</th></tr><tr class="cols"><th>Atual</th><th>Anterior</th><th>Variação</th><th>PTAX</th></tr></thead><tbody>
         <tr><td>${d.atual != null ? n4(d.atual) : "--"}</td><td>${d.anterior != null ? n4(d.anterior) : "--"}</td>
