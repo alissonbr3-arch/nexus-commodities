@@ -762,9 +762,9 @@
           </div>
           <details id="pe_edit_det" style="margin:0 0 12px">
             <summary style="cursor:pointer;font-size:12.5px;color:var(--gold)">Editar texto da mensagem</summary>
-            <div class="hint" style="margin:8px 0">Escreva como quiser. Variáveis que o sistema troca sozinho: <code>{{SAUDACAO}}</code> (bom dia/boa tarde/boa noite), <code>{{NOME}}</code>, <code>{{DATA}}</code>, <code>{{PRECOS}}</code> (as linhas de preço de cada cliente) e <code>{{OBS}}</code> (a observação). *texto* fica em negrito no WhatsApp. O texto é salvo junto com os preços.</div>
+            <div class="hint" style="margin:8px 0">Escreva como quiser. Variáveis que o sistema troca sozinho: <code>{{SAUDACAO}}</code> (bom dia/boa tarde/boa noite), <code>{{NOME}}</code>, <code>{{DATA}}</code>, <code>{{PRECOS}}</code> (as linhas de preço de cada cliente) e <code>{{OBS}}</code> (a observação). *texto* fica em negrito no WhatsApp. Clique em "Salvar texto" pra guardar (também é salvo junto com os preços).</div>
             <textarea id="pe_texto" rows="9" style="width:100%;font:inherit;font-size:12.5px" oninput="precoEnvioPrevia()"></textarea>
-            <div style="margin-top:6px"><button class="btn-ghost" onclick="precoEnvioTextoPadrao()">Voltar ao texto padrão</button></div>
+            <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" onclick="salvarTextoEnvio()">Salvar texto</button><button class="btn-ghost" onclick="precoEnvioTextoPadrao()">Voltar ao texto padrão</button><span id="pe_texto_status" style="font-size:11.5px;color:var(--ink-soft)"></span></div>
           </details>
           <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px">Prévia da mensagem</div>
           <pre id="pe_previa" style="white-space:pre-wrap;background:var(--card-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;font-size:12.5px;margin:0 0 14px"></pre>
@@ -2655,6 +2655,15 @@ function precoEnvioNome(nomeOuCliente) {
 function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
 function precoEnvioMensagemPara(c) { return precoEnvioTemplate().replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c)); }
 function precoEnvioTextoPadrao() { document.getElementById("pe_texto").value = PE_TEXTO_PADRAO; precoEnvioPrevia(); }
+// Salva só o texto da mensagem, sem mexer nos preços já salvos (os campos de preço podem estar sendo editados).
+async function salvarTextoEnvio() {
+  const t = (document.getElementById("pe_texto").value || "").trim(), texto = t === PE_TEXTO_PADRAO ? "" : t;
+  const st = document.getElementById("pe_texto_status");
+  const { error } = await sb.from("nexus_preco_whatsapp_usuario").upsert({ user_id: currentUserId, texto }, { onConflict: "user_id" });
+  if (error) { alert("Erro ao salvar o texto: " + error.message); return; }
+  precoEnvio.dados = { ...(precoEnvio.dados || {}), texto };
+  st.style.color = "var(--green)"; st.textContent = "Texto salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
 function precoEnvioPrevia() {
   const el = document.getElementById("pe_previa"); if (!el) return;
   const t = precoEnvioTemplate();
