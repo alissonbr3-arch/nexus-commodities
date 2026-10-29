@@ -745,13 +745,13 @@
         <div class="panel-card" id="precoEnvioPanel">
           <div class="hint">Confira a prévia e clique em "Enviar no meu WhatsApp": abre o WhatsApp do seu computador com a mensagem já escrita, é só apertar Enter. Não usa a conta da Nexus.</div>
           <div class="field-row pe-linha"><div class="field"><label>Soja disponível (R$/sc)</label><input type="number" step="0.01" id="pe_soja_disp" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_soja_disp_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div></div><div></div></div>
-          <div class="field-row pe-linha"><div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <div id="pe_soja_extras"></div>
-          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('soja')">+ Outro preço de soja</button></div>
+          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('soja')">+ Outro preço de soja disponível</button></div>
+          <div class="field-row pe-linha"><div class="field"><label>Soja futuro (R$/sc)</label><input type="number" step="0.01" id="pe_soja_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_soja_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_soja_ref" placeholder="Ex.: Mar/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <div class="field-row pe-linha"><div class="field"><label>Milho disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_disp" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_disp_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div></div><div></div></div>
-          <div class="field-row pe-linha"><div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <div id="pe_milho_extras"></div>
-          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('milho')">+ Outro preço de milho</button></div>
+          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('milho')">+ Outro preço de milho disponível</button></div>
+          <div class="field-row pe-linha"><div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
           <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
@@ -2633,14 +2633,14 @@ function precoEnvioPreencherForm() {
 // Texto padrão da mensagem. Variáveis: {{SAUDACAO}} (bom dia/boa tarde/boa noite), {{NOME}}, {{DATA}}, {{PRECOS}} (as linhas de
 // preço de cada cliente) e {{OBS}} (a observação). O corretor pode editar em "Editar texto da mensagem".
 const PE_TEXTO_PADRAO = "{{SAUDACAO}}, {{NOME}}!\n\nPreços de hoje ({{DATA}}):\n\n{{PRECOS}}\n\n{{OBS}}\n\n*Nexus Commodities*";
-// Preços extras de cada grão (ex.: "Pagamento 10/11", "Pagamento Jan/27"): quantas linhas o corretor quiser, cada uma
-// com nome, preço e aviso opcional. Entram na mensagem logo depois do disponível/futuro do grão.
+// Mais preços disponíveis de cada grão, um por forma de pagamento (ex.: "Pagamento 10/11", "Pagamento Jan/27"): quantas
+// linhas o corretor quiser, com preço, aviso e pagamento opcionais. Na mensagem: "Disponível (Pagamento 10/11): R$ …", antes do futuro.
 function precoEnvioAddExtra(grao, x = {}) {
   const box = document.getElementById(`pe_${grao}_extras`); if (!box) return;
   const row = document.createElement("div"); row.className = "field-row pe-linha pe-extra";
-  row.innerHTML = `<div class="field"><label>Outro preço de ${grao} (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"></div>
+  row.innerHTML = `<div class="field"><label>${grao === "soja" ? "Soja" : "Milho"} disponível (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"></div>
     <div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" class="pe-x-obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()"></div>
-    <div class="field"><label>Nome que aparece na mensagem</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
+    <div class="field"><label>Pagamento (opcional)</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
     <div class="field" style="align-self:end"><button class="btn-danger-text" title="Remover este preço" onclick="this.closest('.pe-extra').remove(); precoEnvioPrevia()">Remover</button></div>`;
   row.querySelector(".pe-x-rot").value = x.rotulo || ""; row.querySelector(".pe-x-preco").value = x.preco ?? ""; row.querySelector(".pe-x-obs").value = x.obs || "";
   box.appendChild(row);
@@ -2659,9 +2659,9 @@ function precoEnvioTemplate() {
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const qual = id => (document.getElementById(id)?.value || "").trim();
   const linha = (rot, v, q) => `• ${rot}: ${q ? q + " " : ""}*${fmtMoney(v)}/sc*`;
-  const extras = g => precoEnvioExtras(g).map(x => linha(x.rotulo || "Outro preço", x.preco, x.obs));
-  const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null, ...extras("soja")].filter(Boolean);
-  const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null, ...extras("milho")].filter(Boolean);
+  const extras = g => precoEnvioExtras(g).map(x => linha(`Disponível${x.rotulo ? " (" + x.rotulo + ")" : ""}`, x.preco, x.obs)); // igual ao futuro: "Disponível (Pagamento 10/11)"
+  const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, ...extras("soja"), sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null].filter(Boolean);
+  const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, ...extras("milho"), mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null].filter(Boolean);
   if (!blocoSoja.length && !blocoMilho.length) return "";
   const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : ""].filter(Boolean).join("\n\n");
   let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
