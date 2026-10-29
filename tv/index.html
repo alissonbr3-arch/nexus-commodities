@@ -652,7 +652,7 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
     // Soja sempre tem as colunas de porto/praça: prêmio do contrato (0,00 vale), e o contrato vigente usa o prêmio geral se o dele estiver zerado.
     const premio = c.produto !== "Soja" ? null : Number(c.premio) || (c.mes === contrato ? Number(cfg.soja_premio_basis) || 0 : 0);
     let porto = "";
-    if (premio != null && dolar) {
+    if (premio != null && dolar && Math.abs(premio) <= 10) { // prêmio acima de 10 US$/bu é erro de digitação: não monta preço com ele
       const cbotBu = Number(c.ultima) / 100;
       const fobTon = (cbotBu + premio) * BUSHEL_POR_TON;
       const fasSacaUsd = (fobTon - desembarque) * TON_POR_SACA;

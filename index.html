@@ -2942,14 +2942,15 @@ function openCotacaoModal(id) {
     <div class="field"><label>Código</label><input type="text" id="f_codigo" value="${item.codigo||""}" placeholder="ZSU26"></div>
     <div class="field-row"><div class="field"><label>Última</label><input type="number" step="0.01" id="f_ultima" value="${item.ultima}"></div><div class="field"><label>Prévia</label><input type="number" step="0.01" id="f_previa" value="${item.previa}"></div></div>
     <div class="field-row"><div class="field"><label>Var</label><input type="number" step="0.01" id="f_varr" value="${item.varr}"></div><div class="field"><label>%</label><input type="number" step="0.01" id="f_pct" value="${item.pct}"></div></div>
-    <div class="field-row"><div class="field"><label>Prêmio (USD)</label><input type="number" step="0.01" id="f_premio" value="${item.premio}"></div><div class="field"><label>Frete até o porto (R$/t)</label><input type="number" step="0.01" id="f_frete" value="${item.frete ?? ""}" placeholder="Vazio = frete geral (R$ ${Number(data.config.soja_frete || 0).toLocaleString("pt-BR")})"></div></div>
+    <div class="field-row"><div class="field"><label>Prêmio (USD)</label><input type="text" inputmode="decimal" id="f_premio" value="${item.premio === "" || item.premio == null ? "" : Number(item.premio).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}" placeholder="Ex.: 1,40"></div><div class="field"><label>Frete até o porto (R$/t)</label><input type="number" step="0.01" id="f_frete" value="${item.frete ?? ""}" placeholder="Vazio = frete geral (R$ ${Number(data.config.soja_frete || 0).toLocaleString("pt-BR")})"></div></div>
     <div class="field-row"><div class="field"><label>FOB (USD/sc)</label><input type="number" step="0.01" id="f_fobUsd" value="${item.fob_usd}"></div><div class="field"><label>FOB (R$/sc)</label><input type="number" step="0.01" id="f_fobReal" value="${item.fob_real}"></div></div>
     <div class="field-row"><div class="field"><label>FAS (USD/sc)</label><input type="number" step="0.01" id="f_fasUsd" value="${item.fas_usd}"></div><div class="field"><label>FAS (R$/sc)</label><input type="number" step="0.01" id="f_fasReal" value="${item.fas_real}"></div></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveCotacao('${id || ""}')">Salvar</button></div>`;
   showModal();
 }
 async function saveCotacao(id) {
-  const payload = { produto: v("f_produto")||"—", mes: v("f_mes"), codigo: v("f_codigo"), ultima: n("f_ultima"), previa: n("f_previa"), varr: n("f_varr"), pct: n("f_pct"), premio: n("f_premio"), frete: v("f_frete") === "" ? null : Number(v("f_frete")), fob_usd: n("f_fobUsd"), fob_real: n("f_fobReal"), fas_usd: n("f_fasUsd"), fas_real: n("f_fasReal") };
+  if (!premioOk(numBR(v("f_premio")))) return;
+  const payload = { produto: v("f_produto")||"—", mes: v("f_mes"), codigo: v("f_codigo"), ultima: n("f_ultima"), previa: n("f_previa"), varr: n("f_varr"), pct: n("f_pct"), premio: numBR(v("f_premio")) || 0, frete: v("f_frete") === "" ? null : Number(v("f_frete")), fob_usd: n("f_fobUsd"), fob_real: n("f_fobReal"), fas_usd: n("f_fasUsd"), fas_real: n("f_fasReal") };
   if (id) await sb.from("nexus_cotacoes").update(payload).eq("id", id); else await sb.from("nexus_cotacoes").insert([payload]);
   await loadCotacoes(); closeModal(); renderCotacoes();
 }
@@ -7423,6 +7424,17 @@ function calcularPrecoPraca() {
   const total = cbotSaca + premio - taxa - frete;
   return { contrato, cbotSaca, premio, taxa, frete, total, dolar, temCotacao: !!cot, atualizadoEm: cot?.updated_at };
 }
+// Número digitado em português ou inglês: "1,40", "1.40", "-0,07", "1.234,50" → 1.4, 1.4, -0.07, 1234.5.
+function numBR(t) {
+  const s0 = String(t ?? "").trim().replace(/\s/g, ""); if (s0 === "") return null;
+  const s1 = s0.includes(",") ? s0.replace(/\./g, "").replace(",", ".") : s0;
+  const x = Number(s1); return isNaN(x) ? null : x;
+}
+// Prêmio de soja fica entre uns -3 e +5 US$/bushel; acima de 10 quase sempre é vírgula esquecida (140 em vez de 1,40).
+function premioOk(p, rotulo = "o prêmio") {
+  if (p != null && Math.abs(p) > 10) { alert(`${rotulo}: ${p.toLocaleString("pt-BR")} US$/bushel parece errado. Use vírgula ou ponto pros centavos, ex.: 1,40.`); return false; }
+  return true;
+}
 // Prêmio e frete de cada contrato de soja, um embaixo do outro, com o preço da praça que dá em cada um.
 const ORDEM_MES_SOJA = ["Setembro", "Novembro", "Janeiro", "Março", "Maio", "Julho", "Agosto"];
 function sojaContratosPraca() { return (data.cotacoes || []).filter(c => c.produto === "Soja").sort((a, b) => ORDEM_MES_SOJA.indexOf(a.mes) - ORDEM_MES_SOJA.indexOf(b.mes)); }
@@ -7431,7 +7443,7 @@ function renderPracaContratos() {
   const lista = sojaContratosPraca();
   box.innerHTML = lista.length ? lista.map(c => `<div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px">
       <div style="font-size:12.5px;font-weight:600;padding-bottom:9px">Soja ${escapeHtml(c.mes)} <span style="font-weight:400;color:var(--ink-soft)">${escapeHtml((c.codigo || "").replace(".CBT", ""))}</span></div>
-      <div class="field" style="margin:0"><label>Prêmio (USD/bushel)</label><input type="number" step="0.0001" id="f_ppPremio_${c.id}" value="${c.premio ?? 0}" placeholder="Pode ser negativo" oninput="atualizarPreviewPrecoPraca()"></div>
+      <div class="field" style="margin:0"><label>Prêmio (USD/bushel)</label><input type="text" inputmode="decimal" id="f_ppPremio_${c.id}" value="${Number(c.premio ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}" placeholder="Ex.: 1,40 (pode ser negativo)" oninput="atualizarPreviewPrecoPraca()"></div>
       <div class="field" style="margin:0"><label>Frete (R$/tonelada)</label><input type="number" step="0.01" id="f_ppFrete_${c.id}" value="${c.frete ?? ""}" placeholder="Geral" oninput="atualizarPreviewPrecoPraca()"></div>
     </div>`).join("") : `<div class="hint">Nenhuma cotação de soja cadastrada.</div>`;
 }
@@ -7444,7 +7456,7 @@ function atualizarPreviewPrecoPraca() {
   const linhas = sojaContratosPraca().map(c => {
     const pEl = document.getElementById(`f_ppPremio_${c.id}`), fEl = document.getElementById(`f_ppFrete_${c.id}`);
     const cbotSaca = Number(c.preco_saca_brl || 0);
-    const premio = Number(pEl?.value || 0) * BUSHEL_POR_SACA_SOJA * dolar;
+    const premio = (numBR(pEl?.value) || 0) * BUSHEL_POR_SACA_SOJA * dolar;
     const frete = (fEl && fEl.value !== "" ? Number(fEl.value) : n("f_cfgFrete")) * TON_POR_SACA;
     const total = cbotSaca + premio - taxa - frete;
     return cbotSaca ? `<div${c.mes === vigente ? ' style="color:var(--ink)"' : ""}>${c.mes === vigente ? "★ " : ""}Soja ${escapeHtml(c.mes)}: CBOT ${fmtMoney(cbotSaca)} + Prêmio ${fmtMoney(premio)} − Taxa ${fmtMoney(taxa)} − Frete ${fmtMoney(frete)} = <strong style="color:var(--gold)">${fmtMoney(total)}/saca</strong></div>`
@@ -7455,8 +7467,9 @@ function atualizarPreviewPrecoPraca() {
 async function salvarPrecoPraca() {
   const contratos = sojaContratosPraca().map(c => {
     const pEl = document.getElementById(`f_ppPremio_${c.id}`), fEl = document.getElementById(`f_ppFrete_${c.id}`);
-    return { id: c.id, mes: c.mes, premio: Number(pEl?.value || 0), frete: fEl && fEl.value !== "" ? Number(fEl.value) : null };
+    return { id: c.id, mes: c.mes, premio: numBR(pEl?.value) || 0, frete: fEl && fEl.value !== "" ? Number(fEl.value) : null };
   });
+  for (const c of contratos) if (!premioOk(c.premio, `Soja ${c.mes}`)) return;
   const vig = contratos.find(c => c.mes === v("f_cfgContratoVigente"));
   const payload = {
     soja_contrato_vigente: v("f_cfgContratoVigente"),
