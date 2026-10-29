@@ -4504,7 +4504,7 @@ function onCadastroTipoChange() {
   document.getElementById("f_compradorFieldsWrap").style.display = tipo === "Comprador" ? "block" : "none";
   document.getElementById("f_acessoClienteWrap").style.display = (tipo === "Produtor" || tipo === "Comprador") ? "block" : "none";
 }
-// A equipe não define nem vê a senha do cliente: manda um link por e-mail pra ele mesmo cadastrar uma nova.
+// Link por e-mail pro cliente cadastrar uma nova senha (ou o corretor define em definirSenhaCliente).
 async function enviarLinkNovaSenha(cadastroId) {
   const c = data.cadastros.find(x => x.id === cadastroId);
   const msg = document.getElementById("novaSenhaMsg");
@@ -4514,6 +4514,26 @@ async function enviarLinkNovaSenha(cadastroId) {
   if (msg) { msg.style.color = "var(--ink-soft)"; msg.textContent = "Enviando…"; }
   const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + "/portal/" });
   if (msg) { msg.style.color = error ? "var(--red)" : "var(--green)"; msg.textContent = error ? "Não consegui enviar agora (" + error.message + "). Tente de novo em alguns minutos." : `Link enviado para ${email}. Peça pro cliente olhar também o spam.`; }
+}
+// O corretor escolhe a senha do portal do cliente (pra passar por WhatsApp a quem não abre e-mail).
+async function definirSenhaCliente(cadastroId) {
+  const senha = (v("f_senhaCliente") || "").trim();
+  const msg = document.getElementById("senhaClienteMsg");
+  if (senha.length < 6) { msg.style.color = "var(--red)"; msg.textContent = "A senha precisa ter pelo menos 6 caracteres."; return; }
+  const c = data.cadastros.find(x => x.id === cadastroId);
+  if (!confirm(`Definir essa senha para o acesso de ${c ? c.nome : "este cliente"}${c && c.email ? " (" + c.email + ")" : ""}? A senha atual dele deixa de valer.`)) return;
+  msg.style.color = "var(--ink-soft)"; msg.textContent = "Salvando…";
+  const { data: sess } = await sb.auth.getSession();
+  try {
+    const resp = await fetch("/.netlify/functions/definir-senha-cliente", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cadastro_id: cadastroId, senha, access_token: sess?.session?.access_token }),
+    });
+    const r = await resp.json();
+    if (!r.ok) { msg.style.color = "var(--red)"; msg.textContent = r.erro || "Erro ao definir a senha."; return; }
+    document.getElementById("f_senhaCliente").value = "";
+    msg.style.color = "var(--green)"; msg.textContent = `Senha definida. O cliente entra em ${location.origin}/portal/ com o e-mail ${c?.email || ""} e essa senha.`;
+  } catch (e) { msg.style.color = "var(--red)"; msg.textContent = "Erro de conexão ao definir a senha."; }
 }
 async function criarAcessoCliente(cadastroId) {
   const email = (v("f_acessoEmail") || "").trim();
@@ -4785,7 +4805,10 @@ function openContatoModal(id) {
       <div class="field"><label>Acesso do cliente (portal)</label>
         ${!id ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para criar o acesso do cliente.</div>`
           : item.user_id ? `<div class="placeholder-box" style="font-size:12px;padding:10px">Acesso criado: ${item.email || "—"}</div>
-             <div style="margin-top:8px"><button type="button" class="btn-ghost" onclick="enviarLinkNovaSenha('${id}')">🔑 Enviar link para o cliente criar uma nova senha</button><div id="novaSenhaMsg" style="font-size:11.5px;margin-top:6px"></div></div>`
+             <div style="margin-top:8px"><button type="button" class="btn-ghost" onclick="enviarLinkNovaSenha('${id}')">🔑 Enviar link para o cliente criar uma nova senha</button><div id="novaSenhaMsg" style="font-size:11.5px;margin-top:6px"></div></div>
+             <div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)">Ou defina você a senha e passe pro cliente:</div>
+             <div class="field-row" style="margin-top:4px"><input type="text" id="f_senhaCliente" placeholder="Nova senha (mín. 6 caracteres)" autocomplete="new-password" style="flex:1"><button type="button" class="btn-ghost" style="white-space:nowrap" onclick="definirSenhaCliente('${id}')">Definir senha do cliente</button></div>
+             <div id="senhaClienteMsg" style="font-size:11.5px;margin-top:6px"></div>`
           : `<div class="field-row"><input type="email" id="f_acessoEmail" value="${item.email || ""}" placeholder="email@cliente.com" style="flex:1"><button type="button" class="btn-ghost" style="white-space:nowrap" onclick="criarAcessoCliente('${id}')">Criar acesso</button></div>
              <div id="acessoClienteMsg" style="font-size:11.5px;margin-top:6px"></div>`}
         ${id ? `<div style="margin-top:8px"><button type="button" class="btn-ghost" onclick="window.open('/portal/?ver=${id}', '_blank')">👁️ Ver o portal deste cliente</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">Abre como o cliente vê (somente leitura)</span></div>` : ""}
