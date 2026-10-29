@@ -1,4 +1,4 @@
-const CACHE_NAME = "nexus-shell-v2";
+const CACHE_NAME = "nexus-shell-v3";
 const APP_SHELL = ["/", "/index.html", "/manifest.json", "/icon-192-v2.png", "/icon-512-v2.png"];
 
 self.addEventListener("install", (event) => {
@@ -19,7 +19,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-store" }) // sem o cache HTTP do navegador: o app sempre abre a última versão publicada
       .then((resp) => {
         const copy = resp.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));

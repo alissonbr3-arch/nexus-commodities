@@ -1268,7 +1268,10 @@ const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
+  // Procura versão nova do service worker a cada abertura e, quando um novo assume, recarrega uma vez pra mostrar a versão publicada.
+  const tinhaControle = !!navigator.serviceWorker.controller; let recarregou = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (tinhaControle && !recarregou) { recarregou = true; location.reload(); } });
+  window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {}); });
 }
 
 const NEXUS_EMPRESA = { nome: "Nexus Commodities", endereco: "79490-039 São Gabriel do Oeste/MS", email: "nexuscommodities@terra.com.br", telefone: "(67) 99130-9516", cnpj: "68.049.636/0001-61" };
