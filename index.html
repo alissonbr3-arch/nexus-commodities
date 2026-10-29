@@ -7219,16 +7219,34 @@ function encerrarInvestimento(id) {
   const atual = precoAtualInv(i);
   document.getElementById("modalContent").innerHTML = `
     <h3>Encerrar posição — ${escapeHtml(i.descricao)}</h3>
+    <div class="field-row">
+      <div class="field"><label>Contratos a encerrar <span style="font-weight:400;color:var(--ink-soft)">(de ${fmtNum(i.contratos)})</span></label><input type="number" step="any" min="0" max="${i.contratos}" id="f_invQtdSaida" value="${i.contratos}"></div>
+      <div class="field"><label>Data da saída</label><input type="date" id="f_invDataSaida" value="${todayISO()}"></div>
+    </div>
     <div class="field"><label>Preço de saída (em que preço você zerou)</label><input type="number" step="any" id="f_invSaida" value="${atual == null ? "" : atual}"></div>
-    <div class="hint">Sugestão: o preço do dia. O ganho ou a perda passa pra "Já realizado".</div>
+    <div class="hint">Sugestão: o preço do dia. Pra encerrar só uma parte, diminua os contratos: essa parte vai pra "Já realizado" e o resto continua aberto, com o mesmo preço de compra.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="confirmarEncerramento('${id}')">Encerrar</button></div>`;
   showModal();
 }
+// Encerramento total ou parcial. No parcial, a parte zerada vira uma posição encerrada à parte (mesma compra, com o
+// preço de saída) e a posição original fica aberta com os contratos que sobraram.
 async function confirmarEncerramento(id) {
-  const saida = Number(document.getElementById("f_invSaida").value);
+  const i = data.investimentos.find(x => x.id === id); if (!i) return;
+  const saida = Number(document.getElementById("f_invSaida").value), qtd = Number(document.getElementById("f_invQtdSaida").value);
+  const dataSaida = document.getElementById("f_invDataSaida").value || todayISO(), total = Number(i.contratos);
   if (!(saida > 0)) { alert("Informe o preço de saída."); return; }
-  const { error } = await sb.from("nexus_investimentos").update({ status: "Encerrada", preco_saida: saida, data_saida: todayISO(), updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) { alert("Não consegui encerrar: " + error.message); return; }
+  if (!(qtd > 0) || qtd > total) { alert(`Informe quantos contratos encerrar (de 1 a ${fmtNum(total)}).`); return; }
+  const agora = new Date().toISOString();
+  if (qtd === total) {
+    const { error } = await sb.from("nexus_investimentos").update({ status: "Encerrada", preco_saida: saida, data_saida: dataSaida, updated_at: agora }).eq("id", id);
+    if (error) { alert("Não consegui encerrar: " + error.message); return; }
+  } else {
+    const { id: _id, created_at, ...base } = i;
+    const { data: nova, error: e1 } = await sb.from("nexus_investimentos").insert([{ ...base, contratos: qtd, status: "Encerrada", preco_saida: saida, data_saida: dataSaida, updated_at: agora }]).select("id").single();
+    if (e1) { alert("Não consegui encerrar a parte: " + e1.message); return; }
+    const { error: e2 } = await sb.from("nexus_investimentos").update({ contratos: total - qtd, updated_at: agora }).eq("id", id);
+    if (e2) { await sb.from("nexus_investimentos").delete().eq("id", nova.id); alert("Não consegui atualizar a posição aberta: " + e2.message); return; }
+  }
   await loadInvestimentos(); closeModal(); renderInvestimentos();
 }
 async function excluirInvestimento(id) {
