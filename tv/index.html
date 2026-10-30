@@ -156,6 +156,16 @@
   .aniv-card { background: linear-gradient(135deg, var(--gold-soft), var(--card)); border: 1px solid var(--gold); border-radius: 18px; padding: 22px 26px; display: flex; flex-direction: column; justify-content: center; text-align: center; }
   .aniv-card .ic { font-size: 54px; } .aniv-card .nm { font-size: clamp(24px, 2.6vw, 38px); font-weight: 800; color: var(--gold); margin-top: 6px; line-height: 1.1; }
   .aniv-card .tp { font-size: 15px; color: var(--ink-soft); margin-top: 8px; } .aniv-card .pb { font-size: 18px; font-weight: 700; margin-top: 10px; }
+  .pag-resumo { font-size: clamp(16px, 2vh, 22px); color: var(--ink-soft); } .pag-resumo b { color: var(--gold); font-variant-numeric: tabular-nums; }
+  .pag-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 14px; min-height: 0; align-content: stretch; }
+  .pag-card { min-height: 0; overflow: hidden; background: var(--card); border: 1px solid var(--border); border-left: 5px solid var(--gold); border-radius: 14px; padding: clamp(8px, 1.4vh, 18px) 20px; display: flex; flex-direction: column; justify-content: center; }
+  .pag-card.pago { border-left-color: var(--green); }
+  .pag-card .pc-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-dim); font-weight: 700; letter-spacing: .05em; }
+  .pag-card .pc-st { font-size: 12px; font-weight: 800; text-transform: uppercase; padding: 2px 9px; border-radius: 10px; background: var(--gold-soft); color: var(--gold); }
+  .pag-card.pago .pc-st { background: var(--green-soft, rgba(34,197,94,.15)); color: var(--green); }
+  .pag-card .pc-nome { font-size: clamp(18px, 1.9vw, 28px); font-weight: 800; color: var(--ink); margin-top: 4px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pag-card .pc-valor { white-space: nowrap; font-size: clamp(22px, 2.3vw, 40px); font-weight: 800; color: var(--gold); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .pag-card .pc-det { font-size: clamp(14px, 1.1vw, 18px); color: var(--ink-soft); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .aniv-prox { padding-bottom: 16px; font-size: 15px; color: var(--ink-soft); text-align: center; } .aniv-prox b { color: var(--ink); }
 
   /* Alerta de movimento e Negócio fechado */
@@ -259,6 +269,10 @@
         <div class="slide-title">🎂 Aniversariantes <b>de hoje</b></div>
         <div class="aniv-grid" id="anivGrid"></div>
         <div class="aniv-prox" id="anivProx"></div>
+      </div>
+      <div class="slide" data-nome="Pagamentos" data-off="1">
+        <div class="slide-title">💰 Pagamentos <b>de hoje</b> <span class="pag-resumo" id="pagResumo"></span></div>
+        <div class="pag-grid" id="pagGrid"></div>
       </div>
       <div class="dots" id="slideDots"></div>
     </div>
@@ -523,8 +537,8 @@ function renderCuriosidadesTv(negocios) {
 // o Chicago ao vivo entra duas vezes no ciclo e fica mais tempo; fora do pregão ele aparece uma vez, rápido.
 let playlistPos = 0, slideTimer = null, modoVivo = false;
 const FATOR_TEMPO = {
-  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Curiosidades": 0.6, "Aniversariantes": 1, "Cotações": 1.25 },
-  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Curiosidades": 0.75, "Aniversariantes": 1.25, "Cotações": 1.25 },
+  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Curiosidades": 0.6, "Aniversariantes": 1, "Cotações": 1.25, "Pagamentos": 1.25 },
+  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Curiosidades": 0.75, "Aniversariantes": 1.25, "Cotações": 1.25, "Pagamentos": 1.25 },
 };
 // Cada painel tem número e nome fixos (o número não muda com a ordem do rodízio). Teclas 1–9 (ou os números do
 // controle) pulam direto pro painel; /tv/?painel=2 abre já nele; /tv/?paineis=1,2,5 gira só entre esses.
@@ -535,14 +549,15 @@ const PAINEIS = [
   { num: 4, chave: "Curiosidades", nome: "Curiosidades" },
   { num: 5, chave: "Aniversariantes", nome: "Aniversariantes do dia" },
   { num: 6, chave: "Cotações", nome: "NexusConsult" },
+  { num: 7, chave: "Pagamentos", nome: "Pagamentos do dia" },
 ];
 const painelDe = chave => PAINEIS.find(p => p.chave === chave) || { num: "", nome: chave };
 const SO_PAINEIS = (new URLSearchParams(location.search).get("paineis") || "").split(",").map(Number).filter(Boolean);
 function montarPlaylist() {
   const ok = new Set([...document.querySelectorAll("#slides .slide")].filter(el => el.dataset.off !== "1").map(el => el.dataset.nome));
   const base = modoVivo
-    ? ["Chicago", "Cotações", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"]
-    : ["Cotações", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"];
+    ? ["Chicago", "Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"]
+    : ["Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Chicago", "Aniversariantes", "Curiosidades"];
   let lista = base.filter(n => ok.has(n));
   if (SO_PAINEIS.length) { const so = lista.filter(n => SO_PAINEIS.includes(painelDe(n).num)); if (so.length) lista = so; }
   return lista.length ? lista : ["Mercado"];
@@ -610,6 +625,40 @@ async function carregarDadosTv() {
   renderPrecosNegociosTv(todos, cfgRow || {}, new Map((compRows || []).map(c => [c.id, c])));
   renderCuriosidadesTv(todos);
   renderQuadroCotacoes(cotRows || [], histRows || [], dolarRow, cfgRow || {});
+  carregarPagamentosTv();
+}
+
+// ---------------- PAGAMENTOS DO DIA ----------------
+// Painel 7: só entra no rodízio quando algum negócio (não excluído) tem pagamento marcado pra hoje.
+let pagamentosHoje = [];
+async function carregarPagamentosTv() {
+  const hoje = new Date().toLocaleDateString("en-CA");
+  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento")
+    .eq("data_pagamento", hoje).is("deleted_at", null).order("numero_contrato");
+  pagamentosHoje = data || [];
+  renderPagamentosTv();
+}
+function renderPagamentosTv() {
+  const nome = id => { const c = pessoas.cadastros.get(id); return c ? (c.nome || c.apelido) : ""; };
+  const slide = document.querySelector('#slides .slide[data-nome="Pagamentos"]');
+  const estavaOff = slide.dataset.off === "1";
+  slide.dataset.off = pagamentosHoje.length ? "0" : "1";
+  const valor = n => Number(n.preco || 0) * Number(n.quantidade || 0);
+  const total = pagamentosHoje.reduce((s, n) => s + valor(n), 0);
+  const pagos = pagamentosHoje.filter(n => n.check_pagamento).length;
+  document.getElementById("pagResumo").innerHTML = pagamentosHoje.length
+    ? `— ${pagamentosHoje.length} ${pagamentosHoje.length === 1 ? "pagamento" : "pagamentos"} · total <b>${fmtMoney(total)}</b> · ${pagos} ${pagos === 1 ? "pago" : "pagos"}` : "";
+  document.getElementById("pagGrid").innerHTML = pagamentosHoje.map(n => {
+    const comprador = nome(n.cliente_id) || n.contraparte || "—";
+    return `<div class="pag-card${n.check_pagamento ? " pago" : ""}">
+      <div class="pc-top"><span>${n.numero_contrato || "—"}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
+      <div class="pc-nome">${nome(n.produtor_id) || "—"}</div>
+      <div class="pc-valor">${fmtMoney(valor(n))}</div>
+      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtInt(n.quantidade)} sc × ${fmtMoney(n.preco)}</div>
+      <div class="pc-det">Comprador: <b>${comprador}</b></div>
+    </div>`;
+  }).join("");
+  if (estavaOff !== (slide.dataset.off === "1") && slideTimer) mostrarSlide(playlistPos); // entrou/saiu do rodízio
 }
 
 
@@ -892,6 +941,7 @@ async function carregarPessoasTv() {
   pessoas.cadastros = new Map((cads || []).map(c => [c.id, c]));
   pessoas.equipe = new Map((eq || []).map(e => [e.user_id, e]));
   renderAniversariantes();
+  renderPagamentosTv();
 }
 function renderAniversariantes() {
   const agora = new Date(), mmdd = d => d.slice(5, 10);
@@ -912,6 +962,7 @@ function renderAniversariantes() {
 // Pré-visualização: abra /tv/?demo=fechado, ?demo=alerta ou ?demo=aniversario (ou digite tvDemo("fechado") no console).
 function tvDemo(tipo) {
   if (tipo === "fechado") negocioFechadoTv({ corretor_id: [...pessoas.equipe.keys()][0], quantidade: 5000, grao: "Soja", safra: "2026/2027", produtor_id: null, cliente_id: null, contraparte: "Comprador Exemplo" });
+  if (tipo === "pagamento") { const p = PAINEIS.find(x => x.chave === "Pagamentos"); mostrarSlide(montarPlaylist().indexOf(p.chave)); }
   if (tipo === "alerta") { filaAlertas.push({ codigo: "DEMO", grupo: "Soja", nome: "Soja Nov/26", pct: -1.4, preco: 1230.5, anterior: 1248.25 }); proximoAlerta(); }
   if (tipo === "aniversario") { const slide = document.querySelector('#slides .slide[data-nome="Aniversariantes"]'); document.getElementById("anivGrid").innerHTML = `<div class="aniv-card"><div class="ic">🎂</div><div class="nm">Fulano de Tal</div><div class="tp">Produtor parceiro</div><div class="pb">Parabéns! 🎉</div></div>`; slide.dataset.off = "0"; mostrarSlide(montarPlaylist().indexOf("Aniversariantes")); }
 }
