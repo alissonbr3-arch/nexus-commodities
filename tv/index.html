@@ -643,18 +643,16 @@ function renderPagamentosTv() {
   const slide = document.querySelector('#slides .slide[data-nome="Pagamentos"]');
   const estavaOff = slide.dataset.off === "1";
   slide.dataset.off = pagamentosHoje.length ? "0" : "1";
-  const valor = n => Number(n.preco || 0) * Number(n.quantidade || 0);
-  const total = pagamentosHoje.reduce((s, n) => s + valor(n), 0);
   const pagos = pagamentosHoje.filter(n => n.check_pagamento).length;
   document.getElementById("pagResumo").innerHTML = pagamentosHoje.length
-    ? `— ${pagamentosHoje.length} ${pagamentosHoje.length === 1 ? "pagamento" : "pagamentos"} · total <b>${fmtMoney(total)}</b> · ${pagos} ${pagos === 1 ? "pago" : "pagos"}` : "";
+    ? `— ${pagamentosHoje.length} ${pagamentosHoje.length === 1 ? "pagamento" : "pagamentos"} · ${pagos} ${pagos === 1 ? "pago" : "pagos"}` : "";
   document.getElementById("pagGrid").innerHTML = pagamentosHoje.map(n => {
     const comprador = nome(n.cliente_id) || n.contraparte || "—";
     return `<div class="pag-card${n.check_pagamento ? " pago" : ""}">
       <div class="pc-top"><span>${n.numero_contrato || "—"}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
       <div class="pc-nome">${nome(n.produtor_id) || "—"}</div>
-      <div class="pc-valor">${fmtMoney(valor(n))}</div>
-      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtInt(n.quantidade)} sc × ${fmtMoney(n.preco)}</div>
+      <div class="pc-valor">${fmtInt(n.quantidade)} sc</div>
+      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtMoney(n.preco)}/sc</div>
       <div class="pc-det">Comprador: <b>${comprador}</b></div>
     </div>`;
   }).join("");
