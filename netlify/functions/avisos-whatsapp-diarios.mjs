@@ -99,7 +99,7 @@ export default async () => {
   const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" });
 
   const [pagResp, cfgResp] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?data_pagamento=eq.${hoje}&whatsapp_aviso_pagamento_enviado=eq.false&select=*`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?data_pagamento=eq.${hoje}&whatsapp_aviso_pagamento_enviado=eq.false&deleted_at=is.null&select=*`, { headers: adminHeaders }),
     fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=whatsapp_msg_pagamento`, { headers: adminHeaders }),
   ]);
   const negociosPagamento = await pagResp.json();
