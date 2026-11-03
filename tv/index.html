@@ -633,9 +633,22 @@ async function carregarDadosTv() {
 let pagamentosHoje = [];
 async function carregarPagamentosTv() {
   const hoje = new Date().toLocaleDateString("en-CA");
-  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento")
-    .eq("data_pagamento", hoje).is("deleted_at", null).order("numero_contrato");
-  pagamentosHoje = data || [];
+  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento, pagamentos_extra, pagamento_dias_apos_entrega, data_pagamento")
+    .or(`data_pagamento.eq.${hoje},pagamentos_extra.cs.${JSON.stringify([{ data: hoje }])}`).is("deleted_at", null).order("numero_contrato");
+  // Pagamento em parcelas: entra só a parcela de hoje, com as sacas e o "pago" dela (mesma leitura da Agenda do painel).
+  pagamentosHoje = [];
+  (data || []).forEach(n => {
+    const extras = (n.pagamento_dias_apos_entrega == null && n.pagamentos_extra) || [];
+    if (!extras.length) { if (n.data_pagamento === hoje) pagamentosHoje.push(n); return; }
+    const completa = extras[0].data === n.data_pagamento;
+    const somaSc = extras.filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
+    const parcelas = completa ? extras.map(p => ({ p })) : [{ p: null }, ...extras.map(p => ({ p }))];
+    parcelas.forEach(({ p }, i) => {
+      if ((p ? p.data : n.data_pagamento) !== hoje) return;
+      const sacas = !p ? Math.max(0, Number(n.quantidade || 0) - somaSc) : p.unidade === "sc" ? Number(p.valor || 0) : null;
+      pagamentosHoje.push({ ...n, quantidade: sacas, parcela: `${i + 1}ª parcela`, check_pagamento: i === 0 ? n.check_pagamento : !!p.pago });
+    });
+  });
   renderPagamentosTv();
 }
 function renderPagamentosTv() {
@@ -649,9 +662,9 @@ function renderPagamentosTv() {
   document.getElementById("pagGrid").innerHTML = pagamentosHoje.map(n => {
     const comprador = nome(n.cliente_id) || n.contraparte || "—";
     return `<div class="pag-card${n.check_pagamento ? " pago" : ""}">
-      <div class="pc-top"><span>${n.numero_contrato || "—"}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
+      <div class="pc-top"><span>${n.numero_contrato || "—"}${n.parcela ? ` · ${n.parcela}` : ""}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
       <div class="pc-nome">${nome(n.produtor_id) || "—"}</div>
-      <div class="pc-valor">${fmtInt(n.quantidade)} sc</div>
+      <div class="pc-valor">${n.quantidade != null ? fmtInt(n.quantidade) + " sc" : "Parcela em R$"}</div>
       <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtMoney(n.preco)}/sc</div>
       <div class="pc-det">Comprador: <b>${comprador}</b></div>
     </div>`;

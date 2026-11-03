@@ -3392,7 +3392,7 @@ async function saveNegocio(id) {
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"), armazem_id: v("f_armazemSelect") || null,
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: dataPag, pagamento_dias_apos_entrega: diasApos,
-    pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$" })),
+    pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$", ...(p.pago ? { pago: true } : {}) })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
   // "Finalizado" dá baixa em tudo do checklist. A comissão é controlada à parte,
   // na tela de Financeiro (via comissao_recebida_em).
@@ -6638,21 +6638,56 @@ function agendaTodosItens() {
       itens.push({ data: neg.data_inicio_embarque, tipo: "Início embarque", neg });
     }
     if (neg.data_fim_embarque) itens.push({ data: neg.data_fim_embarque, tipo: "Fim embarque", neg, campo: "check_embarque_entrega" });
-    if (neg.data_pagamento) {
+    const extras = neg.pagamentos_extra || [];
+    if (extras.length && neg.pagamento_dias_apos_entrega == null) {
+      // Pagamento em parcelas: cada parcela aparece no seu dia. A 1ª usa o check de pagamento do negócio; as
+      // extras guardam o "pago" dentro de pagamentos_extra (cada uma marcada separado).
+      const completa = extras[0].data === neg.data_pagamento; // extras já são a lista inteira (1ª parcela repetida no campo-base)
+      const parcelas = completa ? extras.map((p, j) => ({ p, j })) : [{ p: null, j: null }, ...extras.map((p, j) => ({ p, j }))];
+      parcelas.forEach(({ p, j }, i) => {
+        const data = p ? p.data : neg.data_pagamento;
+        if (!data) return;
+        const sacas = !p ? quantidadePrimeiraParcela(neg) : p.unidade === "sc" ? Number(p.valor || 0) : null;
+        const valor = p && p.unidade !== "sc" ? Number(p.valor || 0) : Number(neg.preco || 0) * Number(sacas || 0);
+        const base = i === 0;
+        itens.push({ data, tipo: "Pagamento", rotulo: `Pagamento ${i + 1}ª parc`, neg, sacas, valor, ...(base ? { campo: "check_pagamento" } : { parcelaExtra: j }) });
+      });
+    } else if (neg.data_pagamento) {
       itens.push({ data: neg.data_pagamento, tipo: "Pagamento", neg, campo: "check_pagamento" });
     }
   });
   return itens;
 }
+// Check da agenda: item do checklist do negócio ou parcela extra de pagamento.
+function agendaCheck(it) {
+  if (it.parcelaExtra != null) {
+    const p = (it.neg.pagamentos_extra || [])[it.parcelaExtra] || {};
+    return { done: !!p.pago, onclick: `toggleParcelaPaga('${it.neg.id}',${it.parcelaExtra})` };
+  }
+  if (it.campo) return { done: !!it.neg[it.campo], onclick: `toggleNegocioCheck('${it.neg.id}','${it.campo}')` };
+  return null;
+}
+async function toggleParcelaPaga(id, j) {
+  const n = data.negocios.find(x => x.id === id);
+  if (!n || !n.pagamentos_extra || !n.pagamentos_extra[j]) return;
+  const extras = n.pagamentos_extra.map((p, i) => i === j ? { ...p, pago: !p.pago } : p);
+  if (!extras[j].pago) delete extras[j].pago;
+  await sb.from("nexus_negocios").update({ pagamentos_extra: extras }).eq("id", id);
+  await loadNegocios();
+  renderNegocios();
+  renderAgendaSemana();
+}
 function agendaItemChipHtml(it) {
-  const done = it.campo ? !!it.neg[it.campo] : false;
+  const chk = agendaCheck(it);
   const cls = AGENDA_TIPO_CLASSE[it.tipo] || "";
   const contraparte = nomeCadastro(it.neg.produtor_id);
   const icone = AGENDA_TIPO_ICONE[it.tipo] || "&#128197;";
-  const iconeHtml = it.campo
-    ? `<span class="neg-check-icon${done ? " done" : ""}" style="font-size:14px" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${icone}</span>`
+  const rotulo = it.rotulo || it.tipo;
+  const iconeHtml = chk
+    ? `<span class="neg-check-icon${chk.done ? " done" : ""}" style="font-size:14px" title="${chk.done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); ${chk.onclick}">${icone}</span>`
     : icone;
-  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${it.tipo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${iconeHtml} ${it.tipo}<br>${it.neg.numero_contrato || "—"} — ${contraparte}</div>`;
+  const qtdParc = it.sacas != null && it.rotulo ? ` · ${fmtNum(it.sacas)} sc` : "";
+  return `<div class="agenda-item-chip ${cls}" style="cursor:pointer" title="${rotulo} — ${it.neg.numero_contrato || "—"} — ${contraparte} (clique para abrir)" onclick="abrirNegocioDaAgenda('${it.neg.id}')">${iconeHtml} ${rotulo}${qtdParc}<br>${it.neg.numero_contrato || "—"} — ${contraparte}</div>`;
 }
 function abrirNegocioDaAgenda(negocioId) {
   document.querySelector('.nav-item[data-page="negociacoes"]').click();
@@ -6734,9 +6769,9 @@ function renderAgendaSemana() {
   el.innerHTML = itens.length === 0 ? `<div class="placeholder-box">Nenhum pagamento ou embarque previsto nesta semana.</div>` :
     `<table><thead><tr><th>Data</th><th>Tipo</th><th>Contrato</th><th>Comprador</th><th>Produtor</th><th>Qtd (sc)</th><th>Valor</th><th>Checklist</th></tr></thead><tbody>${
       itens.map(it => {
-        const done = it.campo ? !!it.neg[it.campo] : false;
-        const checkCell = it.campo ? `<span class="neg-check-icon${done ? " done" : ""}" title="${done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); toggleNegocioCheck('${it.neg.id}','${it.campo}')">${AGENDA_TIPO_ICONE[it.tipo] || ""}</span>` : "—";
-        return `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${AGENDA_TIPO_CLASSE[it.tipo] || ""}">${it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td><td>${checkCell}</td></tr>`;
+        const chk = agendaCheck(it);
+        const checkCell = chk ? `<span class="neg-check-icon${chk.done ? " done" : ""}" title="${chk.done ? "Feito" : "Pendente"} — clique pra marcar/desmarcar" onclick="event.stopPropagation(); ${chk.onclick}">${AGENDA_TIPO_ICONE[it.tipo] || ""}</span>` : "—";
+        return `<tr style="cursor:pointer" title="Clique para abrir a negociação" onclick="abrirNegocioDaAgenda('${it.neg.id}')"><td>${fmtDate(it.data)}</td><td><span class="badge ${AGENDA_TIPO_CLASSE[it.tipo] || ""}">${it.rotulo || it.tipo}</span></td><td>${it.neg.numero_contrato || "—"}</td><td>${nomeCadastro(it.neg.cliente_id) !== "—" ? nomeCadastro(it.neg.cliente_id) : it.neg.contraparte}</td><td>${nomeCadastro(it.neg.produtor_id)}</td><td>${it.rotulo ? (it.sacas != null ? fmtNum(it.sacas) : "—") : fmtNum(it.neg.quantidade)}</td><td>${it.tipo === "Pagamento" ? fmtMoney(it.rotulo ? it.valor : Number(it.neg.preco||0) * Number(it.neg.quantidade||0)) : "—"}</td><td>${checkCell}</td></tr>`;
       }).join("")
     }</tbody></table>`;
 }
