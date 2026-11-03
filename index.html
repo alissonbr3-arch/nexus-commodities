@@ -3271,7 +3271,7 @@ function atualizarPagamentoExtra(i, campo, valor) {
 }
 function openNegocioModal(id) {
   const item = id ? data.negocios.find(n => n.id === id) : { grao: "", contraparte: "", cliente_id: "", produtor_id: "", fazenda_id: "", corretor_id: currentUserId, quantidade: "", preco: "", comissao: "", comissao_saca: "", data: "", status: "Negociação", obs: "", numero_contrato: sugerirNumeroContrato(), safra: "", modalidade: "FOB", local_origem: "", data_inicio_embarque: "", data_fim_embarque: "", data_pagamento: "" };
-  negocioPagamentosExtra = item.pagamentos_extra ? item.pagamentos_extra.map(p => ({ ...p })) : [];
+  negocioPagamentosExtra = item.pagamentos_extra ? item.pagamentos_extra.map(p => ({ ...p, data_original: p.data })) : []; // data_original: se mudar a data da parcela, o aviso de WhatsApp sai de novo
   const isOutro = !item.cliente_id && !!item.contraparte;
   const compradorOptions = data.cadastros.filter(c => c.tipo === "Comprador").map(c => `<option value="${c.id}" ${item.cliente_id===c.id?"selected":""}>${c.nome}</option>`).join("");
   const produtorOptions = data.cadastros.filter(c => c.tipo === "Produtor").map(c => `<option value="${c.id}" ${item.produtor_id===c.id?"selected":""}>${c.nome}</option>`).join("");
@@ -3392,7 +3392,7 @@ async function saveNegocio(id) {
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"), armazem_id: v("f_armazemSelect") || null,
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: dataPag, pagamento_dias_apos_entrega: diasApos,
-    pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$", ...(p.pago ? { pago: true } : {}) })),
+    pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$", ...(p.pago ? { pago: true } : {}), ...(p.aviso_enviado && p.data === p.data_original ? { aviso_enviado: true } : {}) })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
   // "Finalizado" dá baixa em tudo do checklist. A comissão é controlada à parte,
   // na tela de Financeiro (via comissao_recebida_em).

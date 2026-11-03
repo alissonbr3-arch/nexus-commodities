@@ -36,6 +36,18 @@ async function registrarLog(adminHeaders, { negocio_id, tipo, destinatarios, suc
   }).catch(() => {});
 }
 
+// Pagamento em parcelas (pagamentos_extra): lista [{ parcela, data, quantidade, idxExtra }] na mesma leitura da
+// Agenda do painel — quando a 1ª extra cai na data-base, os extras já são a lista inteira das parcelas.
+function parcelasDoNegocio(n) {
+  const extras = (n.pagamento_dias_apos_entrega == null && Array.isArray(n.pagamentos_extra)) ? n.pagamentos_extra : [];
+  if (!extras.length) return [];
+  const qtdExtra = p => p.unidade === "sc" ? Number(p.valor || 0).toLocaleString("pt-BR") : `R$ ${Number(p.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+  if (extras[0].data === n.data_pagamento) return extras.map((p, i) => ({ parcela: i + 1, data: p.data, quantidade: qtdExtra(p), idxExtra: i === 0 ? null : i }));
+  const somaSc = extras.filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
+  return [{ parcela: 1, data: n.data_pagamento, quantidade: Math.max(0, Number(n.quantidade || 0) - somaSc).toLocaleString("pt-BR"), idxExtra: null },
+    ...extras.map((p, i) => ({ parcela: i + 2, data: p.data, quantidade: qtdExtra(p), idxExtra: i }))];
+}
+
 async function marcarEnviado(adminHeaders, negocioId, campo) {
   await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${negocioId}`, {
     method: "PATCH",
@@ -57,7 +69,7 @@ async function telefonesComGrupo(cadastro, adminHeaders) {
   return [...new Set(membros.flatMap(m => [m.telefone, ...(m.telefones_extra || [])]).map(formatarTelefoneWhats).filter(Boolean))];
 }
 
-async function processarLote({ negocios, cadastrosPorId, campoData, campoFlag, tipoLog, montarMensagem, zapi, adminHeaders }) {
+async function processarLote({ negocios, cadastrosPorId, tipoLog, montarMensagem, marcar, zapi, adminHeaders }) {
   for (const n of negocios) {
     const produtor = cadastrosPorId.get(n.produtor_id);
     const telefones = await telefonesComGrupo(produtor, adminHeaders);
@@ -76,7 +88,7 @@ async function processarLote({ negocios, cadastrosPorId, campoData, campoFlag, t
       }
     }
     await registrarLog(adminHeaders, { negocio_id: n.id, tipo: tipoLog, destinatarios: telefones.join(", "), sucesso: algumSucesso, erro: erros.join("; ") || null });
-    if (algumSucesso) await marcarEnviado(adminHeaders, n.id, campoFlag);
+    if (algumSucesso) await marcar(n);
   }
 }
 
@@ -98,11 +110,26 @@ export default async () => {
 
   const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" });
 
-  const [pagResp, cfgResp] = await Promise.all([
+  const filtroParcela = encodeURIComponent(JSON.stringify([{ data: hoje }]));
+  const [pagResp, parcResp, cfgResp] = await Promise.all([
     fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?data_pagamento=eq.${hoje}&whatsapp_aviso_pagamento_enviado=eq.false&deleted_at=is.null&select=*`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?pagamentos_extra=cs.${filtroParcela}&deleted_at=is.null&select=*`, { headers: adminHeaders }),
     fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=whatsapp_msg_pagamento`, { headers: adminHeaders }),
   ]);
-  const negociosPagamento = await pagResp.json();
+  // 1º pagamento (data-base): quando o negócio tem parcelas, a mensagem fala só das sacas da 1ª parcela.
+  const negociosBase = (await pagResp.json()).map(n => {
+    const p1 = parcelasDoNegocio(n)[0];
+    return p1 ? { ...n, quantidade: p1.quantidade, numero_contrato: `${n.numero_contrato || "—"} (1ª parcela)`, _marcar: "base" } : { ...n, _marcar: "base" };
+  });
+  // Parcelas extras de hoje: o "já avisei" fica na própria parcela (aviso_enviado dentro de pagamentos_extra).
+  const negociosParcela = [];
+  for (const n of await parcResp.json()) {
+    for (const pc of parcelasDoNegocio(n)) {
+      if (pc.idxExtra == null || pc.data !== hoje || n.pagamentos_extra[pc.idxExtra].aviso_enviado) continue;
+      negociosParcela.push({ ...n, quantidade: pc.quantidade, numero_contrato: `${n.numero_contrato || "—"} (${pc.parcela}ª parcela)`, _marcar: pc.idxExtra });
+    }
+  }
+  const negociosPagamento = [...negociosBase, ...negociosParcela];
   const cfgRows = await cfgResp.json();
   const templatePagamento = cfgRows[0]?.whatsapp_msg_pagamento || "Olá, {{NOME}}! Aqui é da Nexus Commodities. Hoje é a data de pagamento do seu negócio nº {{CONTRATO}} ({{GRAO}} {{SAFRA}}, {{QUANTIDADE}} sc). Qualquer dúvida, fale com seu corretor.";
 
@@ -115,8 +142,19 @@ export default async () => {
   }
 
   await processarLote({
-    negocios: negociosPagamento, cadastrosPorId, campoFlag: "whatsapp_aviso_pagamento_enviado", tipoLog: "WhatsApp Aviso de Pagamento", zapi, adminHeaders,
+    negocios: negociosPagamento, cadastrosPorId, tipoLog: "WhatsApp Aviso de Pagamento", zapi, adminHeaders,
     montarMensagem: (n, p) => preencherTemplate(templatePagamento, n, p),
+    marcar: async n => {
+      if (n._marcar === "base") return marcarEnviado(adminHeaders, n.id, "whatsapp_aviso_pagamento_enviado");
+      // relê o negócio pra não sobrescrever uma parcela marcada como paga nesse meio tempo
+      const atual = await (await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${n.id}&select=pagamentos_extra`, { headers: adminHeaders })).json();
+      const extras = (atual[0]?.pagamentos_extra || []).map((p, i) => i === n._marcar ? { ...p, aviso_enviado: true } : p);
+      await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${n.id}`, {
+        method: "PATCH",
+        headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ pagamentos_extra: extras }),
+      });
+    },
   });
 
   return new Response(JSON.stringify({ ok: true, pagamento: negociosPagamento.length }), { status: 200 });
