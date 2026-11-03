@@ -284,6 +284,21 @@
 
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); align-items: center; justify-content: center; z-index: 50; }
   .overlay.active { display: flex; }
+  /* Atalhos de teclado: letra no menu lateral + paleta (⌘K) */
+  .nav-item .atalho { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--ink-dim); border: 1px solid var(--border); border-radius: 4px; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; opacity: .55; }
+  .nav-item:hover .atalho, .nav-item.active .atalho { opacity: 1; }
+  .sidebar.collapsed .nav-item .atalho { display: none; }
+  .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; font-size: 11px; font-weight: 700; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--ink); }
+  .paleta-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 60; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+  .paleta-overlay.active { display: flex; }
+  .paleta { width: min(560px, 92vw); background: var(--panel, var(--card)); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.45); overflow: hidden; }
+  .paleta input { width: 100%; border: none; border-bottom: 1px solid var(--border); background: transparent; color: var(--ink); font-size: 16px; padding: 16px 18px; outline: none; }
+  .paleta-lista { max-height: 52vh; overflow-y: auto; padding: 6px; }
+  .paleta-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--ink); }
+  .paleta-item .kbd { margin-left: auto; }
+  .paleta-item.sel { background: var(--gold-soft); color: var(--gold); }
+  .paleta-rodape { border-top: 1px solid var(--border); padding: 9px 14px; font-size: 11.5px; color: var(--ink-dim); display: flex; gap: 14px; flex-wrap: wrap; }
+  @media (max-width: 768px) { .nav-item .atalho { display: none; } }
   .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px; width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
   .modal.modal-wide { max-width: 780px; }
   @media (max-width: 860px) { .modal.modal-wide { max-width: 92vw; } }
@@ -1264,6 +1279,13 @@
 </div>
 
 <div class="overlay" id="overlay"><div class="modal" id="modalContent"></div></div>
+<div class="paleta-overlay" id="paletaOverlay" onclick="if(event.target===this) fecharPaleta()">
+  <div class="paleta">
+    <input type="text" id="paletaBusca" placeholder="Ir para… (digite: negociação, agenda, funil…)" autocomplete="off">
+    <div class="paleta-lista" id="paletaLista"></div>
+    <div class="paleta-rodape"><span><span class="kbd">N</span> nova negociação</span><span><span class="kbd">⌘</span><span class="kbd">K</span> abre esta busca</span><span><span class="kbd">↑</span><span class="kbd">↓</span> escolher · <span class="kbd">Enter</span> abrir · <span class="kbd">Esc</span> fechar</span></div>
+  </div>
+</div>
 
 <script>
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
@@ -1619,6 +1641,70 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
 document.querySelectorAll(".nav-item").forEach(btn => {
   const label = btn.querySelector(".label");
   if (label) btn.title = label.textContent.trim();
+});
+// ---------------- ATALHOS DE TECLADO ----------------
+// Fora de campos de texto e sem janela aberta: N = nova negociação; letra = página do menu (mostrada ao lado de cada item);
+// ⌘K / Ctrl+K (ou ?) abre a paleta pra ir a qualquer página digitando o nome.
+const ATALHOS_MENU = { dashboard: "D", cotacoes: "M", precos: "P", briefing: "B", workspace: "W", funil: "U", negociacoes: "G", embarques: "E", financeiro: "F", cadastros: "C", agenda: "A", equipe: "Q", relatorios: "R", configuracoes: "S" };
+document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
+  const k = ATALHOS_MENU[btn.dataset.page];
+  if (k) { btn.insertAdjacentHTML("beforeend", `<span class="atalho">${k}</span>`); btn.title += ` (atalho: ${k})`; }
+});
+document.getElementById("addNegocioBtn").title = "Nova negociação (atalho: N)";
+function novaNegociacaoAtalho() {
+  document.querySelector('.nav-item[data-page="negociacoes"]').click();
+  openNegocioModal(null);
+}
+function irParaPagina(page) {
+  const b = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (b && b.offsetParent !== null) b.click();
+}
+let paletaItens = [], paletaSel = 0;
+function paletaOpcoes() {
+  const ops = [{ nome: "Nova negociação", k: "N", acao: novaNegociacaoAtalho }];
+  document.querySelectorAll(".nav-item[data-page]").forEach(b => {
+    if (b.offsetParent === null) return; // página escondida pra esse usuário
+    ops.push({ nome: b.querySelector(".label").textContent.trim(), k: ATALHOS_MENU[b.dataset.page] || "", acao: () => irParaPagina(b.dataset.page) });
+  });
+  return ops;
+}
+const semAcento = t => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function renderPaleta() {
+  const q = semAcento(document.getElementById("paletaBusca").value.trim());
+  paletaItens = paletaOpcoes().filter(o => !q || semAcento(o.nome).includes(q));
+  paletaSel = Math.min(paletaSel, Math.max(0, paletaItens.length - 1));
+  document.getElementById("paletaLista").innerHTML = paletaItens.length
+    ? paletaItens.map((o, i) => `<div class="paleta-item${i === paletaSel ? " sel" : ""}" onmousemove="paletaSel=${i};renderPaletaSel()" onclick="executarPaleta(${i})">${o.nome}${o.k ? `<span class="kbd">${o.k}</span>` : ""}</div>`).join("")
+    : `<div style="padding:14px;color:var(--ink-dim);font-size:13px">Nada encontrado.</div>`;
+}
+function renderPaletaSel() { document.querySelectorAll("#paletaLista .paleta-item").forEach((el, i) => el.classList.toggle("sel", i === paletaSel)); }
+function abrirPaleta() {
+  const inp = document.getElementById("paletaBusca");
+  inp.value = ""; paletaSel = 0; renderPaleta();
+  document.getElementById("paletaOverlay").classList.add("active");
+  inp.focus();
+}
+function fecharPaleta() { document.getElementById("paletaOverlay").classList.remove("active"); document.getElementById("paletaBusca").blur(); }
+function executarPaleta(i) { const o = paletaItens[i]; fecharPaleta(); if (o) o.acao(); }
+document.getElementById("paletaBusca").addEventListener("input", () => { paletaSel = 0; renderPaleta(); });
+document.getElementById("paletaBusca").addEventListener("keydown", e => {
+  if (e.key === "ArrowDown") { e.preventDefault(); paletaSel = Math.min(paletaSel + 1, paletaItens.length - 1); renderPaletaSel(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); paletaSel = Math.max(paletaSel - 1, 0); renderPaletaSel(); }
+  else if (e.key === "Enter") { e.preventDefault(); executarPaleta(paletaSel); }
+  else if (e.key === "Escape") { e.preventDefault(); fecharPaleta(); }
+});
+document.addEventListener("keydown", e => {
+  if (getComputedStyle(document.getElementById("loginScreen")).display !== "none") return; // ainda no login
+  const paletaAberta = document.getElementById("paletaOverlay").classList.contains("active");
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); paletaAberta ? fecharPaleta() : abrirPaleta(); return; }
+  if (paletaAberta || e.metaKey || e.ctrlKey || e.altKey) return;
+  const alvo = e.target, digitando = alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName));
+  if (digitando || document.getElementById("overlay").classList.contains("active")) return; // não atrapalha quem está digitando ou com janela aberta
+  const k = e.key.toUpperCase();
+  if (e.key === "?") { e.preventDefault(); abrirPaleta(); return; }
+  if (k === "N") { e.preventDefault(); novaNegociacaoAtalho(); return; }
+  const page = Object.keys(ATALHOS_MENU).find(p => ATALHOS_MENU[p] === k);
+  if (page) { e.preventDefault(); irParaPagina(page); }
 });
 function abrirMenuMobile() { document.querySelector(".sidebar").classList.add("mobile-open"); document.getElementById("navBackdrop").classList.add("active"); }
 function fecharMenuMobile() { document.querySelector(".sidebar").classList.remove("mobile-open"); document.getElementById("navBackdrop").classList.remove("active"); }
