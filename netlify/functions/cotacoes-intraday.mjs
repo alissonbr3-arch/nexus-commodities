@@ -17,7 +17,8 @@ function json(body, status = 200) {
 
 import { pregaoB3Aberto } from "./_cotacoes-lib.mjs";
 
-// Milho B3: os dois primeiros vencimentos (hoje Novembro e Janeiro). Fechamentos e histórico vêm do Notícias
+// Milho B3: os dois próximos vencimentos, pulando o que vence no mês corrente (em novembro/26 = Janeiro e Março;
+// o de Novembro sai do quadro no próprio mês do vencimento). Fechamentos e histórico vêm do Notícias
 // Agrícolas (fonte B3); com o pregão aberto e o fechamento de hoje ainda sem sair, o preço do dia vem do
 // scanner público do TradingView (atraso de ~15 min). Se a fonte do preço do dia falhar, fica o fechamento.
 const MES_ABREV = { janeiro: "Jan", fevereiro: "Fev", marco: "Mar", abril: "Abr", maio: "Mai", junho: "Jun", julho: "Jul", agosto: "Ago", setembro: "Set", outubro: "Out", novembro: "Nov", dezembro: "Dez" };
@@ -35,7 +36,11 @@ async function milhoB3() {
   }).filter(d => d.linhas.length);
   if (!dias.length) return [];
   const ultimo = dias[0], aberto = pregaoB3Aberto({ data: ultimo.data });
-  const alvos = ultimo.linhas.slice(0, 2).map(l => { const [mes, ano] = l[0].split("/"); return { rotulo: l[0], chave: semAcento(mes), ano: ano.slice(2), fechamento: num(l[1]), pct: num(l[2]) }; });
+  const MES_NUM = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
+  const agoraBR = new Date(Date.now() - 4 * 3600 * 1000), mesAtual = agoraBR.getUTCFullYear() * 12 + agoraBR.getUTCMonth() + 1;
+  const vence = l => { const [mes, ano] = l[0].split("/"); return Number(ano) * 12 + (MES_NUM[semAcento(mes)] || 0); };
+  const proximos = ultimo.linhas.filter(l => vence(l) > mesAtual);
+  const alvos = (proximos.length >= 2 ? proximos : ultimo.linhas).slice(0, 2).map(l => { const [mes, ano] = l[0].split("/"); return { rotulo: l[0], chave: semAcento(mes), ano: ano.slice(2), fechamento: num(l[1]), pct: num(l[2]) }; });
   // preço do dia dos dois contratos numa chamada só
   let vivo = {};
   if (aberto) {
