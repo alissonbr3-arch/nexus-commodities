@@ -5361,6 +5361,9 @@ function negociosExtrasParaNota(negocioId) {
     && ["nenhuma", "erro"].includes(estadoNotaDoNegocio(x)) && !(x.nota_fiscal_numero && !x.nota_fiscal_asaas_id) && !x.nota_fiscal_externa && Number(x.comissao) > 0);
 }
 let notaExtrasSel = { base: null, ids: new Set() };
+// Observações digitadas pro corretor na nota (vão no fim da descrição do serviço); guardadas por negócio enquanto a janela re-renderiza.
+let notaObsSel = { base: null, texto: "" };
+const notaObsDe = baseId => notaObsSel.base === baseId ? notaObsSel.texto.trim() : "";
 let notaFazendaSel = { base: null, val: null };
 let notaTomadorSel = { base: null, id: null };
 let notaModoSel = { base: null, modo: "unica" };
@@ -5396,7 +5399,7 @@ async function emitirNotasPorCpf(baseId) {
     try {
       const resp = await fetch("/.netlify/functions/emitir-nota-comissao", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ negocio_id: g.negs[0].id, negocio_ids_extras: g.negs.slice(1).map(n => n.id), fazenda_id: g.fazendaId, tomador_id: g.cad.id, access_token: session.access_token }),
+        body: JSON.stringify({ negocio_id: g.negs[0].id, negocio_ids_extras: g.negs.slice(1).map(n => n.id), fazenda_id: g.fazendaId, tomador_id: g.cad.id, obs: notaObsDe(baseId), access_token: session.access_token }),
       });
       const j = await resp.json();
       linhas.push(j.ok ? `✓ ${g.cad.nome}: nota de ${fmtMoney(j.valorTotal)} enviada pra emissão` : `✗ ${g.cad.nome}: ${j.erro}`);
@@ -5521,6 +5524,7 @@ function openNotaFiscalModal(negocioId, manterSelecao) {
       ${!modoPorCpf && fazendasTomador.length ? `<div class="field" style="margin-top:10px"><label>Fazenda / inscrição estadual da nota</label><select onchange="escolherFazendaNota('${base.id}', this.value)">${fazendasTomador.map(f => `<option value="${f.id}" ${f.id === fazSel ? "selected" : ""}>${escapeHtml(f.nome)}${f.produtor_id !== pagador.id ? " (de " + escapeHtml(nomeCadastro(f.produtor_id)) + ")" : ""}${f.municipio_uf ? " — " + escapeHtml(f.municipio_uf) : ""}${f.inscricao_estadual ? " — IE " + escapeHtml(f.inscricao_estadual) : " — sem IE cadastrada"}</option>`).join("")}<option value="cadastro" ${fazSel === "cadastro" ? "selected" : ""}>Endereço do próprio cadastro${cadEndFaltando.length ? " (incompleto)" : ""}${pagador && pagador.inscricao_estadual ? " — IE " + escapeHtml(pagador.inscricao_estadual) : ""}</option></select></div>` : ""}
       ${modoPorCpf ? "" : usaFazenda ? `<div class="hint" style="margin-top:6px">A nota vai com a fazenda <strong>${escapeHtml(fazendaTomador.nome)}</strong> como endereço (zona rural, CEP rural de ${escapeHtml(fazendaTomador.municipio_uf || "")})${ieNota ? ` e inscrição estadual <strong>${escapeHtml(ieNota)}</strong>` : ""}.</div>` : (ieNota ? `<div class="hint" style="margin-top:6px">Inscrição estadual na nota: <strong>${escapeHtml(ieNota)}</strong>.</div>` : "")}
       ${!modoPorCpf && endFaltando.length ? `<div class="hint" style="color:var(--red);margin-top:8px">A prefeitura exige o endereço completo do tomador. Falta no cadastro de ${escapeHtml(pagador ? pagador.nome : "—")}: ${endFaltando.join(", ")}. ${pagador ? `<button type="button" class="btn-edit-text" onclick="closeModal(); openContatoModal('${pagador.id}')">Abrir cadastro</button>` : ""}</div>` : ""}
+      <div class="field" style="margin-top:10px"><label>Observações da nota (opcional)</label><textarea id="f_nfObs" rows="3" maxlength="1000" placeholder="Ex.: dados bancários, nº do pedido, referência… — sai no fim da descrição do serviço" oninput="notaObsSel = { base: '${base.id}', texto: this.value }">${escapeHtml(notaObsDe(base.id))}</textarea></div>
       ${modoPorCpf ? blocoPorCpf : `<div style="margin:12px 0"><button class="btn-primary" id="nfEmitirBtn" ${cfgOk && !endFaltando.length ? "" : "disabled"} onclick="emitirNotaComissao('${base.id}', '${fazSel}', '${tomadorId || ""}')">${negs.length > 1 ? `Emitir nota única de ${negs.length} contratos — ${fmtMoney(valor)}` : "Emitir nota agora (Asaas)"}</button><span style="font-size:11px;color:var(--ink-soft);margin-left:8px">R$ 0,49 por nota</span></div>`}`;
   }
 
@@ -5587,7 +5591,7 @@ async function emitirNotaComissao(negocioId, fazendaId, tomadorId) {
     const resp = await fetch("/.netlify/functions/emitir-nota-comissao", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ negocio_id: negocioId, fazenda_id: fazendaId || null, tomador_id: tomadorId || null, negocio_ids_extras: notaExtrasSel.base === negocioId ? [...notaExtrasSel.ids].filter(id => negociosExtrasParaNota(negocioId).some(x => x.id === id)) : [], access_token: session.access_token }),
+      body: JSON.stringify({ negocio_id: negocioId, fazenda_id: fazendaId || null, tomador_id: tomadorId || null, negocio_ids_extras: notaExtrasSel.base === negocioId ? [...notaExtrasSel.ids].filter(id => negociosExtrasParaNota(negocioId).some(x => x.id === id)) : [], obs: notaObsDe(negocioId), access_token: session.access_token }),
     });
     const j = await resp.json();
     if (!j.ok) alert("Erro: " + j.erro);

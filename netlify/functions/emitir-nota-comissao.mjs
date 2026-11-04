@@ -97,6 +97,7 @@ export default async (req) => {
 
   const pagadorIds = new Set(negocios.map(n => n.comissao_pagador === "Comprador" ? n.cliente_id : n.produtor_id));
   if ([...pagadorIds].some(x => !x)) return json({ ok: false, erro: "Algum negócio está sem pagador definido." }, 400);
+  const obsCorretor = typeof payload?.obs === "string" ? payload.obs.trim().slice(0, 1000) : ""; // observações digitadas na hora de emitir
   const tomadorId = typeof payload?.tomador_id === "string" && /^[0-9a-f-]{36}$/i.test(payload.tomador_id) ? payload.tomador_id : null;
   const idsCad = [...new Set([...pagadorIds, ...(tomadorId ? [tomadorId] : [])])];
   const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCad.join(",")})&select=id,nome,tipo,cidade,cpf,cnpj,email,telefone,asaas_customer_id,cep,endereco,endereco_numero,complemento,bairro,inscricao_estadual,grupo_id`, { headers: adminHeaders });
@@ -167,7 +168,7 @@ export default async (req) => {
 
   const corpo = {
     // Mesmo padrão das notas emitidas à mão: contratos + dados bancários (texto em Configurações).
-    serviceDescription: `Comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${cfg.nfse_texto_adicional ? " " + cfg.nfse_texto_adicional : ""}`,
+    serviceDescription: `Comissão de intermediação — ${negocios.length === 1 ? "Confirmação de Negócio" : "Confirmações de Negócio"} nº ${contratos}.${cfg.nfse_texto_adicional ? " " + cfg.nfse_texto_adicional : ""}${obsCorretor ? "\n" + obsCorretor : ""}`,
     observations: `Contrato(s): ${contratos}${fazenda ? ` — ${/^fazenda/i.test(fazenda.nome) ? "" : "Fazenda "}${fazenda.nome}` : ""}${ieNota ? ` — Inscrição Estadual ${ieNota}` : ""}`,
     externalReference: `nexus:${contratos}`.slice(0, 100), // o Asaas aceita no máximo 100 caracteres; a nota é achada pelo nota_fiscal_asaas_id
     value: valorTotal,
