@@ -2508,7 +2508,12 @@ function renderCotacoes() {
       <td><button class="btn-edit-text" onclick="openCotacaoModal('${c.id}')">Editar</button><button class="btn-danger-text" onclick="deleteItem('nexus_cotacoes','${c.id}', loadCotacoes, renderCotacoes)">Excluir</button></td>
     </tr>`).join("");
 
-  document.getElementById("f_cfgContratoVigente").value = data.config.soja_contrato_vigente || "Novembro";
+  // contratos de soja cadastrados em Cotações (Janeiro, Março, Novembro…), em ordem de vencimento
+  const selVig = document.getElementById("f_cfgContratoVigente"), ordemMes = ["Janeiro", "Março", "Maio", "Julho", "Agosto", "Setembro", "Novembro"];
+  const mesesSoja = [...new Set([...(data.cotacoes || []).filter(c => c.produto === "Soja" && ordemMes.includes(c.mes)).map(c => c.mes), data.config.soja_contrato_vigente || "Novembro"])]
+    .sort((a, b) => { const k = c => { const m = /^ZS[FGHJKMNQUVXZ](\d{2})/.exec(((data.cotacoes || []).find(x => x.produto === "Soja" && x.mes === c) || {}).codigo || ""); return (m ? Number(m[1]) : 99) * 12 + ordemMes.indexOf(c); }; return k(a) - k(b); });
+  selVig.innerHTML = mesesSoja.map(m => `<option>${m}</option>`).join("");
+  selVig.value = data.config.soja_contrato_vigente || "Novembro";
   document.getElementById("f_cfgTaxaPortuaria").value = data.config.soja_taxa_portuaria || 0;
   document.getElementById("f_cfgFrete").value = data.config.soja_frete || 0;
   document.getElementById("f_cfgMilhoDesc").value = Number(data.config.milho_desconto_b3 ?? 17).toLocaleString("pt-BR");

@@ -6,6 +6,7 @@ const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 // converter cents/bushel em R$/saca de 60kg.
 const ATIVOS = [
   { codigo: "ZSX26.CBT", produto: "Soja", mes: "Novembro", fatorKg: 27.2155 },
+  { codigo: "ZSF27.CBT", produto: "Soja", mes: "Janeiro", fatorKg: 27.2155 },
   { codigo: "ZSH27.CBT", produto: "Soja", mes: "Março", fatorKg: 27.2155 },
   { codigo: "ZC=F", produto: "Milho", mes: "CBOT", fatorKg: 25.401 },
 ];

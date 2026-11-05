@@ -622,7 +622,8 @@ async function carregarDadosTv() {
   renderChartTv(histRows || []);
   renderChartMensalTv(histRows || []);
   renderChartVolumeTv(todos.filter(n => n.data >= desde));
-  renderPrecosNegociosTv(todos, cfgRow || {}, new Map((compRows || []).map(c => [c.id, c])));
+  liquidoCtx = { cfg: cfgRow || {}, compradores: new Map((compRows || []).map(c => [c.id, c])) };
+  renderPrecosNegociosTv(todos, liquidoCtx.cfg, liquidoCtx.compradores);
   renderCuriosidadesTv(todos);
   renderQuadroCotacoes(cotRows || [], histRows || [], dolarRow, cfgRow || {});
   carregarPagamentosTv();
@@ -630,14 +631,14 @@ async function carregarDadosTv() {
 
 // ---------------- PAGAMENTOS DO DIA ----------------
 // Painel 7: só entra no rodízio quando algum negócio (não excluído) tem pagamento marcado pra hoje.
-let pagamentosHoje = [];
+let pagamentosHoje = [], liquidoCtx = { cfg: {}, compradores: new Map() };
 async function carregarPagamentosTv() {
   const hoje = new Date().toLocaleDateString("en-CA");
-  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento, pagamentos_extra, pagamento_dias_apos_entrega, data_pagamento")
+  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento, pagamentos_extra, pagamento_dias_apos_entrega, data_pagamento, preco_liquido, funrural_forma, comissao, comissao_pagador")
     .or(`data_pagamento.eq.${hoje},pagamentos_extra.cs.${JSON.stringify([{ data: hoje }])}`).is("deleted_at", null).order("numero_contrato");
   // Pagamento em parcelas: entra só a parcela de hoje, com as sacas e o "pago" dela (mesma leitura da Agenda do painel).
   pagamentosHoje = [];
-  (data || []).forEach(n => {
+  (data || []).map(n => ({ ...n, precoLiq: precoLiquidoTv(n, liquidoCtx.cfg, liquidoCtx.compradores) })).forEach(n => { // líquido calculado com o negócio inteiro, antes de separar a parcela
     const extras = (n.pagamento_dias_apos_entrega == null && n.pagamentos_extra) || [];
     if (!extras.length) { if (n.data_pagamento === hoje) pagamentosHoje.push(n); return; }
     const completa = extras[0].data === n.data_pagamento;
@@ -665,7 +666,7 @@ function renderPagamentosTv() {
       <div class="pc-top"><span>${n.numero_contrato || "—"}${n.parcela ? ` · ${n.parcela}` : ""}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
       <div class="pc-nome">${nome(n.produtor_id) || "—"}</div>
       <div class="pc-valor">${n.quantidade != null ? fmtInt(n.quantidade) + " sc" : "Parcela em R$"}</div>
-      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtMoney(n.preco)}/sc</div>
+      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtMoney(n.precoLiq)}/sc líquido</div>
       <div class="pc-det">Comprador: <b>${comprador}</b></div>
     </div>`;
   }).join("");
@@ -704,7 +705,9 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
     return { produto: "Milho", mes: `B3 ${m[1]}/${m[2]}`, codigo: "CCM", cod: LETRA_B3[m[1]] ? `CC${LETRA_B3[m[1]]}${m[2]}` : "CCM", ultima: i.preco, varr: i.variacao, pct: i.pct, previa: i.anterior };
   });
   const brent = vivo["BZ=F"] ? [{ produto: "Petróleo", bolsa: "Brent", mes: "", codigo: "BZ=F", ultima: vivo["BZ=F"].preco, varr: vivo["BZ=F"].variacao, pct: vivo["BZ=F"].pct, previa: vivo["BZ=F"].anterior }] : [];
-  const soja = cot.filter(c => c.produto === "Soja").sort((a, b) => ordem(a) - ordem(b)).map(comVivo);
+  // contrato que vence no mês corrente sai do quadro (em novembro/26: sai Soja Nov/26, ficam Janeiro e Março)
+  const agoraMes = (() => { const d = new Date(); return (d.getFullYear() % 100) * 12 + d.getMonth(); })();
+  const soja = cot.filter(c => c.produto === "Soja" && ordem(c) > agoraMes).sort((a, b) => ordem(a) - ordem(b)).map(comVivo);
   const milhoCbot = cot.filter(c => c.produto === "Milho" && c.codigo !== "CCM").map(comVivo);
   const milhoB3 = b3Vivo.length ? b3Vivo : cot.filter(c => c.codigo === "CCM");
   const linhas = [...soja, ...milhoCbot, ...milhoB3, ...brent].map(c => {
