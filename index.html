@@ -962,7 +962,7 @@
           <div id="com-receber">
             <div class="panel-head">
               <div class="actions-left">
-                <input type="text" class="search-input" id="comissoesFilterCliente" placeholder="Buscar cliente (vendedor ou comprador)...">
+                <input type="text" class="search-input" id="comissoesFilterCliente" placeholder="Buscar cliente ou nº do contrato...">
                 <select class="filter" id="comissoesFilterProdutor"><option value="">Todos os produtores</option></select>
                 <select class="filter" id="comissoesFilterStatus">
                   <option value="pendente">A receber</option>
@@ -993,7 +993,7 @@
             <table>
               <thead><tr>
                 <th style="width:24px"></th>
-                <th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
+                <th data-sort="contrato">Contrato</th><th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
                 <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th data-sort="pagador">Pago por</th><th>Status</th><th></th>
               </tr></thead>
               <tbody id="comissoesBody"></tbody>
@@ -5162,7 +5162,7 @@ function renderComissoesPage() {
   renderComissoesFilterCorretorSelect();
   const filtro = document.getElementById("comissoesFilterStatus").value;
   const todasLinhas = data.negocios.map(n => ({
-    id: n.id, data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
+    id: n.id, contrato: n.numero_contrato || "", data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
     vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
     valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, corretorId: n.corretor_id, negocio: n,
   }));
@@ -5182,7 +5182,7 @@ function renderComissoesPage() {
     .filter(n => filtro === "todas" || (filtro === "pago" ? n.recebida : !n.recebida))
     .filter(c => !mesFiltro || c.vencimento.slice(0,7) === mesFiltro)
     .filter(c => !produtorFiltro || c.vendedorNome === produtorFiltro)
-    .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro))
+    .filter(c => !clienteFiltro || c.vendedorNome.toLowerCase().includes(clienteFiltro) || c.compradorNome.toLowerCase().includes(clienteFiltro) || c.contrato.toLowerCase().includes(clienteFiltro))
     .filter(c => !vencimentoFiltro || !c.vencimento || (vencimentoFiltro === "vencido" ? c.vencimento < hojeISO : c.vencimento >= hojeISO))
     .filter(c => !corretorFiltro || (corretorFiltro === "eu" ? c.corretorId === currentUserId : c.corretorId === corretorFiltro));
   const st = sortState.comissoes;
@@ -5193,7 +5193,7 @@ function renderComissoesPage() {
   // Remove da seleção qualquer id que não esteja mais na lista atual (filtro mudou, negócio pago, etc.)
   for (const id of [...comissoesSelecionados]) if (!list.some(c => c.id === id)) comissoesSelecionados.delete(id);
 
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="10">Nenhuma comissão encontrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.recebida;
       const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
@@ -5204,7 +5204,7 @@ function renderComissoesPage() {
       const boletoLegenda = !temBoleto ? "" : ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(stBoleto) ? "boleto pago" : stBoleto === "OVERDUE" ? "boleto vencido" : pago ? "" : "boleto aguardando";
       return `<tr>
         <td>${temBoleto ? "" : `<input type="checkbox" onchange="toggleComissaoSelecionado('${c.id}', this.checked)" ${comissoesSelecionados.has(c.id) ? "checked" : ""}>`}</td>
-        <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
+        <td style="white-space:nowrap">${escapeHtml(c.contrato || "—")}</td><td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td style="white-space:nowrap">${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
         <td>${c.pagador}</td>
         <td><span class="badge ${statusClasse}">${statusLabel}</span>${boletoLegenda ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px">${boletoLegenda}</div>` : ""}</td>
         <td style="white-space:nowrap">
@@ -5219,7 +5219,7 @@ function renderComissoesPage() {
   const emitidasLista = list.filter(c => notaEmitidaNoSistema(c.negocio));
   if (list.length > 0) {
     const totalNotas = emitidasLista.reduce((s, c) => s + c.valor, 0), nNotas = new Set(emitidasLista.map(c => c.negocio.nota_fiscal_asaas_id).filter(Boolean)).size;
-    body.insertAdjacentHTML("beforeend", `<tr style="background:var(--gold-soft);font-weight:700"><td></td><td colspan="4">Notas fiscais emitidas${nNotas ? ` (${nNotas} nota${nNotas === 1 ? "" : "s"})` : ""}</td><td style="color:var(--gold)">${fmtMoney(totalNotas)}</td><td colspan="4" style="font-weight:500;color:var(--ink-soft)">Imposto de ${IMPOSTO_NF_PCT}%: <b style="color:var(--ink)">${fmtMoney(totalNotas * IMPOSTO_NF_PCT / 100)}</b> — vira despesa automática no dia ${IMPOSTO_NF_DIA} do mês seguinte à emissão</td></tr>`);
+    body.insertAdjacentHTML("beforeend", `<tr style="background:var(--gold-soft);font-weight:700"><td></td><td colspan="5">Notas fiscais emitidas${nNotas ? ` (${nNotas} nota${nNotas === 1 ? "" : "s"})` : ""}</td><td style="color:var(--gold)">${fmtMoney(totalNotas)}</td><td colspan="4" style="font-weight:500;color:var(--ink-soft)">Imposto de ${IMPOSTO_NF_PCT}%: <b style="color:var(--ink)">${fmtMoney(totalNotas * IMPOSTO_NF_PCT / 100)}</b> — vira despesa automática no dia ${IMPOSTO_NF_DIA} do mês seguinte à emissão</td></tr>`);
   }
   sincronizarDespesaNotas();
   renderComissoesBarraSelecao(list);
@@ -5290,7 +5290,7 @@ function gerarRelatorioComissoes() {
     const statusLabel = pago ? "RECEBIDO" : vencido ? "VENCIDO" : "A RECEBER";
     const statusCor = pago ? "#2f7d32" : vencido ? "#b3261e" : "#a6741a";
     return `<tr>
-      <td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td>
+      <td style="white-space:nowrap">${escapeHtml(c.contrato || "—")}</td><td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td>
       <td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td><td>${c.pagador}</td>
       <td><span style="font-size:9.5px;font-weight:bold;color:${statusCor}">${statusLabel}</span></td>
     </tr>`;
@@ -5320,7 +5320,7 @@ function gerarRelatorioComissoes() {
   <h1>RELATÓRIO DE COMISSÕES</h1>
   <div class="sub">${clienteFiltro ? clienteFiltro : "Todos os clientes"} — emitido em ${hoje}</div>
   <table class="linhas">
-    <thead><tr><th>Data pagamento</th><th>Vencimento</th><th>Vendedor</th><th>Comprador</th><th>Valor (R$)</th><th>Volume (sc)</th><th>Pago por</th><th>Status</th></tr></thead>
+    <thead><tr><th>Contrato</th><th>Data pagamento</th><th>Vencimento</th><th>Vendedor</th><th>Comprador</th><th>Valor (R$)</th><th>Volume (sc)</th><th>Pago por</th><th>Status</th></tr></thead>
     <tbody>${linhas}</tbody>
   </table>
   <div class="resumo">
