@@ -753,7 +753,7 @@ function renderQuadroCotacoes(cot, hist, dolarRow, cfg) {
 }
 
 // ---------------- CHICAGO AO VIVO + ALERTA DE MOVIMENTO ----------------
-const FATOR_KG = { "ZSX26.CBT": 27.2155, "ZSH27.CBT": 27.2155, "ZC=F": 25.401 }; // kg por bushel
+const FATOR_KG = { "ZSX26.CBT": 27.2155, "ZSF27.CBT": 27.2155, "ZSH27.CBT": 27.2155, "ZC=F": 25.401 }; // kg por bushel
 const LIMITE_ALERTA = { Soja: 1, Milho: 1, Brent: 2, "Dólar": 0.8 }; // % no dia; avisa de novo a cada múltiplo
 const liveCharts = {};
 function fmtHora(ts) { return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
@@ -782,10 +782,10 @@ const UNIDADE_LIVE = {
   Brent: { pref: "US$ ", div: 1, un: "/barril", dec: 2 }, "Dólar": { pref: "R$ ", div: 1, un: "", dec: 3 },
   B3: { pref: "R$ ", div: 1, un: "/saca", dec: 2 },
 };
-const ORDEM_LIVE = ["ZSX26.CBT", "ZSH27.CBT", "CCM-1", "CCM-2", "BZ=F", "BRL=X"]; // Milho CBOT (ZC=F) fica só no alerta de movimento, sem cartão
+const ORDEM_LIVE = ["ZSF27.CBT", "ZSH27.CBT", "CCM-1", "CCM-2", "BZ=F", "BRL=X"]; // Milho CBOT (ZC=F) fica só no alerta de movimento e a Soja Nov/26 só no NexusConsult, sem cartão
 let ultimosIntraday = [], dadosTv = { cot: [], hist: [] };
 function renderLiveTv() {
-  const itens = ultimosIntraday.filter(i => i.codigo !== "ZC=F").sort((a, b) => ORDEM_LIVE.indexOf(a.codigo) - ORDEM_LIVE.indexOf(b.codigo));
+  const itens = ultimosIntraday.filter(i => ORDEM_LIVE.includes(i.codigo)).sort((a, b) => ORDEM_LIVE.indexOf(a.codigo) - ORDEM_LIVE.indexOf(b.codigo));
   if (!itens.length) return;
   const dolar = (ultimosIntraday.find(i => i.grupo === "Dólar") || {}).preco || 5;
   document.getElementById("liveGrid").innerHTML = itens.map((i, k) => {

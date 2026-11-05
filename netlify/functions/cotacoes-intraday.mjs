@@ -1,7 +1,8 @@
 // Preço do dia (atraso de ~15 min) e curva intradiária de Soja/Milho CBOT, Brent e dólar, pro slide "Chicago ao vivo"
 // e pro alerta de movimento da TV. Só leitura de dados públicos do Yahoo Finance — sem login, sem chave.
 const ATIVOS = [
-  { codigo: "ZSX26.CBT", nome: "Soja Nov/26", grupo: "Soja" },
+  { codigo: "ZSX26.CBT", nome: "Soja Nov/26", grupo: "Soja" }, // fica só pro NexusConsult (linha de Novembro); o cartão do Mercado ao vivo agora é Jan/27
+  { codigo: "ZSF27.CBT", nome: "Soja Jan/27", grupo: "Soja" },
   { codigo: "ZSH27.CBT", nome: "Soja Mar/27", grupo: "Soja" },
   { codigo: "ZC=F", nome: "Milho CBOT", grupo: "Milho" },
   { codigo: "BZ=F", nome: "Petróleo Brent", grupo: "Brent" },
