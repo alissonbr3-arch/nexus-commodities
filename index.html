@@ -994,7 +994,7 @@
               <thead><tr>
                 <th style="width:24px"></th>
                 <th data-sort="contrato">Contrato</th><th data-sort="data">Data pagamento</th><th data-sort="vencimento">Vencimento</th><th data-sort="vendedorNome">Vendedor</th><th data-sort="compradorNome">Comprador</th>
-                <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th data-sort="pagador">Pago por</th><th>Status</th><th></th>
+                <th data-sort="valor">Valor (R$)</th><th data-sort="volume">Volume (sc)</th><th data-sort="pagador">Pago por</th><th>Status</th><th>Obs</th><th></th>
               </tr></thead>
               <tbody id="comissoesBody"></tbody>
             </table>
@@ -5164,7 +5164,7 @@ function renderComissoesPage() {
   const todasLinhas = data.negocios.map(n => ({
     id: n.id, contrato: n.numero_contrato || "", data: n.data_pagamento || n.data || "", vencimento: dia10MesSeguinte(n.data_pagamento) || "",
     vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"),
-    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, corretorId: n.corretor_id, negocio: n,
+    valor: Number(n.comissao || 0), volume: Number(n.quantidade || 0), pagador: n.comissao_pagador || "Vendedor", recebida: !!n.comissao_recebida_em, obs: n.comissao_obs || "", corretorId: n.corretor_id, negocio: n,
   }));
   popularFiltroMes("comissoesFilterMes", todasLinhas.filter(c => c.vencimento).map(c => c.vencimento.slice(0,7)));
   const mesFiltro = document.getElementById("comissoesFilterMes").value;
@@ -5193,7 +5193,7 @@ function renderComissoesPage() {
   // Remove da seleção qualquer id que não esteja mais na lista atual (filtro mudou, negócio pago, etc.)
   for (const id of [...comissoesSelecionados]) if (!list.some(c => c.id === id)) comissoesSelecionados.delete(id);
 
-  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="11">Nenhuma comissão encontrada.</td></tr>` :
+  body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="12">Nenhuma comissão encontrada.</td></tr>` :
     list.map(c => {
       const pago = c.recebida;
       const vencido = !pago && c.vencimento && c.vencimento < hojeISO;
@@ -5207,6 +5207,7 @@ function renderComissoesPage() {
         <td style="white-space:nowrap">${escapeHtml(c.contrato || "—")}</td><td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td><td style="white-space:nowrap">${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td>
         <td>${c.pagador}</td>
         <td><span class="badge ${statusClasse}">${statusLabel}</span>${boletoLegenda ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px">${boletoLegenda}</div>` : ""}</td>
+        <td><input type="text" class="ws-reminder-input" style="width:170px" value="${escapeHtml(c.obs)}" placeholder="—" title="Observação da comissão (sai no relatório)" onblur="salvarObsComissao('${c.id}', this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"></td>
         <td style="white-space:nowrap">
           <button class="btn-edit-text" onclick="gerarReciboComissao('${c.id}')">Recibo</button>
           ${temBoleto ? `<a class="btn-edit-text" href="${c.negocio.boleto_comissao_url}" target="_blank" rel="noopener">Ver boleto</a> <button class="btn-edit-text" onclick="enviarBoletoComissao('${c.id}')">Enviar</button>` : `<button class="btn-edit-text" onclick="gerarBoletoComissao('${c.id}')">Gerar boleto</button>`}
@@ -5219,7 +5220,7 @@ function renderComissoesPage() {
   const emitidasLista = list.filter(c => notaEmitidaNoSistema(c.negocio));
   if (list.length > 0) {
     const totalNotas = emitidasLista.reduce((s, c) => s + c.valor, 0), nNotas = new Set(emitidasLista.map(c => c.negocio.nota_fiscal_asaas_id).filter(Boolean)).size;
-    body.insertAdjacentHTML("beforeend", `<tr style="background:var(--gold-soft);font-weight:700"><td></td><td colspan="5">Notas fiscais emitidas${nNotas ? ` (${nNotas} nota${nNotas === 1 ? "" : "s"})` : ""}</td><td style="color:var(--gold)">${fmtMoney(totalNotas)}</td><td colspan="4" style="font-weight:500;color:var(--ink-soft)">Imposto de ${IMPOSTO_NF_PCT}%: <b style="color:var(--ink)">${fmtMoney(totalNotas * IMPOSTO_NF_PCT / 100)}</b> — vira despesa automática no dia ${IMPOSTO_NF_DIA} do mês seguinte à emissão</td></tr>`);
+    body.insertAdjacentHTML("beforeend", `<tr style="background:var(--gold-soft);font-weight:700"><td></td><td colspan="5">Notas fiscais emitidas${nNotas ? ` (${nNotas} nota${nNotas === 1 ? "" : "s"})` : ""}</td><td style="color:var(--gold)">${fmtMoney(totalNotas)}</td><td colspan="5" style="font-weight:500;color:var(--ink-soft)">Imposto de ${IMPOSTO_NF_PCT}%: <b style="color:var(--ink)">${fmtMoney(totalNotas * IMPOSTO_NF_PCT / 100)}</b> — vira despesa automática no dia ${IMPOSTO_NF_DIA} do mês seguinte à emissão</td></tr>`);
   }
   sincronizarDespesaNotas();
   renderComissoesBarraSelecao(list);
@@ -5293,6 +5294,7 @@ function gerarRelatorioComissoes() {
       <td style="white-space:nowrap">${escapeHtml(c.contrato || "—")}</td><td>${fmtDate(c.data)}</td><td>${fmtDate(c.vencimento)}</td><td>${c.vendedorNome}</td><td>${c.compradorNome}</td>
       <td>${fmtMoney(c.valor)}</td><td>${fmtNum(c.volume)}</td><td>${c.pagador}</td>
       <td><span style="font-size:9.5px;font-weight:bold;color:${statusCor}">${statusLabel}</span></td>
+      <td>${escapeHtml(c.obs || "")}</td>
     </tr>`;
   }).join("");
 
@@ -5320,7 +5322,7 @@ function gerarRelatorioComissoes() {
   <h1>RELATÓRIO DE COMISSÕES</h1>
   <div class="sub">${clienteFiltro ? clienteFiltro : "Todos os clientes"} — emitido em ${hoje}</div>
   <table class="linhas">
-    <thead><tr><th>Contrato</th><th>Data pagamento</th><th>Vencimento</th><th>Vendedor</th><th>Comprador</th><th>Valor (R$)</th><th>Volume (sc)</th><th>Pago por</th><th>Status</th></tr></thead>
+    <thead><tr><th>Contrato</th><th>Data pagamento</th><th>Vencimento</th><th>Vendedor</th><th>Comprador</th><th>Valor (R$)</th><th>Volume (sc)</th><th>Pago por</th><th>Status</th><th>Obs</th></tr></thead>
     <tbody>${linhas}</tbody>
   </table>
   <div class="resumo">
@@ -7070,6 +7072,16 @@ async function toggleContato(cadastroId) {
   const novo = c.last_contact_date === today ? null : today;
   await sb.from("nexus_cadastros").update({ last_contact_date: novo }).eq("id", cadastroId);
   await loadCadastros(); renderWorkspace(); renderContatos();
+}
+// Observação da comissão (coluna Obs em Comissões a receber) — sai também no relatório de comissões.
+async function salvarObsComissao(negocioId, novoValor) {
+  const n = data.negocios.find(x => x.id === negocioId);
+  const v = String(novoValor || "").trim();
+  if (!n || (n.comissao_obs || "") === v) return;
+  n.comissao_obs = v || null;
+  const c = (comissoesListAtual || []).find(x => x.id === negocioId); if (c) c.obs = v;
+  const { error } = await sb.from("nexus_negocios").update({ comissao_obs: v || null }).eq("id", negocioId);
+  if (error) alert("Não consegui salvar a observação: " + error.message);
 }
 async function salvarLembreteRapido(cadastroId, novoValor) {
   const c = data.cadastros.find(x => x.id === cadastroId);
