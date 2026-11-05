@@ -769,6 +769,10 @@
           <div id="pe_milho_extras"></div>
           <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('milho')">+ Outro preço de milho disponível</button></div>
           <div class="field-row pe-linha"><div class="field"><label>Milho futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_milho_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_milho_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_milho_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div><div></div></div>
+          <div class="field-row pe-linha"><div class="field"><label>Sorgo disponível (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_sorgo_disp" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_sorgo_disp_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div></div><div></div></div>
+          <div id="pe_sorgo_extras"></div>
+          <div style="margin:-2px 0 12px"><button class="btn-ghost" onclick="precoEnvioAddExtra('sorgo')">+ Outro preço de sorgo disponível</button></div>
+          <div class="field-row pe-linha"><div class="field"><label>Sorgo futuro (R$/sc) — opcional</label><input type="number" step="0.01" id="pe_sorgo_fut" oninput="precoEnvioPrevia()"></div><div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" id="pe_sorgo_fut_obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()" title="Ex.: vejo chance de / ideia de / podendo testar"></div><div class="field"><label>Mês do futuro</label><input type="text" id="pe_sorgo_ref" placeholder="Ex.: Jul/27" oninput="precoEnvioPrevia()"></div><div></div></div>
           <datalist id="pe_quals"><option value="vejo chance de"><option value="ideia de"><option value="podendo testar"><option value="indicativo"><option value="a confirmar"></datalist>
           <div class="field"><label>Observação (opcional)</label><input type="text" id="pe_obs" placeholder="Ex.: Preços sujeitos a alteração durante o dia" oninput="precoEnvioPrevia()"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">
@@ -2715,8 +2719,9 @@ function precoEnvioPreencherForm() {
   const d = precoEnvio.dados || {};
   const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v ?? ""; };
   set("pe_soja_disp", d.soja_disp); set("pe_soja_fut", d.soja_fut); set("pe_soja_ref", d.soja_fut_ref); set("pe_soja_disp_obs", d.soja_disp_obs); set("pe_soja_fut_obs", d.soja_fut_obs); set("pe_milho_disp_obs", d.milho_disp_obs); set("pe_milho_fut_obs", d.milho_fut_obs);
-  set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref); set("pe_obs", d.obs); set("pe_texto", d.texto || PE_TEXTO_PADRAO);
-  ["soja", "milho"].forEach(g => { const box = document.getElementById(`pe_${g}_extras`); if (box && !box.contains(document.activeElement)) { box.innerHTML = ""; (d[`${g}_extras`] || []).forEach(x => precoEnvioAddExtra(g, x)); } });
+  set("pe_milho_disp", d.milho_disp); set("pe_milho_fut", d.milho_fut); set("pe_milho_ref", d.milho_fut_ref);
+  set("pe_sorgo_disp", d.sorgo_disp); set("pe_sorgo_fut", d.sorgo_fut); set("pe_sorgo_ref", d.sorgo_fut_ref); set("pe_sorgo_disp_obs", d.sorgo_disp_obs); set("pe_sorgo_fut_obs", d.sorgo_fut_obs); set("pe_obs", d.obs); set("pe_texto", d.texto || PE_TEXTO_PADRAO);
+  ["soja", "milho", "sorgo"].forEach(g => { const box = document.getElementById(`pe_${g}_extras`); if (box && !box.contains(document.activeElement)) { box.innerHTML = ""; (d[`${g}_extras`] || []).forEach(x => precoEnvioAddExtra(g, x)); } });
   const st = document.getElementById("pe_status");
   if (st) {
     if (!d.atualizado_em) st.textContent = "";
@@ -2733,7 +2738,7 @@ const PE_TEXTO_PADRAO = "{{SAUDACAO}}, {{NOME}}!\n\nPreços de hoje ({{DATA}}):\
 function precoEnvioAddExtra(grao, x = {}) {
   const box = document.getElementById(`pe_${grao}_extras`); if (!box) return;
   const row = document.createElement("div"); row.className = "field-row pe-linha pe-extra";
-  row.innerHTML = `<div class="field"><label>${grao === "soja" ? "Soja" : "Milho"} disponível (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"></div>
+  row.innerHTML = `<div class="field"><label>${grao === "soja" ? "Soja" : grao === "sorgo" ? "Sorgo" : "Milho"} disponível (R$/sc)</label><input type="number" step="0.01" class="pe-x-preco" oninput="precoEnvioPrevia()"></div>
     <div class="field"><label>Aviso antes do preço (opcional)</label><input type="text" class="pe-x-obs" list="pe_quals" placeholder="Ex.: vejo chance de" oninput="precoEnvioPrevia()"></div>
     <div class="field"><label>Pagamento (opcional)</label><input type="text" class="pe-x-rot" placeholder="Ex.: Pagamento 10/11" oninput="precoEnvioPrevia()"></div>
     <div class="field" style="align-self:end"><button class="btn-danger-text" title="Remover este preço" onclick="this.closest('.pe-extra').remove(); precoEnvioPrevia()">Remover</button></div>`;
@@ -2757,8 +2762,10 @@ function precoEnvioTemplate() {
   const extras = g => precoEnvioExtras(g).map(x => linha(`Disponível${x.rotulo ? " (" + x.rotulo + ")" : ""}`, x.preco, x.obs)); // igual ao futuro: "Disponível (Pagamento 10/11)"
   const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, ...extras("soja"), sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null].filter(Boolean);
   const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, ...extras("milho"), mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null].filter(Boolean);
-  if (!blocoSoja.length && !blocoMilho.length) return "";
-  const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const gd = precoEnvioNum("pe_sorgo_disp"), gf = precoEnvioNum("pe_sorgo_fut"), refG = (document.getElementById("pe_sorgo_ref")?.value || "").trim();
+  const blocoSorgo = [gd != null ? linha("Disponível", gd, qual("pe_sorgo_disp_obs")) : null, ...extras("sorgo"), gf != null ? linha(`Futuro${refG ? " (" + refG + ")" : ""}`, gf, qual("pe_sorgo_fut_obs")) : null].filter(Boolean);
+  if (!blocoSoja.length && !blocoMilho.length && !blocoSorgo.length) return "";
+  const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : "", blocoSorgo.length ? `*Sorgo*\n${blocoSorgo.join("\n")}` : ""].filter(Boolean).join("\n\n");
   let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
   if (!/\{\{PRECOS\}\}/.test(texto)) texto += "\n\n{{PRECOS}}"; // sem o marcador dos preços, a mensagem sairia sem preço nenhum
   return texto.replace(/\{\{DATA\}\}/g, hoje).replace(/\{\{PRECOS\}\}/g, precos).replace(/\{\{OBS\}\}/g, obs).replace(/\n{3,}/g, "\n\n").trim();
@@ -2792,8 +2799,16 @@ async function salvarPrecoEnvio() {
     milho_disp: precoEnvioNum("pe_milho_disp"), milho_fut: precoEnvioNum("pe_milho_fut"), milho_fut_ref: (document.getElementById("pe_milho_ref").value || "").trim(),
     soja_disp_obs: (document.getElementById("pe_soja_disp_obs").value || "").trim(), soja_fut_obs: (document.getElementById("pe_soja_fut_obs").value || "").trim(), milho_disp_obs: (document.getElementById("pe_milho_disp_obs").value || "").trim(), milho_fut_obs: (document.getElementById("pe_milho_fut_obs").value || "").trim(),
     soja_extras: precoEnvioExtras("soja"), milho_extras: precoEnvioExtras("milho"),
+    sorgo_disp: precoEnvioNum("pe_sorgo_disp"), sorgo_fut: precoEnvioNum("pe_sorgo_fut"), sorgo_fut_ref: (document.getElementById("pe_sorgo_ref").value || "").trim(),
+    sorgo_disp_obs: (document.getElementById("pe_sorgo_disp_obs").value || "").trim(), sorgo_fut_obs: (document.getElementById("pe_sorgo_fut_obs").value || "").trim(), sorgo_extras: precoEnvioExtras("sorgo"),
     obs: (document.getElementById("pe_obs").value || "").trim(), texto: (() => { const t = (document.getElementById("pe_texto").value || "").trim(); return t === PE_TEXTO_PADRAO ? "" : t; })(), atualizado_em: new Date().toISOString() };
-  const { error } = await sb.from("nexus_preco_whatsapp_usuario").upsert(row, { onConflict: "user_id" });
+  let { error } = await sb.from("nexus_preco_whatsapp_usuario").upsert(row, { onConflict: "user_id" });
+  // Enquanto as colunas de sorgo não existirem no banco, salva o resto e avisa (o sorgo fica só nesta tela).
+  if (error && /sorgo/i.test(error.message || "")) {
+    const semSorgo = Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith("sorgo_")));
+    ({ error } = await sb.from("nexus_preco_whatsapp_usuario").upsert(semSorgo, { onConflict: "user_id" }));
+    if (!error) { precoEnvio.dados = { ...row }; renderPrecoEnvioLista(); const st = document.getElementById("pe_status"); if (st) st.innerHTML = `<span style="color:var(--red)">Preços salvos, mas o sorgo ainda não fica gravado (falta atualizar o banco).</span>`; return; }
+  }
   if (error) { alert("Erro ao salvar os preços: " + error.message); return; }
   precoEnvio.dados = row; precoEnvioPreencherForm(); renderPrecoEnvioLista();
 }
@@ -2803,6 +2818,7 @@ function precoEnvioPuxarDoMercado() {
   const set = (id, v) => { if (v != null) document.getElementById(id).value = v; };
   set("pe_soja_disp", maior("preco_soja_disponivel")); set("pe_soja_fut", maior("preco_soja_futuro"));
   set("pe_milho_disp", maior("preco_milho_disponivel")); set("pe_milho_fut", maior("preco_milho_futuro"));
+  set("pe_sorgo_disp", maior("preco_sorgo"));
   precoEnvioPrevia();
 }
 // Carteira mostrada: por padrão só os clientes do corretor logado (campo "Responsável" do cadastro).
@@ -3062,8 +3078,43 @@ const NEGOCIO_CHECKLIST_ITENS = [
   { campo: "check_embarque_entrega", label: "Embarque/Entrega", icone: "&#128230;" },
   { campo: "check_pagamento", label: "Pagamento", icone: "&#128181;" },
 ];
+// Parcelas de pagamento do negócio (null quando é pagamento único ou carga a carga). A 1ª parcela usa o
+// check_pagamento do negócio; as demais guardam o "pago" dentro de pagamentos_extra (mesma regra da agenda).
+function negocioParcelasPagamento(n) {
+  const extras = n.pagamentos_extra || [];
+  if (!extras.length || n.pagamento_dias_apos_entrega != null) return null;
+  const completa = extras[0].data === n.data_pagamento; // extras já trazem a lista inteira (1ª repetida no campo-base)
+  const outras = extras.map((p, j) => ({ data: p.data, pago: !!p.pago, j })).slice(completa ? 1 : 0);
+  return [{ data: n.data_pagamento, pago: !!n.check_pagamento, j: null }, ...outras];
+}
+// "Pago" no checklist só quando todas as parcelas foram pagas.
+function negocioPagoTotal(n) {
+  const parcelas = negocioParcelasPagamento(n);
+  return parcelas ? parcelas.every(p => p.pago) : !!n.check_pagamento;
+}
+function negocioCheckFeito(n, campo) { return campo === "check_pagamento" ? negocioPagoTotal(n) : !!n[campo]; }
 function negocioChecklistHtml(n) {
-  return `<div class="neg-checklist">${NEGOCIO_CHECKLIST_ITENS.map(it => `<span class="neg-check-icon${n[it.campo] ? " done" : ""}" title="${it.label}${n[it.campo] ? " — feito" : " — pendente"}" onclick="toggleNegocioCheck('${n.id}','${it.campo}')">${it.icone}</span>`).join("")}</div>`;
+  return `<div class="neg-checklist">${NEGOCIO_CHECKLIST_ITENS.map(it => {
+    const feito = negocioCheckFeito(n, it.campo);
+    const parcelas = it.campo === "check_pagamento" ? negocioParcelasPagamento(n) : null;
+    const pagas = parcelas ? parcelas.filter(p => p.pago).length : 0;
+    const titulo = parcelas && !feito ? `${it.label} — ${pagas} de ${parcelas.length} parcelas pagas` : `${it.label}${feito ? " — feito" : " — pendente"}`;
+    const clique = parcelas ? `toggleNegocioPagamentoTotal('${n.id}')` : `toggleNegocioCheck('${n.id}','${it.campo}')`;
+    return `<span class="neg-check-icon${feito ? " done" : ""}" title="${titulo}" onclick="${clique}">${it.icone}</span>`;
+  }).join("")}</div>`;
+}
+// Clique no 💵 de um negócio parcelado: marca todas as parcelas como pagas (ou desmarca todas, se já estava tudo pago).
+async function toggleNegocioPagamentoTotal(id) {
+  const n = data.negocios.find(x => x.id === id);
+  if (!n) return;
+  const novo = !negocioPagoTotal(n);
+  const extras = (n.pagamentos_extra || []).map(p => { const q = { ...p }; if (novo) q.pago = true; else delete q.pago; return q; });
+  const payload = { check_pagamento: novo, pagamentos_extra: extras };
+  if (novo && NEGOCIO_CHECKLIST_ITENS.every(it => it.campo === "check_pagamento" || n[it.campo]) && n.status !== "Finalizado") payload.status = "Finalizado";
+  await sb.from("nexus_negocios").update(payload).eq("id", id);
+  await loadNegocios();
+  renderNegocios();
+  renderAgendaSemana();
 }
 async function toggleNegocioCheck(id, campo) {
   const n = data.negocios.find(x => x.id === id);
@@ -3076,7 +3127,7 @@ async function toggleNegocioCheck(id, campo) {
     payload.embarque_finalizado_em = novo ? new Date().toISOString() : null;
   }
   // Quando o último item do checklist é marcado, o negócio vira "Finalizado" sozinho.
-  const todosMarcados = NEGOCIO_CHECKLIST_ITENS.every(it => (it.campo === campo ? novo : n[it.campo]));
+  const todosMarcados = NEGOCIO_CHECKLIST_ITENS.every(it => negocioCheckFeito({ ...n, [campo]: novo }, it.campo));
   if (todosMarcados && n.status !== "Finalizado") payload.status = "Finalizado";
   await sb.from("nexus_negocios").update(payload).eq("id", id);
   await loadNegocios();
@@ -6047,7 +6098,7 @@ function gerarRelatorioProdutor() {
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const totalValor = negocios.reduce((s,n) => s + precoLiquidoNegocio(n).liquidoTotal, 0);
-  const recebidos = negocios.filter(n => n.check_pagamento).length;
+  const recebidos = negocios.filter(n => negocioPagoTotal(n)).length;
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const grupo = produtores.length > 1;
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
@@ -6070,7 +6121,7 @@ function gerarRelatorioProdutor() {
       const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
       volumeGrupo += Number(n.quantidade||0);
       valorGrupo += liquidoTotal;
-      const recebido = !!n.check_pagamento;
+      const recebido = negocioPagoTotal(n);
       const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
       const parcelas = parcelasRelatorio(n), varias = parcelas.length > 1;
       parcelas.forEach((p, i) => cronograma.push({ ...p, n, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "", recebido }));
@@ -6683,7 +6734,11 @@ async function toggleParcelaPaga(id, j) {
   if (!n || !n.pagamentos_extra || !n.pagamentos_extra[j]) return;
   const extras = n.pagamentos_extra.map((p, i) => i === j ? { ...p, pago: !p.pago } : p);
   if (!extras[j].pago) delete extras[j].pago;
-  await sb.from("nexus_negocios").update({ pagamentos_extra: extras }).eq("id", id);
+  const payload = { pagamentos_extra: extras };
+  // Última parcela paga com o resto do checklist feito: o negócio vira "Finalizado", igual ao clique no checklist.
+  const depois = { ...n, pagamentos_extra: extras };
+  if (NEGOCIO_CHECKLIST_ITENS.every(it => negocioCheckFeito(depois, it.campo)) && n.status !== "Finalizado") payload.status = "Finalizado";
+  await sb.from("nexus_negocios").update(payload).eq("id", id);
   await loadNegocios();
   renderNegocios();
   renderAgendaSemana();

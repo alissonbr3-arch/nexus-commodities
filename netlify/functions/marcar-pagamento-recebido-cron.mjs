@@ -22,8 +22,10 @@ export default async () => {
 
   const hojeISO = new Date().toISOString().slice(0, 10);
 
+  // Todos os negócios com data de pagamento vencida: os parcelados podem ter a 1ª parcela já marcada e outras
+  // ainda pendentes, então o filtro de "ainda não pago" é feito aqui, parcela a parcela.
   const pendentesResp = await fetch(
-    `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&check_pagamento=is.false&data_pagamento=not.is.null&data_pagamento=lt.${hojeISO}&select=id,numero_contrato,status,${CHECKLIST_CAMPOS.join(",")}`,
+    `${SUPABASE_URL}/rest/v1/nexus_negocios?deleted_at=is.null&data_pagamento=not.is.null&data_pagamento=lt.${hojeISO}&select=id,numero_contrato,status,data_pagamento,pagamentos_extra,pagamento_dias_apos_entrega,${CHECKLIST_CAMPOS.join(",")}&limit=5000`,
     { headers: adminHeaders }
   );
   const pendentes = await pendentesResp.json().catch(() => []);
@@ -31,8 +33,21 @@ export default async () => {
 
   const marcados = [];
   for (const n of pendentes) {
-    const todosMarcados = CHECKLIST_CAMPOS.every(campo => (campo === "check_pagamento" ? true : n[campo]));
+    const extras = Array.isArray(n.pagamentos_extra) ? n.pagamentos_extra : [];
+    // Parcelado (mesma regra do painel, negocioParcelasPagamento): a 1ª parcela é o check_pagamento, as outras
+    // ficam em pagamentos_extra. Cada parcela vencida é marcada; "Pagamento" só fica completo com todas pagas.
+    const parcelado = extras.length > 0 && n.pagamento_dias_apos_entrega == null;
+    const completa = parcelado && extras[0].data === n.data_pagamento;
+    let mudouExtras = false;
+    const novosExtras = extras.map((p, j) => {
+      if (!parcelado || (completa && j === 0) || p.pago || !p.data || p.data >= hojeISO) return p;
+      mudouExtras = true; return { ...p, pago: true };
+    });
+    if (n.check_pagamento && !mudouExtras) continue;
     const payload = { check_pagamento: true };
+    if (mudouExtras) payload.pagamentos_extra = novosExtras;
+    const pagoTotal = !parcelado || novosExtras.every((p, j) => (completa && j === 0) || p.pago);
+    const todosMarcados = pagoTotal && CHECKLIST_CAMPOS.every(campo => (campo === "check_pagamento" ? true : n[campo]));
     if (todosMarcados && n.status !== "Finalizado") payload.status = "Finalizado";
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${n.id}`, {
       method: "PATCH",
