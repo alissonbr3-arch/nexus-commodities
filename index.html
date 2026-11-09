@@ -5180,6 +5180,20 @@ function renderComissoesFilterCorretorSelect() {
 // do mês seguinte. Fica amarrada ao mês de emissão pela chave_auto (uma só por mês, sem duplicar mesmo com
 // duas pessoas com o painel aberto). Vale até o dia do vencimento: depois que passa, o valor não muda mais.
 const IMPOSTO_NF_PCT = 6, IMPOSTO_NF_DIA = 20;
+// A alíquota de cada mês fica gravada na própria despesa: no "(7,6%)" da descrição (e, de reserva, no texto das
+// observações). Padrão 6%; quem editar a despesa pode trocar a alíquota ou digitar o valor exato da guia.
+function fmtPct(p) { return Number(Number(p).toFixed(4)).toLocaleString("pt-BR", { maximumFractionDigits: 4 }); }
+function aliquotaImpostoNF(d) {
+  const num = x => Number(String(x).replace(",", "."));
+  const m1 = /\((\d+(?:[.,]\d+)?)%\)/.exec(d?.descricao || ""), m2 = /(\d+(?:[.,]\d+)?)% de R\$/.exec(d?.obs || "");
+  const p = m1 ? num(m1[1]) : m2 ? num(m2[1]) : NaN;
+  return p > 0 && p < 100 ? p : IMPOSTO_NF_PCT;
+}
+function textosImpostoNF(mes, soma, pct) {
+  const [y, m] = mes.split("-").map(Number), rotulo = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return { descricao: `Imposto sobre notas fiscais — ${rotulo} (${fmtPct(pct)}%)`, obs: `Lançada automaticamente: ${fmtPct(pct)}% de ${fmtMoney(soma)} em notas fiscais emitidas em ${rotulo}. Vence no dia ${IMPOSTO_NF_DIA}.` };
+}
+function somaNotasDoMes(mes) { return data.negocios.filter(notaEmitidaNoSistema).filter(n => String(n.nota_fiscal_emitida_em).slice(0, 7) === mes).reduce((s, n) => s + Number(n.comissao || 0), 0); }
 function notaEmitidaNoSistema(n) { return !!n.nota_fiscal_emitida_em && ["AUTHORIZED", "CANCELLATION_DENIED"].includes(n.nota_fiscal_status); }
 let sincNotasEmCurso = false, sincNotasUltimaTentativa = "";
 async function sincronizarDespesaNotas() {
@@ -5190,12 +5204,11 @@ async function sincronizarDespesaNotas() {
   const hoje = todayISO(), acoes = [];
   for (const [mes, soma] of Object.entries(porMes)) {
     const [y, m] = mes.split("-").map(Number), venc = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-${String(IMPOSTO_NF_DIA).padStart(2, "0")}`;
-    const valor = Math.round(soma * IMPOSTO_NF_PCT) / 100, chave = "imposto-nf-" + mes;
-    const existente = (data.despesas || []).find(d => d.chave_auto === chave);
-    const rotulo = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-    const obs = `Lançada automaticamente: ${IMPOSTO_NF_PCT}% de ${fmtMoney(soma)} em notas fiscais emitidas em ${rotulo}. Vence no dia ${IMPOSTO_NF_DIA}.`;
-    if (!existente && valor > 0) acoes.push({ tipo: "novo", linha: { descricao: `Imposto sobre notas fiscais — ${rotulo} (${IMPOSTO_NF_PCT}%)`, categoria: "Impostos", valor, data: venc, obs, chave_auto: chave, created_by: currentUserId } });
-    else if (existente && existente.data >= hoje && Math.abs(Number(existente.valor) - valor) > 0.004) acoes.push(valor > 0 ? { tipo: "atualiza", id: existente.id, patch: { valor, obs } } : { tipo: "apaga", id: existente.id });
+    const chave = "imposto-nf-" + mes, existente = (data.despesas || []).find(d => d.chave_auto === chave);
+    const pct = existente ? aliquotaImpostoNF(existente) : IMPOSTO_NF_PCT; // alíquota ajustada à mão vale pro mês
+    const valor = Math.round(soma * pct) / 100, { descricao, obs } = textosImpostoNF(mes, soma, pct);
+    if (!existente && valor > 0) acoes.push({ tipo: "novo", linha: { descricao, categoria: "Impostos", valor, data: venc, obs, chave_auto: chave, created_by: currentUserId } });
+    else if (existente && existente.data >= hoje && Math.abs(Number(existente.valor) - valor) > 0.05) acoes.push(valor > 0 ? { tipo: "atualiza", id: existente.id, patch: { valor, obs } } : { tipo: "apaga", id: existente.id });
   }
   if (!acoes.length) return;
   const assinatura = JSON.stringify(acoes.map(a => [a.tipo, a.id || a.linha.chave_auto, a.patch ? a.patch.valor : a.linha ? a.linha.valor : 0]));
@@ -6550,15 +6563,22 @@ document.getElementById("despesasFilterCategoria").addEventListener("change", re
 document.getElementById("despesasFilterMes").addEventListener("change", renderDespesasPage);
 document.getElementById("addDespesaBtn").addEventListener("click", () => openDespesaModal(null));
 document.getElementById("addReceitaBtn").addEventListener("click", () => openReceitaModal(null));
+let impostoNFEdit = null; // despesa automática de imposto aberta no modal: { mes, soma }
 function openDespesaModal(id) {
   const item = id ? data.despesas.find(d => d.id === id) : { descricao: "", categoria: "Outros", valor: "", data: todayISO(), obs: "" };
+  const impNF = impostoNFEdit = item.chave_auto && item.chave_auto.startsWith("imposto-nf-") ? { mes: item.chave_auto.slice(11), soma: somaNotasDoMes(item.chave_auto.slice(11)) } : null;
   document.getElementById("modalContent").innerHTML = `
     <h3>${id ? "Editar despesa" : "Nova despesa"}</h3>
     <div class="field"><label>Descrição</label><input type="text" id="f_despDescricao" value="${item.descricao || ""}" placeholder="Ex: Aluguel do escritório"></div>
     <div class="field-row">
       <div class="field"><label>Categoria</label><select id="f_despCategoria">${["Aluguel","Salários","Comissão Corretor","Combustível","Escritório","Marketing","Impostos","Outros"].map(c => `<option ${item.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
-      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="f_despValor" value="${item.valor || ""}"></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="f_despValor" value="${item.valor || ""}"${impNF ? ` oninput="impostoNFValorMudou()"` : ""}></div>
     </div>
+    ${impNF ? `<div class="field-row">
+      <div class="field"><label>Alíquota (%)</label><input type="number" step="0.01" id="f_despAliq" value="${fmtPct(aliquotaImpostoNF(item)).replace(",", ".")}" oninput="impostoNFAliqMudou()"></div>
+      <div class="field"><label>Base: notas emitidas no mês</label><input type="text" value="${fmtMoney(impNF.soma)}" disabled></div>
+    </div>
+    <div class="hint" style="margin:-4px 0 10px">Troque a alíquota (o valor recalcula) ou digite o valor exato da guia (a alíquota se ajusta). Vale só pra este mês; os próximos continuam em ${IMPOSTO_NF_PCT}%.</div>` : ""}
     <div class="field"><label>Data</label><input type="date" id="f_despData" value="${item.data || todayISO()}"></div>
     <div class="field"><label>Observações</label><textarea id="f_despObs" rows="2">${item.obs || ""}</textarea></div>
     ${id ? "" : `
@@ -6586,8 +6606,25 @@ function addMonthsISO(dataISO, meses) {
   const dt = new Date(y, m - 1 + meses, d);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
+function impostoNFAliqMudou() {
+  const pct = Number(document.getElementById("f_despAliq").value);
+  if (impostoNFEdit && pct > 0) document.getElementById("f_despValor").value = (Math.round(impostoNFEdit.soma * pct) / 100).toFixed(2);
+}
+function impostoNFValorMudou() {
+  const valor = Number(document.getElementById("f_despValor").value);
+  if (impostoNFEdit && impostoNFEdit.soma > 0 && valor > 0) document.getElementById("f_despAliq").value = Number((valor / impostoNFEdit.soma * 100).toFixed(4));
+}
 async function saveDespesa(id) {
   const payload = { descricao: v("f_despDescricao"), categoria: v("f_despCategoria"), valor: n("f_despValor"), data: v("f_despData") || todayISO(), obs: v("f_despObs"), updated_at: new Date().toISOString() };
+  // Imposto automático das notas: grava a alíquota escolhida na descrição e nas observações (é de lá que a
+  // sincronização lê o percentual do mês, então o valor ajustado não volta pra 6%).
+  if (id && impostoNFEdit && document.getElementById("f_despAliq")) {
+    const pct = Number(document.getElementById("f_despAliq").value);
+    if (!(pct > 0 && pct < 100)) { alert("Informe uma alíquota entre 0 e 100%."); return; }
+    const t = textosImpostoNF(impostoNFEdit.mes, impostoNFEdit.soma, pct);
+    payload.descricao = /\(\d+(?:[.,]\d+)?%\)/.test(payload.descricao) ? payload.descricao.replace(/\(\d+(?:[.,]\d+)?%\)/, `(${fmtPct(pct)}%)`) : t.descricao;
+    payload.obs = t.obs;
+  }
   if (!payload.descricao.trim()) { alert("Informe a descrição da despesa."); return; }
   if (id) {
     await sb.from("nexus_despesas").update(payload).eq("id", id);
