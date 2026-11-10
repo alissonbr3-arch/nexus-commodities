@@ -6229,6 +6229,8 @@ function renderRelProdutorList() {
 function onRelProdutorCheckChange(produtorId, checked) {
   if (checked) relProdutoresSelecionados.add(produtorId); else relProdutoresSelecionados.delete(produtorId);
   atualizarRelSafras();
+  // Saldos nos armazéns podem ter sido lançados por outro corretor depois que a página abriu: recarrega.
+  loadSaldosArmazem().then(atualizarRelSafras);
 }
 function atualizarRelSafras() {
   const wrap = document.getElementById("relSafrasWrap");
