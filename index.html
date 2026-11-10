@@ -15,6 +15,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="/relatorio-posicao.js"></script>
 <script>
   // Aplica o tema salvo antes do CSS pintar a página, pra não piscar o tema errado.
   (function () {
@@ -4803,44 +4804,6 @@ async function excluirSaldoArmazem(saldoId, produtorId) {
   await loadSaldosArmazem();
   rerenderSaldosArmazem(produtorId);
 }
-// Bloco "Saldo nos armazéns" do Relatório de Negócios: posição informada pelo produtor em cada
-// armazém / inscrição / grão, e um resumo por grão + safra com o que ele já vendeu com a Nexus ao lado.
-function saldosPorGraoResumo(saldos) {
-  const porGrao = {};
-  saldos.forEach(s => { porGrao[s.grao] = (porGrao[s.grao] || 0) + Number(s.quantidade || 0); });
-  return Object.entries(porGrao).map(([g, q]) => `<div class="item"><span>Saldo em armazém — ${escapeHtml(g)}</span><b>${fmtNum(q)} sc</b></div>`).join("");
-}
-function blocoSaldosArmazemRelatorio(saldos, negocios, grupo) {
-  if (!saldos.length) return "";
-  const lista = ordenarSaldos(saldos);
-  const linhas = lista.map(s => `<tr>
-    <td>${escapeHtml(nomeArmazemSaldo(s))}</td><td>${escapeHtml(fazendaSaldoLabel(s))}</td>${grupo ? `<td>${escapeHtml(nomeCadastro(s.produtor_id))}</td>` : ""}
-    <td>${escapeHtml(s.grao)}</td><td>${escapeHtml(s.safra || "—")}</td><td><b>${fmtNum(s.quantidade)}</b></td><td>${fmtDate(s.data_referencia)}</td>
-  </tr>`).join("");
-  const resumo = new Map();
-  const chave = (grao, safra) => `${grao || "—"}__${safra || ""}`;
-  for (const s of lista) {
-    const k = chave(s.grao, s.safra);
-    if (!resumo.has(k)) resumo.set(k, { grao: s.grao || "—", safra: s.safra || "", vendido: 0, saldo: 0 });
-    resumo.get(k).saldo += Number(s.quantidade || 0);
-  }
-  for (const n of negocios) {
-    const k = chave(n.grao, n.safra);
-    if (resumo.has(k)) resumo.get(k).vendido += Number(n.quantidade || 0);
-  }
-  const linhasResumo = [...resumo.values()].map(r => `<tr><td>${escapeHtml(r.grao)}</td><td>${escapeHtml(r.safra || "—")}</td><td>${fmtNum(r.vendido)}</td><td><b>${fmtNum(r.saldo)}</b></td></tr>`).join("");
-  return `
-    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">SALDO NOS ARMAZÉNS <span style="font-weight:normal;color:#555;font-size:11px">(posição informada pelo produtor, por armazém e inscrição estadual)</span></h3>
-    <table class="linhas">
-      <thead><tr><th>Armazém</th><th>Inscrição Estadual (Fazenda)</th>${grupo ? "<th>Produtor</th>" : ""}<th>Grão</th><th>Safra</th><th>Saldo (sc)</th><th>Posição em</th></tr></thead>
-      <tbody>${linhas}</tbody>
-    </table>
-    <table class="linhas" style="max-width:560px">
-      <thead><tr><th>Grão</th><th>Safra</th><th>Vendido com a Nexus (sc)</th><th>Saldo nos armazéns (sc)</th></tr></thead>
-      <tbody>${linhasResumo}</tbody>
-    </table>`;
-}
-
 function renderFazendasSectionHtml(produtorId) {
   if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para adicionar fazendas.</div>`;
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
@@ -6257,33 +6220,24 @@ function gerarRelatorioProdutor() {
   if (safraChks.length && safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
   const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||"") || (a.numero_contrato||"").localeCompare(b.numero_contrato||"", "pt-BR", { numeric: true }));
   if (negocios.length === 0 && saldos.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
+  if (typeof renderRelatorioPosicao !== "function") { alert("Não consegui carregar o modelo do relatório. Recarregue a página e tente de novo."); return; }
 
-  const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
-  const totalValor = negocios.reduce((s,n) => s + precoLiquidoNegocio(n).liquidoTotal, 0);
   const recebidos = negocios.filter(n => negocioPagoTotal(n)).length;
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const grupo = produtores.length > 1;
-  const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
-  // Divide o relatório por cultura + safra — um bloco de tabela pra cada combinação, com
-  // subtotal próprio, em vez de uma lista só misturando tudo.
+  // Divide por cultura + safra — um bloco de tabela pra cada combinação.
   const gruposCultura = new Map();
   for (const n of negocios) {
     const chave = `${n.grao || "—"}__${n.safra || "—"}`;
     if (!gruposCultura.has(chave)) gruposCultura.set(chave, { grao: n.grao || "—", safra: n.safra || "", negocios: [] });
     gruposCultura.get(chave).negocios.push(n);
   }
-  const cronograma = []; // todos os pagamentos (parcela a parcela), pra montar o cronograma em ordem de data no fim
-  const gruposCulturaOrdenados = [...gruposCultura.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
-
-  const blocos = gruposCulturaOrdenados.map(g => {
-    let volumeGrupo = 0, valorGrupo = 0;
-    const linhasGrupo = g.negocios.map(n => {
+  const cronograma = []; // todos os pagamentos (parcela a parcela), em ordem de data
+  const grupos = [...gruposCultura.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR")).map(g => ({
+    grao: g.grao, safra: g.safra,
+    negocios: g.negocios.map(n => {
       const compradorNome = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
       const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
-      volumeGrupo += Number(n.quantidade||0);
-      valorGrupo += liquidoTotal;
-      const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
       const parcelas = parcelasRelatorio(n), varias = parcelas.length > 1;
       // Cada parcela tem o seu status: recebida se já foi dada baixa nela ou se a data já passou; as de data
       // futura ficam "a receber". O contrato fica RECEBIDO (todas), RECEBIDO PARCIAL (parte) ou A RECEBER.
@@ -6291,83 +6245,31 @@ function gerarRelatorioProdutor() {
       parcelas.forEach((p, i) => { p.recebido = !varias ? pagoTotal : pagoTotal || !!(flags && flags.length === parcelas.length && flags[i].pago) || (!!p.data && p.data < hojeRel); });
       const nRec = parcelas.filter(p => p.recebido).length;
       const statusContrato = nRec === parcelas.length ? "RECEBIDO" : nRec > 0 ? "RECEBIDO PARCIAL" : "A RECEBER";
-      parcelas.forEach((p, i) => cronograma.push({ ...p, n, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "" }));
-      // Mais de um pagamento: a linha do negócio diz quantas parcelas são, e cada parcela vem logo abaixo
-      // com a sua quantidade, valor e data.
-      const linhasParcelas = varias ? parcelas.map((p, i) => `<tr style="font-size:10.5px;color:#444;background:#fafafa">
-        <td colspan="${grupo ? 4 : 3}" style="padding-left:22px">↳ ${i + 1}ª parcela${p.carga ? ` — carga recebida em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}</td>
-        <td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td></td><td>${fmtMoney(p.valor)}</td><td>${fmtDate(p.data)}</td><td>${seloRecebimento(p.recebido ? "RECEBIDO" : "A RECEBER")}</td>
-      </tr>`).join("") : "";
-      return `<tr>
-        <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${compradorNome}</td>
-        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
-        <td>${varias ? `${parcelas.length} parcelas` : fmtDate(parcelas[0].data)}</td>
-        <td>${seloRecebimento(statusContrato)}${statusContrato === "RECEBIDO PARCIAL" ? `<div style="font-size:9px;color:#555">${nRec} de ${parcelas.length} parcelas</div>` : ""}</td>
-      </tr>${linhasParcelas}`;
-    }).join("");
-    return `
-    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${g.grao.toUpperCase()}${g.safra ? " — SAFRA " + g.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${g.negocios.length} negócio${g.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
-    <table class="linhas">
-      <thead><tr><th>Contrato</th><th>Data</th>${grupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Recebimento</th></tr></thead>
-      <tbody>${linhasGrupo}</tbody>
-    </table>`;
-  }).join("");
+      parcelas.forEach((p, i) => cronograma.push({ data: p.data, contrato: n.numero_contrato, produtor: nomeCadastro(n.produtor_id), comprador: compradorNome, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "única", sacas: p.sacas, valor: p.valor, status: p.recebido ? "RECEBIDO" : "A RECEBER", estimativa: !!p.estimativa }));
+      return {
+        contrato: n.numero_contrato, data: n.data, produtor: nomeCadastro(n.produtor_id), comprador: compradorNome,
+        sacas: Number(n.quantidade || 0), precoLiquido, valorLiquido: liquidoTotal,
+        pagamento: varias ? `${parcelas.length} parcelas` : fmtDate(parcelas[0].data),
+        status: statusContrato, statusDetalhe: statusContrato === "RECEBIDO PARCIAL" ? `${nRec} de ${parcelas.length} parcelas` : "",
+        parcelas: varias ? parcelas.map((p, i) => ({ label: `${i + 1}ª parcela${p.carga ? ` — carga recebida em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}`, sacas: p.sacas, valor: p.valor, data: p.data, status: p.recebido ? "RECEBIDO" : "A RECEBER" })) : [],
+      };
+    }),
+  }));
+  cronograma.sort((a, b) => (a.data || "9999").localeCompare(b.data || "9999") || (a.contrato || "").localeCompare(b.contrato || "", "pt-BR", { numeric: true }));
 
-  cronograma.sort((a, b) => (a.data || "9999").localeCompare(b.data || "9999") || (a.n.numero_contrato || "").localeCompare(b.n.numero_contrato || "", "pt-BR", { numeric: true }));
-  const blocoCronograma = `
-    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">CRONOGRAMA DE PAGAMENTOS <span style="font-weight:normal;color:#555;font-size:11px">(${cronograma.length} pagamento${cronograma.length === 1 ? "" : "s"}, em ordem de data)</span></h3>
-    <table class="linhas">
-      <thead><tr><th>Data de Pgto</th><th>Contrato</th>${grupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Parcela</th><th>Qtd (sc)</th><th>Valor Líquido</th><th>Recebimento</th></tr></thead>
-      <tbody>${cronograma.map(p => `<tr>
-        <td><b>${fmtDate(p.data)}</b>${p.estimativa ? ` <span style="color:#555;font-size:10px">(estimativa)</span>` : ""}</td><td>${p.n.numero_contrato || "—"}</td>${grupo ? `<td>${nomeCadastro(p.n.produtor_id)}</td>` : ""}<td>${p.n.cliente_id ? nomeCadastro(p.n.cliente_id) : (p.n.contraparte || "—")}</td>
-        <td>${p.parcela || "única"}</td><td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td>${fmtMoney(p.valor)}</td>
-        <td>${seloRecebimento(p.recebido ? "RECEBIDO" : "A RECEBER")}</td>
-      </tr>`).join("")}</tbody>
-    </table>`;
-
-  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? ` — ${tipoCpfCnpj(p.cpf)} ${p.cpf}` : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
-
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios — ${grupo ? "Grupo" : produtores[0].nome}</title>
-  <style>
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
-    .head img { height: 48px; }
-    .head .info { font-size: 11px; color: #555; }
-    h1 { font-size: 15px; text-align: center; margin: 18px 0 4px; }
-    .sub { text-align: center; font-size: 12px; color: #555; margin-bottom: 18px; }
-    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
-    table.dados td.label { width: 180px; font-weight: bold; background: #f2f2f2; }
-    table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
-    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
-    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; flex-wrap: wrap; }
-    .resumo .item b { display: block; font-size: 15px; }
-    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    @media print { body { margin: 0; } @page { size: A4 landscape; } }
-  </style></head><body>
-  <img class="watermark" src="${NEXUS_LOGO}">
-  <div class="head">
-    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
-    <img src="${NEXUS_LOGO}" style="height:54px">
-  </div>
-  <h1>RELATÓRIO DE NEGÓCIOS${grupo ? " — GRUPO" : ""}</h1>
-  <div class="sub">${tituloProdutores}${safrasSelecionadas.length ? ` — Safra(s) ${safrasSelecionadas.join(", ")}` : ""} — emitido em ${hoje}</div>
-  <table class="dados">
-    ${dadosProdutores}
-  </table>
-  ${blocos}
-  ${negocios.length ? blocoCronograma : ""}
-  ${blocoSaldosArmazemRelatorio(saldos, negocios, grupo)}
-  <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
-    <div class="item"><span>Total geral — negócios no período</span><b>${negocios.length}</b></div>
-    <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
-    <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValor)}</b></div>
-    <div class="item"><span>Recebidos</span><b>${recebidos} de ${negocios.length}</b></div>
-    ${saldosPorGraoResumo(saldos)}
-  </div>
-  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
-  </body></html>`;
+  const fazendaDe = (id) => id ? data.fazendas.find(f => f.id === id) : null;
+  const html = renderRelatorioPosicao({
+    titulo: grupo ? "Posição do grupo" : "Posição do produtor",
+    subtitulo: `Relatório de negócios${safrasSelecionadas.length ? ` · Safra${safrasSelecionadas.length > 1 ? "s" : ""} ${safrasSelecionadas.join(" · ")}` : ""}`,
+    emitidoEm: todayISO(),
+    logoUrl: location.origin + "/logo-nexus-escuro.png",
+    empresa: NEXUS_EMPRESA,
+    produtores: produtores.map(p => ({ nome: p.nome, documento: p.cpf ? `${tipoCpfCnpj(p.cpf)} ${p.cpf}` : "", cidade: p.cidade })),
+    grupos, cronograma,
+    saldos: saldos.map(s => { const f = fazendaDe(s.fazenda_id); return { armazem: nomeArmazemSaldo(s), ie: f ? f.inscricao_estadual : "", fazenda: f ? f.nome : "", produtor: nomeCadastro(s.produtor_id), grao: s.grao, safra: s.safra, sacas: Number(s.quantidade || 0), data: s.data_referencia }; }),
+    resumo: negocios.length ? [{ label: "negócios recebidos", valor: `${recebidos} de ${negocios.length}` }] : [],
+    vazioNegocios: "Nenhum negócio nas safras selecionadas.",
+  });
   const win = window.open("", "_blank");
   if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
   win.document.open(); win.document.write(html); win.document.close();

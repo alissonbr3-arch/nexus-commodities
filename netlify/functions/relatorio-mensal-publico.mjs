@@ -1,4 +1,6 @@
-import { NEXUS_EMPRESA, NEXUS_LOGO, tipoCpfCnpj } from "./_confirmacao-lib.mjs";
+import { NEXUS_EMPRESA, tipoCpfCnpj } from "./_confirmacao-lib.mjs";
+// Mesmo modelo visual ("Posição") do relatório do painel: define globalThis.renderRelatorioPosicao.
+import "../../relatorio-posicao.js";
 
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 
@@ -10,10 +12,6 @@ function paginaErro(msg) {
   <body style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:80px auto;text-align:center;color:#333">
   <p style="font-size:15px">${msg}</p></body></html>`, 404);
 }
-
-function fmtDate(iso) { if (!iso) return "—"; const [y, m, d] = iso.split("-"); return `${d}/${m}/${y}`; }
-function fmtNum(n) { return Number(n || 0).toLocaleString("pt-BR"); }
-function fmtMoney(n) { return "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 // Mesma conta de preço líquido usada no resto do app.
 function aplicaFundersulFundems(comprador) {
@@ -35,64 +33,12 @@ function precoLiquidoNegocio(n, comprador, config) {
   const liquidoTotal = informado ? precoLiquido * sacas : liquidoEstimado;
   return { precoLiquido, liquidoTotal };
 }
+const arr = (x) => (Array.isArray(x) ? x : []);
+const hojeISO = () => new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10); // horário de MS
 
-function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function saldosPorGrao(saldos) {
-  const porGrao = {};
-  saldos.forEach(s => { porGrao[s.grao] = (porGrao[s.grao] || 0) + Number(s.quantidade || 0); });
-  return Object.entries(porGrao).map(([g, q]) => `<div class="item"><span>Saldo em armazém — ${esc(g)}</span><b>${fmtNum(q)} sc</b></div>`).join("");
-}
-
-// Bloco "Saldo nos armazéns" — mesmo do relatório do painel (blocoSaldosArmazemRelatorio no index.html):
-// a posição informada pelo produtor em cada armazém / inscrição estadual / grão, e um resumo por grão + safra
-// com o volume dos negócios em aberto com a Nexus ao lado.
-async function blocoSaldosArmazemHtml(saldos, negocios, isGrupo, adminHeaders, nomeProdutor) {
-  if (!saldos.length) return "";
-  const idsArmazens = [...new Set(saldos.map(s => s.armazem_id).filter(Boolean))];
-  const idsFazendas = [...new Set(saldos.map(s => s.fazenda_id).filter(Boolean))];
-  const [armazens, fazendas] = await Promise.all([
-    idsArmazens.length ? fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsArmazens.join(",")})&select=id,nome`, { headers: adminHeaders }).then(r => r.json()).catch(() => []) : [],
-    idsFazendas.length ? fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?id=in.(${idsFazendas.join(",")})&select=id,nome,inscricao_estadual`, { headers: adminHeaders }).then(r => r.json()).catch(() => []) : [],
-  ]);
-  const nomeArmazem = (s) => s.armazem_id ? ((Array.isArray(armazens) ? armazens : []).find(a => a.id === s.armazem_id)?.nome || "—") : (s.armazem_nome || "—");
-  const fazendaLabel = (s) => {
-    const f = s.fazenda_id ? (Array.isArray(fazendas) ? fazendas : []).find(x => x.id === s.fazenda_id) : null;
-    return f ? `${f.inscricao_estadual ? "IE " + f.inscricao_estadual : "Sem IE"} (${f.nome})` : "—";
-  };
-  const lista = [...saldos].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || nomeArmazem(a).localeCompare(nomeArmazem(b), "pt-BR") || fazendaLabel(a).localeCompare(fazendaLabel(b), "pt-BR"));
-  const linhas = lista.map(s => `<tr>
-    <td>${esc(nomeArmazem(s))}</td><td>${esc(fazendaLabel(s))}</td>${isGrupo ? `<td>${esc(nomeProdutor(s.produtor_id))}</td>` : ""}
-    <td>${esc(s.grao)}</td><td>${esc(s.safra || "—")}</td><td><b>${fmtNum(s.quantidade)}</b></td><td>${fmtDate(s.data_referencia)}</td>
-  </tr>`).join("");
-  const resumo = new Map();
-  const chave = (grao, safra) => `${grao || "—"}__${safra || ""}`;
-  for (const s of lista) {
-    const k = chave(s.grao, s.safra);
-    if (!resumo.has(k)) resumo.set(k, { grao: s.grao || "—", safra: s.safra || "", vendido: 0, saldo: 0 });
-    resumo.get(k).saldo += Number(s.quantidade || 0);
-  }
-  for (const n of negocios) {
-    const k = chave(n.grao, n.safra);
-    if (resumo.has(k)) resumo.get(k).vendido += Number(n.quantidade || 0);
-  }
-  const linhasResumo = [...resumo.values()].map(r => `<tr><td>${esc(r.grao)}</td><td>${esc(r.safra || "—")}</td><td>${fmtNum(r.vendido)}</td><td><b>${fmtNum(r.saldo)}</b></td></tr>`).join("");
-  return `
-    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">SALDO NOS ARMAZÉNS <span style="font-weight:normal;color:#555;font-size:11px">(posição informada pelo produtor, por armazém e inscrição estadual)</span></h3>
-    <table class="linhas">
-      <thead><tr><th>Armazém</th><th>Inscrição Estadual (Fazenda)</th>${isGrupo ? "<th>Produtor</th>" : ""}<th>Grão</th><th>Safra</th><th>Saldo (sc)</th><th>Posição em</th></tr></thead>
-      <tbody>${linhas}</tbody>
-    </table>
-    <table class="linhas" style="max-width:560px">
-      <thead><tr><th>Grão</th><th>Safra</th><th>Negócios em aberto com a Nexus (sc)</th><th>Saldo nos armazéns (sc)</th></tr></thead>
-      <tbody>${linhasResumo}</tbody>
-    </table>`;
-}
-
-// Mesmo template visual do "Relatório de Negócios" que já existe em Relatórios > Por Produtor
-// no painel (gerarRelatorioProdutor) — só que fixo nos negócios "em aberto" (Fechado/Entregue,
-// ainda não Pago), pra mandar o link por WhatsApp todo início de mês. Aceita ?id=<produtor_id>
-// (relatório de um produtor só) ou ?grupo=<grupo_id> (relatório consolidado de todo mundo do
-// mesmo grupo — ex: sócios da mesma propriedade — num único documento).
+// Relatório de Negócios em Aberto (Fechado/Entregue, ainda não Pago) + saldo nos armazéns, pra mandar o
+// link por WhatsApp todo início de mês. Aceita ?id=<produtor_id> (um produtor) ou ?grupo=<grupo_id>
+// (todo mundo do mesmo grupo — ex: sócios da mesma propriedade — num único documento).
 export default async (req) => {
   const url = new URL(req.url);
   const produtorId = url.searchParams.get("id");
@@ -102,124 +48,76 @@ export default async (req) => {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return paginaErro("Serviço indisponível no momento. Tente de novo mais tarde.");
   const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+  const get = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: adminHeaders }).then(r => (r.ok ? r.json() : [])).catch(() => []);
 
-  let produtores = [];
-  if (grupoId) {
-    const cadResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?grupo_id=eq.${encodeURIComponent(grupoId)}&select=id,nome,cpf,cidade`, { headers: adminHeaders });
-    produtores = await cadResp.json().catch(() => []);
-  } else {
-    const produtorResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=eq.${encodeURIComponent(produtorId)}&select=id,nome,cpf,cidade`, { headers: adminHeaders });
-    produtores = await produtorResp.json().catch(() => []);
-  }
-  if (!Array.isArray(produtores) || produtores.length === 0) return paginaErro("Não encontrei esse cadastro.");
+  const filtroProdutores = grupoId ? `grupo_id=eq.${encodeURIComponent(grupoId)}` : `id=eq.${encodeURIComponent(produtorId)}`;
+  const produtores = arr(await get(`nexus_cadastros?${filtroProdutores}&select=id,nome,cpf,cidade`));
+  if (produtores.length === 0) return paginaErro("Não encontrei esse cadastro.");
   const isGrupo = produtores.length > 1;
-  const idsProdutores = produtores.map(p => p.id);
+  const ids = produtores.map(p => p.id).join(",");
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
-  const [negResp, cfgResp, saldoResp] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders }),
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders }),
-    fetch(`${SUPABASE_URL}/rest/v1/nexus_saldos_armazem?produtor_id=in.(${idsProdutores.join(",")})&select=*`, { headers: adminHeaders }),
+  const [negocios, cfgRows, saldos, vendidos] = await Promise.all([
+    get(`nexus_negocios?produtor_id=in.(${ids})&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`).then(arr),
+    get(`nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`).then(arr),
+    get(`nexus_saldos_armazem?produtor_id=in.(${ids})&select=*`).then(arr),
+    // Tudo o que já foi vendido com a Nexus (qualquer status), pra barra de "comercializado" por grão/safra.
+    get(`nexus_negocios?produtor_id=in.(${ids})&deleted_at=is.null&select=grao,safra,quantidade`).then(arr),
   ]);
-  const negociosResp = await negResp.json().catch(() => []);
-  const negocios = Array.isArray(negociosResp) ? negociosResp : [];
-  const cfgRows = await cfgResp.json().catch(() => []);
   const config = cfgRows[0] || {};
-  // Saldo que o produtor informou em cada armazém / inscrição estadual / grão — vai num bloco próprio.
-  const saldosResp = saldoResp.ok ? await saldoResp.json().catch(() => []) : [];
-  const saldos = Array.isArray(saldosResp) ? saldosResp : [];
   if (negocios.length === 0 && saldos.length === 0) {
     return paginaErro(`${tituloProdutores}, ${isGrupo ? "vocês não têm" : "você não tem"} nenhum negócio em aberto no momento.`);
   }
 
-  const nomeProdutor = (n) => produtores.find(p => p.id === n.produtor_id)?.nome || "—";
+  const idsCadastros = [...new Set([...negocios.map(n => n.cliente_id), ...saldos.map(s => s.armazem_id)].filter(Boolean))];
+  const idsFazendas = [...new Set(saldos.map(s => s.fazenda_id).filter(Boolean))];
+  const [cadastros, fazendas] = await Promise.all([
+    idsCadastros.length ? get(`nexus_cadastros?id=in.(${idsCadastros.join(",")})&select=id,nome,categoria_comprador`).then(arr) : [],
+    idsFazendas.length ? get(`nexus_fazendas?id=in.(${idsFazendas.join(",")})&select=id,nome,inscricao_estadual`).then(arr) : [],
+  ]);
+  const cadastro = (id) => (id ? cadastros.find(c => c.id === id) : null);
+  const nomeProdutor = (id) => produtores.find(p => p.id === id)?.nome || "—";
 
-  const idsCompradores = [...new Set(negocios.map(n => n.cliente_id).filter(Boolean))];
-  let compradores = [];
-  if (idsCompradores.length) {
-    const compResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsCompradores.join(",")})&select=id,nome,categoria_comprador`, { headers: adminHeaders });
-    compradores = await compResp.json().catch(() => []);
-  }
-  const compradorDe = (n) => n.cliente_id ? compradores.find(c => c.id === n.cliente_id) : null;
-  const nomeComprador = (n) => compradorDe(n)?.nome || n.contraparte || "—";
-
-  const blocoSaldos = await blocoSaldosArmazemHtml(saldos, negocios, isGrupo, adminHeaders, (id) => produtores.find(p => p.id === id)?.nome || "—");
-
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
-  let totalVolume = 0, totalValorLiquido = 0;
-
-  // Divide o relatório por cultura + safra — um bloco de tabela pra cada combinação, com
-  // subtotal próprio, em vez de uma lista só misturando tudo.
-  const grupos = new Map();
+  const gruposMap = new Map();
   for (const n of negocios) {
     const chave = `${n.grao || "—"}__${n.safra || "—"}`;
-    if (!grupos.has(chave)) grupos.set(chave, { grao: n.grao || "—", safra: n.safra || "", negocios: [] });
-    grupos.get(chave).negocios.push(n);
+    if (!gruposMap.has(chave)) gruposMap.set(chave, { grao: n.grao || "—", safra: n.safra || "", negocios: [] });
+    gruposMap.get(chave).negocios.push(n);
   }
-  const gruposOrdenados = [...grupos.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
+  const cronograma = [];
+  const grupos = [...gruposMap.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR")).map(g => ({
+    grao: g.grao, safra: g.safra,
+    negocios: g.negocios.map(n => {
+      const comprador = cadastro(n.cliente_id);
+      const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n, comprador, config);
+      const nomeComprador = comprador?.nome || n.contraparte || "—";
+      const status = (n.status || "—").toUpperCase();
+      if (n.data_pagamento) cronograma.push({ data: n.data_pagamento, contrato: n.numero_contrato, produtor: nomeProdutor(n.produtor_id), comprador: nomeComprador, parcela: "única", sacas: n.quantidade, valor: liquidoTotal, status: "A RECEBER" });
+      return {
+        contrato: n.numero_contrato, data: n.data, produtor: nomeProdutor(n.produtor_id), comprador: nomeComprador,
+        sacas: Number(n.quantidade || 0), precoLiquido, valorLiquido: liquidoTotal,
+        pagamento: n.data_pagamento ? n.data_pagamento.split("-").reverse().join("/") : "", status, parcelas: [],
+      };
+    }),
+  }));
+  cronograma.sort((a, b) => (a.data || "").localeCompare(b.data || ""));
 
-  const blocos = gruposOrdenados.map(grupo => {
-    let volumeGrupo = 0, valorGrupo = 0;
-    const linhasGrupo = grupo.negocios.map(n => {
-      const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n, compradorDe(n), config);
-      volumeGrupo += Number(n.quantidade || 0);
-      valorGrupo += liquidoTotal;
-      totalVolume += Number(n.quantidade || 0);
-      totalValorLiquido += liquidoTotal;
-      const produtorCol = isGrupo ? `<td>${nomeProdutor(n)}</td>` : "";
-      return `<tr>
-        <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${nomeComprador(n)}</td>
-        <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
-        <td>${fmtDate(n.data_pagamento)}</td>
-        <td><span style="font-size:9.5px;font-weight:bold;color:#a6741a">${(n.status || "—").toUpperCase()}</span></td>
-      </tr>`;
-    }).join("");
-    return `
-    <h3 style="font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">${grupo.grao.toUpperCase()}${grupo.safra ? " — SAFRA " + grupo.safra : ""} <span style="font-weight:normal;color:#555;font-size:11px">(${grupo.negocios.length} negócio${grupo.negocios.length === 1 ? "" : "s"} · ${fmtNum(volumeGrupo)} sc · ${fmtMoney(valorGrupo)} líquido)</span></h3>
-    <table class="linhas">
-      <thead><tr><th>Contrato</th><th>Data</th>${isGrupo ? "<th>Produtor</th>" : ""}<th>Comprador</th><th>Qtd (sc)</th><th>Preço Líquido (R$/sc)</th><th>Valor Líquido</th><th>Data de Pgto</th><th>Status</th></tr></thead>
-      <tbody>${linhasGrupo}</tbody>
-    </table>`;
-  }).join("");
-
-  const dadosProdutores = produtores.map(p => `<tr><td class="label">Produtor</td><td>${p.nome}${p.cpf ? ` — ${tipoCpfCnpj(p.cpf)} ${p.cpf}` : ""}${p.cidade ? " — " + p.cidade : ""}</td></tr>`).join("");
-
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Negócios em Aberto — ${isGrupo ? "Grupo" : produtores[0].nome}</title>
-  <style>
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; max-width: 1000px; margin: 30px auto; line-height: 1.4; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-bottom: 18px; }
-    .head img { height: 48px; }
-    .head .info { font-size: 11px; color: #555; }
-    h1 { font-size: 15px; text-align: center; margin: 18px 0 4px; }
-    .sub { text-align: center; font-size: 12px; color: #555; margin-bottom: 18px; }
-    table.dados { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    table.dados td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; }
-    table.dados td.label { width: 180px; font-weight: bold; background: #f2f2f2; }
-    table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
-    table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
-    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; flex-wrap: wrap; }
-    .resumo .item b { display: block; font-size: 15px; }
-    @media print { body { margin: 0; } @page { size: A4 landscape; } }
-  </style></head><body>
-  <div class="head">
-    <div><strong style="font-size:15px">${NEXUS_EMPRESA.nome}</strong><div class="info">${NEXUS_EMPRESA.endereco}<br>${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}</div></div>
-    <img src="${NEXUS_LOGO}" style="height:54px">
-  </div>
-  <h1>RELATÓRIO DE NEGÓCIOS EM ABERTO${isGrupo ? " — GRUPO" : ""}</h1>
-  <div class="sub">${tituloProdutores} — emitido em ${hoje}</div>
-  <table class="dados">
-    ${dadosProdutores}
-  </table>
-  ${blocos || `<p style="color:#555">${isGrupo ? "Vocês não têm" : "Você não tem"} nenhum negócio em aberto com a Nexus no momento.</p>`}
-  ${blocoSaldos}
-  <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
-    <div class="item"><span>Total geral — negócios em aberto</span><b>${negocios.length}</b></div>
-    <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
-    <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValorLiquido)}</b></div>
-    ${saldosPorGrao(saldos)}
-  </div>
-  <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
-  </body></html>`;
+  const html = globalThis.renderRelatorioPosicao({
+    titulo: isGrupo ? "Posição do grupo" : "Posição do produtor",
+    subtitulo: "Negócios em aberto com a Nexus e saldo nos armazéns",
+    emitidoEm: hojeISO(),
+    logoUrl: `${url.origin}/logo-nexus-escuro.png`,
+    empresa: NEXUS_EMPRESA,
+    produtores: produtores.map(p => ({ nome: p.nome, documento: p.cpf ? `${tipoCpfCnpj(p.cpf)} ${p.cpf}` : "", cidade: p.cidade })),
+    grupos, cronograma,
+    vendidoTotal: vendidos.map(v => ({ grao: v.grao, safra: v.safra, sacas: Number(v.quantidade || 0) })),
+    tituloCronograma: "Pagamentos previstos",
+    saldos: saldos.map(s => {
+      const f = s.fazenda_id ? fazendas.find(x => x.id === s.fazenda_id) : null;
+      return { armazem: s.armazem_id ? (cadastro(s.armazem_id)?.nome || "—") : (s.armazem_nome || "—"), ie: f?.inscricao_estadual || "", fazenda: f?.nome || "", produtor: nomeProdutor(s.produtor_id), grao: s.grao, safra: s.safra, sacas: Number(s.quantidade || 0), data: s.data_referencia };
+    }),
+    resumo: negocios.length ? [{ label: "negócios em aberto", valor: String(negocios.length) }] : [],
+    vazioNegocios: `${isGrupo ? "Vocês não têm" : "Você não tem"} nenhum negócio em aberto com a Nexus no momento.`,
+  });
   return htmlResponse(html);
 };
