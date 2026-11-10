@@ -123,7 +123,7 @@
   .sheet { width:1123px; max-width:100%; min-height:794px; margin:24px auto; background:#fff; display:grid; grid-template-columns:240px minmax(0,1fr); box-shadow:0 10px 40px -12px rgba(0,0,0,.35) }
   aside { background:var(--graphite); color:#d9dbe0; padding:28px 22px; display:flex; flex-direction:column; gap:20px; position:relative }
   aside::after { content:""; position:absolute; top:0; right:0; bottom:0; width:4px; background:linear-gradient(180deg,var(--gold-1),var(--gold-3)) }
-  aside img { width:160px }
+  aside img { display:block; width:170px; max-width:100%; margin:0 auto 4px; position:relative; left:-2px } /* centralizada na faixa preta (descontando o filete dourado de 4px) */
   .lbl { font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#8b8f99; margin-bottom:3px }
   .val { font-size:13.5px; font-weight:600; color:#fff; line-height:1.3; margin-bottom:4px }
   .val small { display:block; font-family:"IBM Plex Mono",monospace; font-weight:400; font-size:10px; color:#a9adb6 }
