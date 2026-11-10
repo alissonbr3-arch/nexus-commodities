@@ -1327,6 +1327,8 @@ function fmtNum(n) { return Number(n||0).toLocaleString("pt-BR"); }
 // Confirmação — "DATA DE PAGAMENTO" pra primeira, "DATA DE PAGAMENTO (Nª PARC)" pra cada
 // extra, sem sinal de "+". A quantidade da 1ª parcela só aparece quando existem parcelas
 // extras (senão fica igual a antes, uma parcela só, sem duplicar a linha QUANTIDADE).
+// Selo de recebimento do relatório do produtor: verde = recebido, azul = recebido parcial, dourado = a receber.
+function seloRecebimento(st) { const cor = st === "RECEBIDO" ? "#2f7d32" : st === "RECEBIDO PARCIAL" ? "#1f5f99" : "#a6741a"; return `<span style="font-size:9.5px;font-weight:bold;color:${cor}">${st}</span>`; }
 function quantidadePrimeiraParcela(n) {
   const somaSacasExtras = (n.pagamentos_extra || []).filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
   return Math.max(0, Number(n.quantidade || 0) - somaSacasExtras);
@@ -6134,21 +6136,26 @@ function gerarRelatorioProdutor() {
       const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
       volumeGrupo += Number(n.quantidade||0);
       valorGrupo += liquidoTotal;
-      const recebido = negocioPagoTotal(n);
       const produtorCol = grupo ? `<td>${nomeCadastro(n.produtor_id)}</td>` : "";
       const parcelas = parcelasRelatorio(n), varias = parcelas.length > 1;
-      parcelas.forEach((p, i) => cronograma.push({ ...p, n, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "", recebido }));
+      // Cada parcela tem o seu status: recebida se já foi dada baixa nela ou se a data já passou; as de data
+      // futura ficam "a receber". O contrato fica RECEBIDO (todas), RECEBIDO PARCIAL (parte) ou A RECEBER.
+      const pagoTotal = negocioPagoTotal(n), flags = negocioParcelasPagamento(n), hojeRel = todayISO();
+      parcelas.forEach((p, i) => { p.recebido = !varias ? pagoTotal : pagoTotal || !!(flags && flags.length === parcelas.length && flags[i].pago) || (!!p.data && p.data < hojeRel); });
+      const nRec = parcelas.filter(p => p.recebido).length;
+      const statusContrato = nRec === parcelas.length ? "RECEBIDO" : nRec > 0 ? "RECEBIDO PARCIAL" : "A RECEBER";
+      parcelas.forEach((p, i) => cronograma.push({ ...p, n, parcela: varias ? `${i + 1}ª de ${parcelas.length}` : "" }));
       // Mais de um pagamento: a linha do negócio diz quantas parcelas são, e cada parcela vem logo abaixo
       // com a sua quantidade, valor e data.
       const linhasParcelas = varias ? parcelas.map((p, i) => `<tr style="font-size:10.5px;color:#444;background:#fafafa">
         <td colspan="${grupo ? 4 : 3}" style="padding-left:22px">↳ ${i + 1}ª parcela${p.carga ? ` — carga recebida em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}</td>
-        <td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td></td><td>${fmtMoney(p.valor)}</td><td>${fmtDate(p.data)}</td><td></td>
+        <td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td></td><td>${fmtMoney(p.valor)}</td><td>${fmtDate(p.data)}</td><td>${seloRecebimento(p.recebido ? "RECEBIDO" : "A RECEBER")}</td>
       </tr>`).join("") : "";
       return `<tr>
         <td>${n.numero_contrato || "—"}</td><td>${fmtDate(n.data)}</td>${produtorCol}<td>${compradorNome}</td>
         <td>${fmtNum(n.quantidade)}</td><td>${fmtMoney(precoLiquido)}</td><td>${fmtMoney(liquidoTotal)}</td>
         <td>${varias ? `${parcelas.length} parcelas` : fmtDate(parcelas[0].data)}</td>
-        <td><span style="font-size:9.5px;font-weight:bold;color:${recebido?"#2f7d32":"#a6741a"}">${recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
+        <td>${seloRecebimento(statusContrato)}${statusContrato === "RECEBIDO PARCIAL" ? `<div style="font-size:9px;color:#555">${nRec} de ${parcelas.length} parcelas</div>` : ""}</td>
       </tr>${linhasParcelas}`;
     }).join("");
     return `
@@ -6167,7 +6174,7 @@ function gerarRelatorioProdutor() {
       <tbody>${cronograma.map(p => `<tr>
         <td><b>${fmtDate(p.data)}</b>${p.estimativa ? ` <span style="color:#555;font-size:10px">(estimativa)</span>` : ""}</td><td>${p.n.numero_contrato || "—"}</td>${grupo ? `<td>${nomeCadastro(p.n.produtor_id)}</td>` : ""}<td>${p.n.cliente_id ? nomeCadastro(p.n.cliente_id) : (p.n.contraparte || "—")}</td>
         <td>${p.parcela || "única"}</td><td>${p.sacas != null ? fmtNum(p.sacas) : "—"}</td><td>${fmtMoney(p.valor)}</td>
-        <td><span style="font-size:9.5px;font-weight:bold;color:${p.recebido?"#2f7d32":"#a6741a"}">${p.recebido ? "RECEBIDO" : "A RECEBER"}</span></td>
+        <td>${seloRecebimento(p.recebido ? "RECEBIDO" : "A RECEBER")}</td>
       </tr>`).join("")}</tbody>
     </table>`;
 
