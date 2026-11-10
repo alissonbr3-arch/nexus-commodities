@@ -1419,7 +1419,7 @@ function onCpfCnpjInput(id) {
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], saldosArmazem: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "mes";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1470,7 +1470,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadSaldosArmazem(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
   renderAll();
   navRestaurar();
   wireRealtime();
@@ -1499,6 +1499,7 @@ async function loadConfig() { const { data: row, error } = await sb.from("nexus_
 async function loadInvestimentos() { const { data: rows, error } = await sb.from("nexus_investimentos").select("*").order("data_compra", { ascending: false }); if (!error) data.investimentos = rows || []; }
 async function loadIntencoes() { const { data: rows, error } = await sb.from("nexus_intencoes").select("*").order("created_at", { ascending: false }); if (!error) data.intencoes = rows || []; }
 async function loadFazendas() { const { data: rows, error } = await sb.from("nexus_fazendas").select("*").order("nome"); if (!error) data.fazendas = rows || []; }
+async function loadSaldosArmazem() { const { data: rows, error } = await sb.from("nexus_saldos_armazem").select("*").order("grao"); if (!error) data.saldosArmazem = rows || []; }
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
@@ -4705,6 +4706,141 @@ async function criarAcessoCliente(cadastroId) {
     msg.style.color = "var(--red)"; msg.textContent = "Erro de conexão ao criar o acesso.";
   }
 }
+// ---------------- SALDO NOS ARMAZÉNS ----------------
+// O produtor informa quanto tem guardado em cada armazém, por inscrição estadual (fazenda), grão e safra.
+// Uma linha por combinação armazém + IE + grão + safra: informar de novo substitui o saldo anterior
+// (fica sempre a posição mais recente, com a data em que foi informada).
+const GRAOS_SALDO = ["Soja", "Milho", "Sorgo"];
+let saldoArmazemEditandoId = null;
+function nomeArmazemSaldo(s) { return s.armazem_id ? nomeCadastro(s.armazem_id) : (s.armazem_nome || "—"); }
+function fazendaSaldoLabel(s) {
+  const f = s.fazenda_id ? data.fazendas.find(x => x.id === s.fazenda_id) : null;
+  if (!f) return "—";
+  return `${f.inscricao_estadual ? "IE " + f.inscricao_estadual : "Sem IE"} (${f.nome})`;
+}
+function ordenarSaldos(lista) {
+  return [...lista].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || nomeArmazemSaldo(a).localeCompare(nomeArmazemSaldo(b), "pt-BR") || fazendaSaldoLabel(a).localeCompare(fazendaSaldoLabel(b), "pt-BR"));
+}
+function renderSaldosArmazemSectionHtml(produtorId) {
+  if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para informar os saldos nos armazéns.</div>`;
+  const saldos = ordenarSaldos(data.saldosArmazem.filter(s => s.produtor_id === produtorId));
+  const editando = saldoArmazemEditandoId ? saldos.find(s => s.id === saldoArmazemEditandoId) : null;
+  const e = editando || { armazem_id: "", armazem_nome: "", fazenda_id: "", grao: "Soja", safra: "", quantidade: "", data_referencia: todayISO() };
+  const armazens = data.cadastros.filter(c => c.tipo === "Armazém");
+  const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
+  const outro = !!e.armazem_nome && !e.armazem_id;
+  const safras = [...new Set([...data.negocios.map(x => x.safra), ...data.saldosArmazem.map(x => x.safra)].filter(Boolean))].sort().reverse();
+  const totais = {};
+  saldos.forEach(s => { const k = `${s.grao}${s.safra ? " " + s.safra : ""}`; totais[k] = (totais[k] || 0) + Number(s.quantidade || 0); });
+  const lista = saldos.length === 0 ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px">Nenhum saldo informado ainda.</div>` :
+    saldos.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card-alt);border-radius:7px;padding:7px 10px;margin-bottom:6px;font-size:12.5px${s.id === saldoArmazemEditandoId ? ";outline:2px solid var(--gold, #b8860b)" : ""}">
+      <span><b>${escapeHtml(s.grao)}${s.safra ? " " + escapeHtml(s.safra) : ""}</b> — ${fmtNum(s.quantidade)} sc · ${escapeHtml(nomeArmazemSaldo(s))} · ${escapeHtml(fazendaSaldoLabel(s))} <span style="color:var(--ink-soft);font-size:11px">· posição em ${fmtDate(s.data_referencia)}</span></span>
+      <span style="white-space:nowrap"><button type="button" class="btn-edit-text" style="padding:2px 6px" onclick="editarSaldoArmazem('${s.id}','${produtorId}')">Editar</button><button type="button" class="btn-danger-text" style="padding:2px 6px" onclick="excluirSaldoArmazem('${s.id}','${produtorId}')">Excluir</button></span>
+    </div>`).join("") + `<div style="font-size:11.5px;color:var(--ink-soft);margin:2px 0 8px">Total: ${Object.entries(totais).map(([k, q]) => `<b>${escapeHtml(k)}</b> ${fmtNum(q)} sc`).join(" · ")}</div>`;
+  return `${lista}
+    <div class="field-row" style="margin-top:6px">
+      <div class="field"><select id="f_saldoArmazem" onchange="document.getElementById('f_saldoArmazemNome').style.display = this.value === '__outro' ? '' : 'none'">
+        <option value="">— Armazém —</option>
+        ${armazens.map(a => `<option value="${a.id}" ${e.armazem_id === a.id ? "selected" : ""}>${escapeHtml(a.nome)}</option>`).join("")}
+        <option value="__outro" ${outro ? "selected" : ""}>Outro (não cadastrado)…</option>
+      </select>
+      <input type="text" id="f_saldoArmazemNome" placeholder="Nome do armazém" value="${escapeHtml(e.armazem_nome || "")}" style="margin-top:6px;${outro ? "" : "display:none"}"></div>
+      <div class="field"><select id="f_saldoFazenda">
+        <option value="">— Inscrição estadual —</option>
+        ${fazendas.map(f => `<option value="${f.id}" ${e.fazenda_id === f.id ? "selected" : ""}>${f.inscricao_estadual ? "IE " + escapeHtml(f.inscricao_estadual) : "Sem IE"} — ${escapeHtml(f.nome)}</option>`).join("")}
+      </select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><select id="f_saldoGrao">${GRAOS_SALDO.map(g => `<option ${e.grao === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
+      <div class="field"><input type="text" id="f_saldoSafra" list="f_saldoSafraList" placeholder="Safra (ex: 2025/2026)" value="${escapeHtml(e.safra || "")}"><datalist id="f_saldoSafraList">${safras.map(s => `<option value="${escapeHtml(s)}">`).join("")}</datalist></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><input type="number" id="f_saldoQtd" placeholder="Saldo (sacas)" value="${e.quantidade ?? ""}"></div>
+      <div class="field"><input type="date" id="f_saldoData" value="${e.data_referencia || todayISO()}" title="Data em que o produtor informou esse saldo"></div>
+    </div>
+    <button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="salvarSaldoArmazem('${produtorId}')">${editando ? "Salvar alteração" : "+ Informar saldo"}</button>
+    ${editando ? `<button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="editarSaldoArmazem(null,'${produtorId}')">Cancelar</button>` : ""}
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:6px">Informar de novo o mesmo armazém + inscrição + grão + safra atualiza o saldo (fica sempre a posição mais recente). Aparece no Relatório de Negócios do produtor.</div>`;
+}
+function rerenderSaldosArmazem(produtorId) {
+  const el = document.getElementById("saldosArmazemSection");
+  if (el) el.innerHTML = renderSaldosArmazemSectionHtml(produtorId);
+}
+function editarSaldoArmazem(saldoId, produtorId) {
+  saldoArmazemEditandoId = saldoId || null;
+  rerenderSaldosArmazem(produtorId);
+}
+async function salvarSaldoArmazem(produtorId) {
+  const armSel = v("f_saldoArmazem");
+  const armazem_id = armSel && armSel !== "__outro" ? armSel : null;
+  const armazem_nome = armSel === "__outro" ? v("f_saldoArmazemNome") : null;
+  if (!armazem_id && !armazem_nome) { alert("Escolha o armazém (ou digite o nome, em \"Outro\")."); return; }
+  const qtdTxt = v("f_saldoQtd");
+  if (qtdTxt === "" || Number(qtdTxt) < 0) { alert("Informe o saldo em sacas."); return; }
+  const payload = {
+    produtor_id: produtorId, armazem_id, armazem_nome, fazenda_id: v("f_saldoFazenda") || null,
+    grao: v("f_saldoGrao"), safra: v("f_saldoSafra") || null, quantidade: Number(qtdTxt),
+    data_referencia: v("f_saldoData") || todayISO(), updated_at: new Date().toISOString(),
+  };
+  // Mesmo armazém + IE + grão + safra já informado antes: atualiza a posição em vez de duplicar.
+  const mesmaChave = (s) => s.produtor_id === produtorId && (s.armazem_id || null) === armazem_id && (armazem_id || (s.armazem_nome || "").trim().toLowerCase() === (armazem_nome || "").trim().toLowerCase())
+    && (s.fazenda_id || null) === payload.fazenda_id && s.grao === payload.grao && (s.safra || null) === payload.safra;
+  const existente = saldoArmazemEditandoId ? data.saldosArmazem.find(s => s.id === saldoArmazemEditandoId) : data.saldosArmazem.find(mesmaChave);
+  const { error } = existente
+    ? await sb.from("nexus_saldos_armazem").update(payload).eq("id", existente.id)
+    : await sb.from("nexus_saldos_armazem").insert([payload]);
+  if (error) { alert("Não consegui salvar o saldo: " + error.message); return; }
+  saldoArmazemEditandoId = null;
+  await loadSaldosArmazem();
+  rerenderSaldosArmazem(produtorId);
+}
+async function excluirSaldoArmazem(saldoId, produtorId) {
+  const ok = await askConfirm("Excluir este saldo de armazém?");
+  if (!ok) return;
+  const { error } = await sb.from("nexus_saldos_armazem").delete().eq("id", saldoId);
+  if (error) { alert("Não consegui excluir: " + error.message); return; }
+  if (saldoArmazemEditandoId === saldoId) saldoArmazemEditandoId = null;
+  await loadSaldosArmazem();
+  rerenderSaldosArmazem(produtorId);
+}
+// Bloco "Saldo nos armazéns" do Relatório de Negócios: posição informada pelo produtor em cada
+// armazém / inscrição / grão, e um resumo por grão + safra com o que ele já vendeu com a Nexus ao lado.
+function saldosPorGraoResumo(saldos) {
+  const porGrao = {};
+  saldos.forEach(s => { porGrao[s.grao] = (porGrao[s.grao] || 0) + Number(s.quantidade || 0); });
+  return Object.entries(porGrao).map(([g, q]) => `<div class="item"><span>Saldo em armazém — ${escapeHtml(g)}</span><b>${fmtNum(q)} sc</b></div>`).join("");
+}
+function blocoSaldosArmazemRelatorio(saldos, negocios, grupo) {
+  if (!saldos.length) return "";
+  const lista = ordenarSaldos(saldos);
+  const linhas = lista.map(s => `<tr>
+    <td>${escapeHtml(nomeArmazemSaldo(s))}</td><td>${escapeHtml(fazendaSaldoLabel(s))}</td>${grupo ? `<td>${escapeHtml(nomeCadastro(s.produtor_id))}</td>` : ""}
+    <td>${escapeHtml(s.grao)}</td><td>${escapeHtml(s.safra || "—")}</td><td><b>${fmtNum(s.quantidade)}</b></td><td>${fmtDate(s.data_referencia)}</td>
+  </tr>`).join("");
+  const resumo = new Map();
+  const chave = (grao, safra) => `${grao || "—"}__${safra || ""}`;
+  for (const s of lista) {
+    const k = chave(s.grao, s.safra);
+    if (!resumo.has(k)) resumo.set(k, { grao: s.grao || "—", safra: s.safra || "", vendido: 0, saldo: 0 });
+    resumo.get(k).saldo += Number(s.quantidade || 0);
+  }
+  for (const n of negocios) {
+    const k = chave(n.grao, n.safra);
+    if (resumo.has(k)) resumo.get(k).vendido += Number(n.quantidade || 0);
+  }
+  const linhasResumo = [...resumo.values()].map(r => `<tr><td>${escapeHtml(r.grao)}</td><td>${escapeHtml(r.safra || "—")}</td><td>${fmtNum(r.vendido)}</td><td><b>${fmtNum(r.saldo)}</b></td></tr>`).join("");
+  return `
+    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">SALDO NOS ARMAZÉNS <span style="font-weight:normal;color:#555;font-size:11px">(posição informada pelo produtor, por armazém e inscrição estadual)</span></h3>
+    <table class="linhas">
+      <thead><tr><th>Armazém</th><th>Inscrição Estadual (Fazenda)</th>${grupo ? "<th>Produtor</th>" : ""}<th>Grão</th><th>Safra</th><th>Saldo (sc)</th><th>Posição em</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <table class="linhas" style="max-width:560px">
+      <thead><tr><th>Grão</th><th>Safra</th><th>Vendido com a Nexus (sc)</th><th>Saldo nos armazéns (sc)</th></tr></thead>
+      <tbody>${linhasResumo}</tbody>
+    </table>`;
+}
+
 function renderFazendasSectionHtml(produtorId) {
   if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para adicionar fazendas.</div>`;
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
@@ -4931,6 +5067,7 @@ function openContatoModal(id) {
       <div class="field"><label>Funrural padrão (como esse produtor recolhe)</label><select id="f_funruralFormaPadrao"><option value="">— Perguntar em cada negócio —</option><option ${item.funrural_forma_padrao==="Comercialização"?"selected":""}>Comercialização</option><option ${item.funrural_forma_padrao==="Folha de Pagamento"?"selected":""}>Folha de Pagamento</option></select></div>
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
       <div class="field"><label>Fazendas</label><div id="fazendasSection">${renderFazendasSectionHtml(id)}</div></div>
+      <div class="field"><label>Saldo nos armazéns (informado pelo produtor)</label><div id="saldosArmazemSection">${(saldoArmazemEditandoId = null, renderSaldosArmazemSectionHtml(id))}</div></div>
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
@@ -6098,7 +6235,12 @@ function atualizarRelSafras() {
   const btn = document.getElementById("relGerarBtn");
   if (relProdutoresSelecionados.size === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Selecione um ou mais produtores."; btn.disabled = true; return; }
   const safras = [...new Set(data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id)).map(n => n.safra).filter(Boolean))].sort();
-  if (safras.length === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Nenhum negócio registrado para os produtores selecionados ainda."; btn.disabled = true; return; }
+  if (safras.length === 0) {
+    const temSaldo = data.saldosArmazem.some(s => relProdutoresSelecionados.has(s.produtor_id));
+    wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px";
+    wrap.innerHTML = temSaldo ? "Nenhum negócio registrado ainda — o relatório sai só com o saldo nos armazéns." : "Nenhum negócio registrado para os produtores selecionados ainda.";
+    btn.disabled = !temSaldo; return;
+  }
   wrap.className = ""; wrap.style.cssText = "";
   wrap.innerHTML = safras.map(s => `<label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;margin-bottom:6px;font-size:12.5px"><input type="checkbox" class="rel-safra-chk" value="${s}" checked> ${s}</label>`).join("");
   btn.disabled = false;
@@ -6106,10 +6248,13 @@ function atualizarRelSafras() {
 function gerarRelatorioProdutor() {
   const produtores = data.cadastros.filter(c => relProdutoresSelecionados.has(c.id));
   if (produtores.length === 0) return;
-  const safrasSelecionadas = Array.from(document.querySelectorAll(".rel-safra-chk:checked")).map(chk => chk.value);
-  if (safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
+  const safraChks = Array.from(document.querySelectorAll(".rel-safra-chk"));
+  const safrasSelecionadas = safraChks.filter(chk => chk.checked).map(chk => chk.value);
+  // Saldo nos armazéns: é a posição atual do produtor, entra sempre (não depende das safras marcadas).
+  const saldos = data.saldosArmazem.filter(s => relProdutoresSelecionados.has(s.produtor_id));
+  if (safraChks.length && safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
   const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||"") || (a.numero_contrato||"").localeCompare(b.numero_contrato||"", "pt-BR", { numeric: true }));
-  if (negocios.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
+  if (negocios.length === 0 && saldos.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
 
   const totalVolume = negocios.reduce((s,n) => s + Number(n.quantidade||0), 0);
   const totalValor = negocios.reduce((s,n) => s + precoLiquidoNegocio(n).liquidoTotal, 0);
@@ -6194,7 +6339,7 @@ function gerarRelatorioProdutor() {
     table.linhas { width: 100%; border-collapse: collapse; margin-top: 14px; }
     table.linhas th { background: #f2f2f2; border: 1px solid #999; padding: 6px 7px; font-size: 10.5px; text-align: left; }
     table.linhas td { border: 1px solid #999; padding: 6px 7px; vertical-align: top; }
-    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; }
+    .resumo { display: flex; gap: 24px; margin-top: 16px; font-size: 12px; flex-wrap: wrap; }
     .resumo .item b { display: block; font-size: 15px; }
     .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 380px; opacity: .07; z-index: -1; pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     @media print { body { margin: 0; } @page { size: A4 landscape; } }
@@ -6205,17 +6350,19 @@ function gerarRelatorioProdutor() {
     <img src="${NEXUS_LOGO}" style="height:54px">
   </div>
   <h1>RELATÓRIO DE NEGÓCIOS${grupo ? " — GRUPO" : ""}</h1>
-  <div class="sub">${tituloProdutores} — Safra(s) ${safrasSelecionadas.join(", ")} — emitido em ${hoje}</div>
+  <div class="sub">${tituloProdutores}${safrasSelecionadas.length ? ` — Safra(s) ${safrasSelecionadas.join(", ")}` : ""} — emitido em ${hoje}</div>
   <table class="dados">
     ${dadosProdutores}
   </table>
   ${blocos}
-  ${blocoCronograma}
+  ${negocios.length ? blocoCronograma : ""}
+  ${blocoSaldosArmazemRelatorio(saldos, negocios, grupo)}
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios no período</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
     <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValor)}</b></div>
     <div class="item"><span>Recebidos</span><b>${recebidos} de ${negocios.length}</b></div>
+    ${saldosPorGraoResumo(saldos)}
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;

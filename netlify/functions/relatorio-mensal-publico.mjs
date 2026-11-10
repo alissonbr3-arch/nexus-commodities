@@ -36,6 +36,58 @@ function precoLiquidoNegocio(n, comprador, config) {
   return { precoLiquido, liquidoTotal };
 }
 
+function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function saldosPorGrao(saldos) {
+  const porGrao = {};
+  saldos.forEach(s => { porGrao[s.grao] = (porGrao[s.grao] || 0) + Number(s.quantidade || 0); });
+  return Object.entries(porGrao).map(([g, q]) => `<div class="item"><span>Saldo em armazém — ${esc(g)}</span><b>${fmtNum(q)} sc</b></div>`).join("");
+}
+
+// Bloco "Saldo nos armazéns" — mesmo do relatório do painel (blocoSaldosArmazemRelatorio no index.html):
+// a posição informada pelo produtor em cada armazém / inscrição estadual / grão, e um resumo por grão + safra
+// com o volume dos negócios em aberto com a Nexus ao lado.
+async function blocoSaldosArmazemHtml(saldos, negocios, isGrupo, adminHeaders, nomeProdutor) {
+  if (!saldos.length) return "";
+  const idsArmazens = [...new Set(saldos.map(s => s.armazem_id).filter(Boolean))];
+  const idsFazendas = [...new Set(saldos.map(s => s.fazenda_id).filter(Boolean))];
+  const [armazens, fazendas] = await Promise.all([
+    idsArmazens.length ? fetch(`${SUPABASE_URL}/rest/v1/nexus_cadastros?id=in.(${idsArmazens.join(",")})&select=id,nome`, { headers: adminHeaders }).then(r => r.json()).catch(() => []) : [],
+    idsFazendas.length ? fetch(`${SUPABASE_URL}/rest/v1/nexus_fazendas?id=in.(${idsFazendas.join(",")})&select=id,nome,inscricao_estadual`, { headers: adminHeaders }).then(r => r.json()).catch(() => []) : [],
+  ]);
+  const nomeArmazem = (s) => s.armazem_id ? ((Array.isArray(armazens) ? armazens : []).find(a => a.id === s.armazem_id)?.nome || "—") : (s.armazem_nome || "—");
+  const fazendaLabel = (s) => {
+    const f = s.fazenda_id ? (Array.isArray(fazendas) ? fazendas : []).find(x => x.id === s.fazenda_id) : null;
+    return f ? `${f.inscricao_estadual ? "IE " + f.inscricao_estadual : "Sem IE"} (${f.nome})` : "—";
+  };
+  const lista = [...saldos].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || nomeArmazem(a).localeCompare(nomeArmazem(b), "pt-BR") || fazendaLabel(a).localeCompare(fazendaLabel(b), "pt-BR"));
+  const linhas = lista.map(s => `<tr>
+    <td>${esc(nomeArmazem(s))}</td><td>${esc(fazendaLabel(s))}</td>${isGrupo ? `<td>${esc(nomeProdutor(s.produtor_id))}</td>` : ""}
+    <td>${esc(s.grao)}</td><td>${esc(s.safra || "—")}</td><td><b>${fmtNum(s.quantidade)}</b></td><td>${fmtDate(s.data_referencia)}</td>
+  </tr>`).join("");
+  const resumo = new Map();
+  const chave = (grao, safra) => `${grao || "—"}__${safra || ""}`;
+  for (const s of lista) {
+    const k = chave(s.grao, s.safra);
+    if (!resumo.has(k)) resumo.set(k, { grao: s.grao || "—", safra: s.safra || "", vendido: 0, saldo: 0 });
+    resumo.get(k).saldo += Number(s.quantidade || 0);
+  }
+  for (const n of negocios) {
+    const k = chave(n.grao, n.safra);
+    if (resumo.has(k)) resumo.get(k).vendido += Number(n.quantidade || 0);
+  }
+  const linhasResumo = [...resumo.values()].map(r => `<tr><td>${esc(r.grao)}</td><td>${esc(r.safra || "—")}</td><td>${fmtNum(r.vendido)}</td><td><b>${fmtNum(r.saldo)}</b></td></tr>`).join("");
+  return `
+    <h3 style="font-size:13px;margin:24px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px">SALDO NOS ARMAZÉNS <span style="font-weight:normal;color:#555;font-size:11px">(posição informada pelo produtor, por armazém e inscrição estadual)</span></h3>
+    <table class="linhas">
+      <thead><tr><th>Armazém</th><th>Inscrição Estadual (Fazenda)</th>${isGrupo ? "<th>Produtor</th>" : ""}<th>Grão</th><th>Safra</th><th>Saldo (sc)</th><th>Posição em</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <table class="linhas" style="max-width:560px">
+      <thead><tr><th>Grão</th><th>Safra</th><th>Negócios em aberto com a Nexus (sc)</th><th>Saldo nos armazéns (sc)</th></tr></thead>
+      <tbody>${linhasResumo}</tbody>
+    </table>`;
+}
+
 // Mesmo template visual do "Relatório de Negócios" que já existe em Relatórios > Por Produtor
 // no painel (gerarRelatorioProdutor) — só que fixo nos negócios "em aberto" (Fechado/Entregue,
 // ainda não Pago), pra mandar o link por WhatsApp todo início de mês. Aceita ?id=<produtor_id>
@@ -64,14 +116,19 @@ export default async (req) => {
   const idsProdutores = produtores.map(p => p.id);
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
-  const [negResp, cfgResp] = await Promise.all([
+  const [negResp, cfgResp, saldoResp] = await Promise.all([
     fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?produtor_id=in.(${idsProdutores.join(",")})&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`, { headers: adminHeaders }),
     fetch(`${SUPABASE_URL}/rest/v1/nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`, { headers: adminHeaders }),
+    fetch(`${SUPABASE_URL}/rest/v1/nexus_saldos_armazem?produtor_id=in.(${idsProdutores.join(",")})&select=*`, { headers: adminHeaders }),
   ]);
-  const negocios = await negResp.json().catch(() => []);
+  const negociosResp = await negResp.json().catch(() => []);
+  const negocios = Array.isArray(negociosResp) ? negociosResp : [];
   const cfgRows = await cfgResp.json().catch(() => []);
   const config = cfgRows[0] || {};
-  if (!Array.isArray(negocios) || negocios.length === 0) {
+  // Saldo que o produtor informou em cada armazém / inscrição estadual / grão — vai num bloco próprio.
+  const saldosResp = saldoResp.ok ? await saldoResp.json().catch(() => []) : [];
+  const saldos = Array.isArray(saldosResp) ? saldosResp : [];
+  if (negocios.length === 0 && saldos.length === 0) {
     return paginaErro(`${tituloProdutores}, ${isGrupo ? "vocês não têm" : "você não tem"} nenhum negócio em aberto no momento.`);
   }
 
@@ -85,6 +142,8 @@ export default async (req) => {
   }
   const compradorDe = (n) => n.cliente_id ? compradores.find(c => c.id === n.cliente_id) : null;
   const nomeComprador = (n) => compradorDe(n)?.nome || n.contraparte || "—";
+
+  const blocoSaldos = await blocoSaldosArmazemHtml(saldos, negocios, isGrupo, adminHeaders, (id) => produtores.find(p => p.id === id)?.nome || "—");
 
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   let totalVolume = 0, totalValorLiquido = 0;
@@ -152,11 +211,13 @@ export default async (req) => {
   <table class="dados">
     ${dadosProdutores}
   </table>
-  ${blocos}
+  ${blocos || `<p style="color:#555">${isGrupo ? "Vocês não têm" : "Você não tem"} nenhum negócio em aberto com a Nexus no momento.</p>`}
+  ${blocoSaldos}
   <div class="resumo" style="margin-top:24px;padding-top:14px;border-top:2px solid #b8860b">
     <div class="item"><span>Total geral — negócios em aberto</span><b>${negocios.length}</b></div>
     <div class="item"><span>Volume total</span><b>${fmtNum(totalVolume)} sc</b></div>
     <div class="item"><span>Valor líquido total</span><b>${fmtMoney(totalValorLiquido)}</b></div>
+    ${saldosPorGrao(saldos)}
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
