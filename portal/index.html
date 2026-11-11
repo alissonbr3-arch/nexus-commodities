@@ -618,8 +618,10 @@ async function boot() {
 }
 
 async function loadNegocios() {
+  // Negócios excluídos no painel ficam com deleted_at preenchido (exclusão "suave"): não aparecem pro cliente.
   const { data: rows } = await sb.from("nexus_negocios").select("*")
     .or(`produtor_id.in.(${[...meusIds].join(",")}),cliente_id.in.(${[...meusIds].join(",")})`)
+    .is("deleted_at", null)
     .order("data", { ascending: false });
   negocios = rows || [];
 
