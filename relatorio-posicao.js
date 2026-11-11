@@ -38,7 +38,9 @@
   };
 
   function renderRelatorioPosicao(m) {
-    const grupos = m.grupos || [];
+    // Tudo em ordem de safra (a mais antiga primeiro); na mesma safra, por grão.
+    const porSafra = (a, b) => String(a.safra || "").localeCompare(String(b.safra || ""), "pt-BR") || String(a.grao || "").localeCompare(String(b.grao || ""), "pt-BR");
+    const grupos = [...(m.grupos || [])].sort(porSafra);
     const saldos = m.saldos || [];
     const cronograma = m.cronograma || [];
     const varios = (m.produtores || []).length > 1;
@@ -56,7 +58,7 @@
     else grupos.forEach(g => { pega(g.grao, g.safra).vendido += g.negocios.reduce((s, n) => s + Number(n.sacas || 0), 0); });
     externos.forEach(x => { pega(x.grao, x.safra).outras += Number(x.sacas || 0); });
     saldos.forEach(s => { pega(s.grao, s.safra).saldo += Number(s.sacas || 0); });
-    const posicoes = [...pos.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
+    const posicoes = [...pos.values()].sort(porSafra);
     const barras = posicoes.map(p => {
       const total = p.vendido + p.outras + p.saldo;
       const w = (v) => (total ? v / total * 100 : 0);
@@ -76,7 +78,7 @@
     const legendaBarras = externos.length || saldos.length ? `<div class="bar-legend"><span><i class="sold"></i>Nexus</span>${externos.length ? `<span><i class="other"></i>Outras corretoras</span>` : ""}${saldos.length ? `<span><i class="stock"></i>Em armazém</span>` : ""}</div>` : "";
 
     // Vendas com outras corretoras (tabela).
-    const externosOrd = [...externos].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || (a.data || "").localeCompare(b.data || ""));
+    const externosOrd = [...externos].sort((a, b) => porSafra(a, b) || (a.data || "").localeCompare(b.data || ""));
     const totalExtSc = externos.reduce((s, x) => s + Number(x.sacas || 0), 0);
     const totalExtValor = externos.reduce((s, x) => s + Number(x.sacas || 0) * Number(x.preco || 0), 0);
     const blocoExternos = externos.length ? `<section class="bloco"><h4>Vendas com outras corretoras <em>${externos.length} venda${externos.length === 1 ? "" : "s"} · ${num(totalExtSc)} sc${totalExtValor ? " · " + money(totalExtValor) : ""}</em></h4>
@@ -106,7 +108,7 @@
         <tbody>${linhas}</tbody></table></section>`;
     }).join("");
 
-    const ordenados = [...saldos].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || (a.armazem || "").localeCompare(b.armazem || "", "pt-BR") || Number(b.sacas) - Number(a.sacas));
+    const ordenados = [...saldos].sort((a, b) => porSafra(a, b) || (a.armazem || "").localeCompare(b.armazem || "", "pt-BR") || Number(b.sacas) - Number(a.sacas));
     const datasSaldo = [...new Set(saldos.map(s => s.data))];
     const umaData = datasSaldo.length === 1;
     const blocoSaldos = saldos.length ? `<section class="bloco"><h4>Saldo nos armazéns <em>${armazensUnicos.length === 1 ? esc(armazensUnicos[0]) + " · " : ""}${umaData ? "posição em " + data(datasSaldo[0]) : "posição informada"}</em></h4>
