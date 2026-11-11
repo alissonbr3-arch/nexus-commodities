@@ -77,6 +77,26 @@
   .panel-card h3 { margin: 0 0 3px; font-size: 13.5px; }
   .panel-card .hint { font-size: 11.5px; color: var(--ink-soft); margin-bottom: 10px; }
   .chart-wrap { position: relative; height: 220px; }
+  /* Mercado ao vivo — mesmos cartões da TV da Nexus (Chicago, Milho B3, Brent e dólar, com o gráfico do dia) */
+  .mv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .mv-head .hint { font-size: 12px; color: var(--ink-soft); }
+  .live-badge { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; border-radius: 12px; }
+  .live-badge.on { background: var(--red-soft); color: var(--red); }
+  .live-badge.on::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: mvPiscar 1.2s infinite; }
+  .live-badge.off { background: var(--gold-soft); color: var(--gold); }
+  @keyframes mvPiscar { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .live-badge.on::before { animation: none; } }
+  .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .live-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; }
+  .live-card .lc-nome { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
+  .live-card .lc-preco { font-size: 26px; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .live-card .lc-preco small { font-size: 12px; font-weight: 600; color: var(--ink-dim); margin-left: 5px; }
+  .live-card .lc-var { font-size: 14px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .live-card .lc-var.up { color: var(--green); } .live-card .lc-var.down { color: var(--red); }
+  .live-card .lc-saca { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; } .live-card .lc-saca b { color: var(--ink); }
+  .live-card .lc-chart { position: relative; height: 110px; margin-top: 10px; }
+  .live-card .lc-foot { font-size: 11px; color: var(--ink-dim); margin-top: 8px; }
+  .mv-nota { font-size: 11.5px; color: var(--ink-dim); margin-top: 12px; line-height: 1.5; }
 
   .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
 
@@ -210,6 +230,7 @@
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="resumo">Resumo</button>
+      <button class="tab-btn" data-tab="mercado">Mercado ao vivo</button>
       <button class="tab-btn" data-tab="negocios">Meus negócios</button>
       <button class="tab-btn" data-tab="externos">Outras corretoras</button>
       <button class="tab-btn" data-tab="painel">Painel de vendas</button>
@@ -217,6 +238,15 @@
 
     <div class="tabpage active" id="tab-resumo">
       <div id="resumoBox"></div>
+    </div>
+
+    <div class="tabpage" id="tab-mercado">
+      <div class="mv-head">
+        <span class="hint">Soja e milho em Chicago, milho na B3, petróleo Brent e dólar — atualiza sozinho a cada 3 minutos.</span>
+        <span class="live-badge off" id="liveBadge">Carregando…</span>
+      </div>
+      <div class="live-grid" id="liveGrid"></div>
+      <div class="mv-nota">Chicago com atraso de ~15 min. O valor por saca é uma conversão direta do preço da bolsa pelo dólar do momento (sem prêmio, frete ou descontos): é referência de mercado, não preço de compra. Pra preço na sua região, fale com seu corretor Nexus.</div>
     </div>
 
     <div class="tabpage" id="tab-negocios">
@@ -439,8 +469,85 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tabpage").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    if (btn.dataset.tab === "mercado") renderMercado(); // os gráficos só ganham tamanho com a aba visível
   });
 });
+
+// ---------------- MERCADO AO VIVO ----------------
+// Mesmos cartões da TV da Nexus, lendo a mesma função pública de cotações (Yahoo/B3, atraso de ~15 min).
+const MV_UNIDADE = {
+  Soja: { pref: "US$ ", div: 100, un: "/bushel", dec: 2 }, Milho: { pref: "US$ ", div: 100, un: "/bushel", dec: 2 },
+  Brent: { pref: "US$ ", div: 1, un: "/barril", dec: 2 }, "Dólar": { pref: "R$ ", div: 1, un: "", dec: 3 },
+  B3: { pref: "R$ ", div: 1, un: "/saca", dec: 2 },
+};
+const MV_ORDEM = ["ZSF27.CBT", "ZSH27.CBT", "CCM-1", "CCM-2", "BZ=F", "BRL=X"]; // a mesma seleção dos cartões da TV
+const MV_KG_BUSHEL = { "ZSX26.CBT": 27.2155, "ZSF27.CBT": 27.2155, "ZSH27.CBT": 27.2155, "ZC=F": 25.401 };
+let mvItens = [], mvCharts = {}, mvTimer = null;
+const mvN2 = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const mvSinal = (v) => (Number(v) > 0 ? "+" : "") + mvN2(v);
+const mvHora = (ms) => new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+async function carregarMercado() {
+  try {
+    const j = await (await fetch("/.netlify/functions/cotacoes-intraday?t=" + Math.floor(Date.now() / 180000))).json();
+    if (!j.ok) throw new Error();
+    mvItens = j.itens || [];
+    const graos = mvItens.filter(i => (i.grupo === "Soja" || i.grupo === "Milho") && i.horario);
+    const vivo = graos.some(i => Date.now() - i.horario * 1000 < 25 * 60 * 1000);
+    const badge = document.getElementById("liveBadge");
+    if (badge) { badge.className = "live-badge " + (vivo ? "on" : "off"); badge.textContent = vivo ? "Ao vivo · atraso de ~15 min" : "Mercado fechado · último preço"; }
+    if (document.getElementById("tab-mercado")?.classList.contains("active")) renderMercado();
+  } catch (e) {
+    const grid = document.getElementById("liveGrid");
+    if (grid && !mvItens.length) grid.innerHTML = `<div class="hint" style="color:var(--ink-soft)">Não consegui carregar as cotações agora. Tento de novo em alguns minutos.</div>`;
+  }
+}
+function iniciarMercado() {
+  if (mvTimer) return;
+  carregarMercado();
+  mvTimer = setInterval(carregarMercado, 180000);
+}
+function renderMercado() {
+  const grid = document.getElementById("liveGrid");
+  if (!grid) return;
+  const itens = mvItens.filter(i => MV_ORDEM.includes(i.codigo)).sort((a, b) => MV_ORDEM.indexOf(a.codigo) - MV_ORDEM.indexOf(b.codigo));
+  if (!itens.length) return;
+  const dolar = (mvItens.find(i => i.grupo === "Dólar") || {}).preco || 5;
+  Object.values(mvCharts).forEach(ch => ch.destroy());
+  mvCharts = {};
+  grid.innerHTML = itens.map((i, k) => {
+    const u = MV_UNIDADE[i.grupo] || MV_UNIDADE.Brent;
+    const sub = i.variacao > 0 ? "up" : i.variacao < 0 ? "down" : "";
+    const seta = i.variacao > 0 ? "▲" : i.variacao < 0 ? "▼" : "■";
+    const saca = MV_KG_BUSHEL[i.codigo] ? (i.preco / 100 / MV_KG_BUSHEL[i.codigo]) * 60 * dolar : null;
+    const vs = (i.serie || []).map(p => p.v);
+    const rodape = i.fechamentos ? (i.obs || "") : `${vs.length ? `Máx ${mvN2(Math.max(...vs) / u.div)} · Mín ${mvN2(Math.min(...vs) / u.div)} · ` : ""}${i.horario ? "último negócio " + mvHora(i.horario * 1000) : ""}`;
+    return `<div class="live-card">
+      <div class="lc-nome">${i.nome}</div>
+      <div class="lc-preco">${u.pref}${Number(i.preco / u.div).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: u.dec })}${u.un ? `<small>${u.un}</small>` : ""}</div>
+      <div class="lc-var ${sub}">${seta} ${mvSinal(i.variacao / u.div)} (${mvSinal(i.pct)}%)</div>
+      <div class="lc-saca">${saca ? `≈ R$ <b>${mvN2(saca)}</b> / saca de 60 kg` : "&nbsp;"}</div>
+      <div class="lc-chart"><canvas id="mvChart${k}" role="img" aria-label="Gráfico do dia de ${i.nome}"></canvas></div>
+      <div class="lc-foot">${rodape}</div>
+    </div>`;
+  }).join("");
+  if (typeof Chart === "undefined") return;
+  itens.forEach((i, k) => {
+    const u = MV_UNIDADE[i.grupo] || MV_UNIDADE.Brent;
+    const cor = i.variacao >= 0 ? "#4caf6d" : "#e15c5c";
+    const canvas = document.getElementById("mvChart" + k);
+    if (!canvas || !(i.serie || []).length) return;
+    const datasets = [{ data: i.serie.map(p => p.v), borderColor: cor, backgroundColor: cor + "22", fill: true, tension: 0.25, borderWidth: 2, pointRadius: i.fechamentos ? 3 : 0, pointBackgroundColor: cor }];
+    if (!i.fechamentos) datasets.push({ data: i.serie.map(() => i.anterior), borderColor: "#656d76", borderDash: [5, 5], borderWidth: 1.2, pointRadius: 0, fill: false });
+    mvCharts[k] = new Chart(canvas, {
+      type: "line",
+      data: { labels: i.serie.map(p => p.rotulo || mvHora(p.t * 1000)), datasets },
+      options: { responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: true, displayColors: false, filter: (ctx) => ctx.datasetIndex === 0, callbacks: { label: (ctx) => mvN2(ctx.parsed.y / u.div) } } },
+        interaction: { mode: "index", intersect: false },
+        scales: { x: { display: !!i.fechamentos, grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 6 } }, y: { grid: { color: "#2a2e33" }, ticks: { color: "#9aa1a9", maxTicksLimit: 4, callback: v => mvN2(v / u.div) } } } },
+    });
+  });
+}
 
 // ---------------- DADOS ----------------
 let meuCadastro = null;
@@ -502,6 +609,7 @@ async function boot() {
   renderNegocios();
   renderExternos();
   renderPainel();
+  iniciarMercado();
 
   sb.channel("portal-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, async () => { await loadNegocios(); renderNegocios(); renderPainel(); })
