@@ -230,23 +230,21 @@
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="resumo">Resumo</button>
-      <button class="tab-btn" data-tab="mercado">Mercado ao vivo</button>
       <button class="tab-btn" data-tab="negocios">Meus negócios</button>
       <button class="tab-btn" data-tab="externos">Outras corretoras</button>
       <button class="tab-btn" data-tab="painel">Painel de vendas</button>
     </div>
 
     <div class="tabpage active" id="tab-resumo">
-      <div id="resumoBox"></div>
-    </div>
-
-    <div class="tabpage" id="tab-mercado">
-      <div class="mv-head">
-        <span class="hint">Soja e milho em Chicago, milho na B3, petróleo Brent e dólar — atualiza sozinho a cada 3 minutos.</span>
+      <!-- Mercado ao vivo no topo do Resumo; os negócios do cliente vêm logo abaixo -->
+      <div class="mv-head" style="margin-top:4px">
+        <div class="sec-title" style="margin:0">Mercado ao vivo</div>
         <span class="live-badge off" id="liveBadge">Carregando…</span>
       </div>
       <div class="live-grid" id="liveGrid"></div>
-      <div class="mv-nota">Chicago com atraso de ~15 min. O valor por saca é uma conversão direta do preço da bolsa pelo dólar do momento (sem prêmio, frete ou descontos): é referência de mercado, não preço de compra. Pra preço na sua região, fale com seu corretor Nexus.</div>
+      <div class="mv-nota">Soja e milho em Chicago, milho na B3, petróleo Brent e dólar, atualizando sozinho a cada 3 minutos (Chicago com atraso de ~15 min). O valor por saca é uma conversão direta do preço da bolsa pelo dólar do momento (sem prêmio, frete ou descontos): é referência de mercado, não preço de compra. Pra preço na sua região, fale com seu corretor Nexus.</div>
+      <div class="sec-title" style="margin-top:28px">Seus negócios com a Nexus</div>
+      <div id="resumoBox"></div>
     </div>
 
     <div class="tabpage" id="tab-negocios">
@@ -469,7 +467,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tabpage").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "mercado") renderMercado(); // os gráficos só ganham tamanho com a aba visível
+    if (btn.dataset.tab === "resumo") renderMercado(); // os gráficos do mercado só ganham tamanho com a aba visível
   });
 });
 
@@ -495,7 +493,7 @@ async function carregarMercado() {
     const vivo = graos.some(i => Date.now() - i.horario * 1000 < 25 * 60 * 1000);
     const badge = document.getElementById("liveBadge");
     if (badge) { badge.className = "live-badge " + (vivo ? "on" : "off"); badge.textContent = vivo ? "Ao vivo · atraso de ~15 min" : "Mercado fechado · último preço"; }
-    if (document.getElementById("tab-mercado")?.classList.contains("active")) renderMercado();
+    if (document.getElementById("tab-resumo")?.classList.contains("active")) renderMercado();
   } catch (e) {
     const grid = document.getElementById("liveGrid");
     if (grid && !mvItens.length) grid.innerHTML = `<div class="hint" style="color:var(--ink-soft)">Não consegui carregar as cotações agora. Tento de novo em alguns minutos.</div>`;
