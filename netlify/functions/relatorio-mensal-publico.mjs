@@ -57,15 +57,17 @@ export default async (req) => {
   const ids = produtores.map(p => p.id).join(",");
   const tituloProdutores = produtores.map(p => p.nome).join(", ");
 
-  const [negocios, cfgRows, saldos, vendidos] = await Promise.all([
+  const [negocios, cfgRows, saldos, vendidos, externos] = await Promise.all([
     get(`nexus_negocios?produtor_id=in.(${ids})&status=in.(Fechado,Entregue)&deleted_at=is.null&select=*&order=data.asc`).then(arr),
     get(`nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`).then(arr),
     get(`nexus_saldos_armazem?produtor_id=in.(${ids})&select=*`).then(arr),
     // Tudo o que já foi vendido com a Nexus (qualquer status), pra barra de "comercializado" por grão/safra.
     get(`nexus_negocios?produtor_id=in.(${ids})&deleted_at=is.null&select=grao,safra,quantidade`).then(arr),
+    // Vendas com outras corretoras (lançadas pela equipe ou pelo produtor no portal).
+    get(`nexus_contratos_externos?cadastro_id=in.(${ids})&select=*&order=data_venda.asc`).then(arr),
   ]);
   const config = cfgRows[0] || {};
-  if (negocios.length === 0 && saldos.length === 0) {
+  if (negocios.length === 0 && saldos.length === 0 && externos.length === 0) {
     return paginaErro(`${tituloProdutores}, ${isGrupo ? "vocês não têm" : "você não tem"} nenhum negócio em aberto no momento.`);
   }
 
@@ -111,6 +113,7 @@ export default async (req) => {
     produtores: produtores.map(p => ({ nome: p.nome, documento: p.cpf ? `${tipoCpfCnpj(p.cpf)} ${p.cpf}` : "", cidade: p.cidade })),
     grupos, cronograma,
     vendidoTotal: vendidos.map(v => ({ grao: v.grao, safra: v.safra, sacas: Number(v.quantidade || 0) })),
+    externos: externos.map(x => ({ corretora: x.corretora_nome || "—", produtor: nomeProdutor(x.cadastro_id), grao: x.grao, safra: x.safra, sacas: Number(x.quantidade || 0), preco: x.preco == null ? null : Number(x.preco), data: x.data_venda })),
     tituloCronograma: "Pagamentos previstos",
     saldos: saldos.map(s => {
       const f = s.fazenda_id ? fazendas.find(x => x.id === s.fazenda_id) : null;

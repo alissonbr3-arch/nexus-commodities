@@ -1424,7 +1424,7 @@ function onCpfCnpjInput(id) {
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], saldosArmazem: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], saldosArmazem: [], externos: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "mes";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1475,7 +1475,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadSaldosArmazem(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadSaldosArmazem(), loadExternos(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
   renderAll();
   navRestaurar();
   wireRealtime();
@@ -1505,6 +1505,8 @@ async function loadInvestimentos() { const { data: rows, error } = await sb.from
 async function loadIntencoes() { const { data: rows, error } = await sb.from("nexus_intencoes").select("*").order("created_at", { ascending: false }); if (!error) data.intencoes = rows || []; }
 async function loadFazendas() { const { data: rows, error } = await sb.from("nexus_fazendas").select("*").order("nome"); if (!error) data.fazendas = rows || []; }
 async function loadSaldosArmazem() { const { data: rows, error } = await sb.from("nexus_saldos_armazem").select("*").order("grao"); if (!error) data.saldosArmazem = rows || []; }
+// Vendas que o produtor fez com outras corretoras (lançadas pela equipe aqui ou pelo próprio produtor no portal).
+async function loadExternos() { const { data: rows, error } = await sb.from("nexus_contratos_externos").select("*").order("data_venda", { ascending: false }); if (!error) data.externos = rows || []; }
 
 function wireRealtime() {
   sb.channel("nexus-realtime")
@@ -4808,6 +4810,77 @@ async function excluirSaldoArmazem(saldoId, produtorId) {
   await loadSaldosArmazem();
   rerenderSaldosArmazem(produtorId);
 }
+// ---------------- VENDAS COM OUTRAS CORRETORAS ----------------
+// O que o produtor vendeu fora da Nexus: corretora, grão, safra, sacas e preço. Entra no relatório do produtor
+// (barra "Nexus x outras corretoras x em armazém") e aparece no portal dele. O próprio produtor também pode lançar pelo portal.
+let externoEditandoId = null;
+function renderExternosSectionHtml(produtorId) {
+  if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para lançar vendas com outras corretoras.</div>`;
+  const lista = data.externos.filter(x => x.cadastro_id === produtorId).sort((a, b) => (b.data_venda || "").localeCompare(a.data_venda || ""));
+  const editando = externoEditandoId ? lista.find(x => x.id === externoEditandoId) : null;
+  const e = editando || { corretora_nome: "", grao: "Soja", safra: "", quantidade: "", preco: "", data_venda: todayISO() };
+  const safras = [...new Set([...data.negocios.map(x => x.safra), ...data.externos.map(x => x.safra)].filter(Boolean))].sort().reverse();
+  const corretoras = [...new Set(data.externos.map(x => x.corretora_nome).filter(n => n && n !== "—"))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const totais = {};
+  lista.forEach(x => { const k = `${x.grao}${x.safra ? " " + x.safra : ""}`; if (!totais[k]) totais[k] = { sc: 0, valor: 0 }; totais[k].sc += Number(x.quantidade || 0); totais[k].valor += Number(x.quantidade || 0) * Number(x.preco || 0); });
+  const linhas = lista.length === 0 ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px">Nenhuma venda com outra corretora lançada.</div>` :
+    lista.map(x => {
+      const valor = Number(x.quantidade || 0) * Number(x.preco || 0);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card-alt);border-radius:7px;padding:7px 10px;margin-bottom:6px;font-size:12.5px${x.id === externoEditandoId ? ";outline:2px solid var(--gold, #b8860b)" : ""}">
+        <span><b>${escapeHtml(x.grao)}${x.safra ? " " + escapeHtml(x.safra) : ""}</b> — ${fmtNum(x.quantidade)} sc${x.preco ? ` × ${fmtMoney(x.preco)} = <b>${fmtMoney(valor)}</b>` : ""} · ${escapeHtml(x.corretora_nome || "—")} <span style="color:var(--ink-soft);font-size:11px">· ${fmtDate(x.data_venda)}</span></span>
+        <span style="white-space:nowrap"><button type="button" class="btn-edit-text" style="padding:2px 6px" onclick="editarExterno('${x.id}','${produtorId}')">Editar</button><button type="button" class="btn-danger-text" style="padding:2px 6px" onclick="excluirExterno('${x.id}','${produtorId}')">Excluir</button></span>
+      </div>`;
+    }).join("") + `<div style="font-size:11.5px;color:var(--ink-soft);margin:2px 0 8px">Total: ${Object.entries(totais).map(([k, t]) => `<b>${escapeHtml(k)}</b> ${fmtNum(t.sc)} sc${t.valor ? " (" + fmtMoney(t.valor) + ")" : ""}`).join(" · ")}</div>`;
+  return `${linhas}
+    <div class="field-row" style="margin-top:6px">
+      <div class="field"><input type="text" id="f_extCorretora" list="f_extCorretoraList" placeholder="Corretora (ou comprador)" value="${escapeHtml(e.corretora_nome === "—" ? "" : e.corretora_nome || "")}"><datalist id="f_extCorretoraList">${corretoras.map(c => `<option value="${escapeHtml(c)}">`).join("")}</datalist></div>
+      <div class="field"><input type="date" id="f_extData" value="${e.data_venda || ""}" title="Data da venda"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><select id="f_extGrao">${GRAOS_SALDO.map(g => `<option ${e.grao === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
+      <div class="field"><input type="text" id="f_extSafra" list="f_extSafraList" placeholder="Safra (ex: 2025/2026)" value="${escapeHtml(e.safra || "")}"><datalist id="f_extSafraList">${safras.map(s => `<option value="${escapeHtml(s)}">`).join("")}</datalist></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><input type="number" id="f_extQtd" placeholder="Quantidade (sacas)" value="${e.quantidade ?? ""}"></div>
+      <div class="field"><input type="number" step="0.01" id="f_extPreco" placeholder="Preço (R$/saca)" value="${e.preco ?? ""}"></div>
+    </div>
+    <button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="salvarExterno('${produtorId}')">${editando ? "Salvar alteração" : "+ Lançar venda"}</button>
+    ${editando ? `<button type="button" class="btn-ghost" style="padding:6px 12px;font-size:12px" onclick="editarExterno(null,'${produtorId}')">Cancelar</button>` : ""}
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:6px">O valor da venda é calculado (sacas × preço). Aparece no relatório do produtor ao lado do que ele vendeu com a Nexus e do saldo no armazém.</div>`;
+}
+function rerenderExternos(produtorId) {
+  const el = document.getElementById("externosSection");
+  if (el) el.innerHTML = renderExternosSectionHtml(produtorId);
+}
+function editarExterno(id, produtorId) {
+  externoEditandoId = id || null;
+  rerenderExternos(produtorId);
+}
+async function salvarExterno(produtorId) {
+  const qtdTxt = v("f_extQtd");
+  if (qtdTxt === "" || Number(qtdTxt) <= 0) { alert("Informe a quantidade em sacas."); return; }
+  const precoTxt = v("f_extPreco");
+  const payload = {
+    cadastro_id: produtorId, corretora_nome: v("f_extCorretora") || "—", grao: v("f_extGrao"), safra: v("f_extSafra") || null,
+    quantidade: Number(qtdTxt), preco: precoTxt === "" ? null : Number(precoTxt), data_venda: v("f_extData") || null,
+  };
+  const { error } = externoEditandoId
+    ? await sb.from("nexus_contratos_externos").update(payload).eq("id", externoEditandoId)
+    : await sb.from("nexus_contratos_externos").insert([payload]);
+  if (error) { alert("Não consegui salvar a venda: " + error.message); return; }
+  externoEditandoId = null;
+  await loadExternos();
+  rerenderExternos(produtorId);
+}
+async function excluirExterno(id, produtorId) {
+  const ok = await askConfirm("Excluir esta venda com outra corretora?");
+  if (!ok) return;
+  const { error } = await sb.from("nexus_contratos_externos").delete().eq("id", id);
+  if (error) { alert("Não consegui excluir: " + error.message); return; }
+  if (externoEditandoId === id) externoEditandoId = null;
+  await loadExternos();
+  rerenderExternos(produtorId);
+}
 function renderFazendasSectionHtml(produtorId) {
   if (!produtorId) return `<div class="placeholder-box" style="font-size:12px;padding:10px">Salve o cadastro para adicionar fazendas.</div>`;
   const fazendas = data.fazendas.filter(f => f.produtor_id === produtorId);
@@ -5035,6 +5108,7 @@ function openContatoModal(id) {
       <div class="field" style="font-size:11.5px;color:var(--ink-soft);margin-top:-8px">A Inscrição Estadual do produtor é registrada por fazenda, logo abaixo.</div>
       <div class="field"><label>Fazendas</label><div id="fazendasSection">${renderFazendasSectionHtml(id)}</div></div>
       <div class="field"><label>Saldo nos armazéns (informado pelo produtor)</label><div id="saldosArmazemSection">${(saldoArmazemEditandoId = null, renderSaldosArmazemSectionHtml(id))}</div></div>
+      <div class="field"><label>Vendas com outras corretoras</label><div id="externosSection">${(externoEditandoId = null, renderExternosSectionHtml(id))}</div></div>
     </div>
     <div id="f_compradorFieldsWrap" style="${item.tipo==="Comprador"?"":"display:none"}">
       <div class="field-row"><div class="field"><label>CNPJ</label><input type="text" id="f_cnpj" value="${item.cnpj||""}"></div><div class="field"><label>Inscrição Estadual</label><input type="text" id="f_ie_comprador" value="${item.inscricao_estadual||""}"></div></div>
@@ -6203,7 +6277,7 @@ function onRelGrupoChange(grupoId) {
   relProdutoresSelecionados = new Set(relGrupoId ? data.cadastros.filter(c => c.tipo === "Produtor" && c.grupo_id === relGrupoId).map(c => c.id) : []);
   renderRelProdutorList();
   atualizarRelSafras();
-  loadSaldosArmazem().then(atualizarRelSafras);
+  Promise.all([loadSaldosArmazem(), loadExternos()]).then(atualizarRelSafras);
 }
 // Nome do grupo quando os produtores marcados são exatamente os membros de um grupo.
 function grupoDosSelecionados() {
@@ -6232,7 +6306,7 @@ function onRelProdutorCheckChange(produtorId, checked) {
   if (sel) sel.value = relGrupoId;
   atualizarRelSafras();
   // Saldos nos armazéns podem ter sido lançados por outro corretor depois que a página abriu: recarrega.
-  loadSaldosArmazem().then(atualizarRelSafras);
+  Promise.all([loadSaldosArmazem(), loadExternos()]).then(atualizarRelSafras);
 }
 function atualizarRelSafras() {
   const wrap = document.getElementById("relSafrasWrap");
@@ -6240,7 +6314,7 @@ function atualizarRelSafras() {
   if (relProdutoresSelecionados.size === 0) { wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px"; wrap.innerHTML = "Selecione um ou mais produtores."; btn.disabled = true; return; }
   const safras = [...new Set(data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id)).map(n => n.safra).filter(Boolean))].sort();
   if (safras.length === 0) {
-    const temSaldo = data.saldosArmazem.some(s => relProdutoresSelecionados.has(s.produtor_id));
+    const temSaldo = data.saldosArmazem.some(s => relProdutoresSelecionados.has(s.produtor_id)) || data.externos.some(x => relProdutoresSelecionados.has(x.cadastro_id));
     wrap.className = "placeholder-box"; wrap.style.cssText = "font-size:12px;padding:14px";
     wrap.innerHTML = temSaldo ? "Nenhum negócio registrado ainda — o relatório sai só com o saldo nos armazéns." : "Nenhum negócio registrado para os produtores selecionados ainda.";
     btn.disabled = !temSaldo; return;
@@ -6256,9 +6330,11 @@ function gerarRelatorioProdutor() {
   const safrasSelecionadas = safraChks.filter(chk => chk.checked).map(chk => chk.value);
   // Saldo nos armazéns: é a posição atual do produtor, entra sempre (não depende das safras marcadas).
   const saldos = data.saldosArmazem.filter(s => relProdutoresSelecionados.has(s.produtor_id));
+  // Vendas com outras corretoras: entram todas as do produtor, como o saldo (é a posição de comercialização dele).
+  const externos = data.externos.filter(x => relProdutoresSelecionados.has(x.cadastro_id));
   if (safraChks.length && safrasSelecionadas.length === 0) { alert("Selecione ao menos uma safra."); return; }
   const negocios = data.negocios.filter(n => relProdutoresSelecionados.has(n.produtor_id) && safrasSelecionadas.includes(n.safra)).sort((a,b) => (a.data||"").localeCompare(b.data||"") || (a.numero_contrato||"").localeCompare(b.numero_contrato||"", "pt-BR", { numeric: true }));
-  if (negocios.length === 0 && saldos.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
+  if (negocios.length === 0 && saldos.length === 0 && externos.length === 0) { alert("Nenhum negócio encontrado para as safras selecionadas."); return; }
   if (typeof renderRelatorioPosicao !== "function") { alert("Não consegui carregar o modelo do relatório. Recarregue a página e tente de novo."); return; }
 
   const recebidos = negocios.filter(n => negocioPagoTotal(n)).length;
@@ -6306,6 +6382,7 @@ function gerarRelatorioProdutor() {
     produtores: produtores.map(p => ({ nome: p.nome, documento: p.cpf ? `${tipoCpfCnpj(p.cpf)} ${p.cpf}` : "", cidade: p.cidade })),
     grupos, cronograma,
     saldos: saldos.map(s => { const f = fazendaDe(s.fazenda_id); return { armazem: nomeArmazemSaldo(s), ie: f ? f.inscricao_estadual : "", fazenda: f ? f.nome : "", produtor: nomeCadastro(s.produtor_id), grao: s.grao, safra: s.safra, sacas: Number(s.quantidade || 0), data: s.data_referencia }; }),
+    externos: externos.map(x => ({ corretora: x.corretora_nome || "—", produtor: nomeCadastro(x.cadastro_id), grao: x.grao, safra: x.safra, sacas: Number(x.quantidade || 0), preco: x.preco == null ? null : Number(x.preco), data: x.data_venda })),
     resumo: negocios.length ? [{ label: "negócios recebidos", valor: `${recebidos} de ${negocios.length}` }] : [],
     vazioNegocios: "Nenhum negócio nas safras selecionadas.",
   });

@@ -13,6 +13,7 @@
 //             pagamento, status, statusDetalhe, parcelas: [{ label, sacas, valor, data, status }] }] }],
 //   cronograma: [{ data, contrato, produtor, comprador, parcela, sacas, valor, status, estimativa }],
 //   saldos: [{ armazem, ie, fazenda, produtor, grao, safra, sacas, data }],
+//   externos: [{ corretora, produtor, grao, safra, sacas, preco, data }],  // vendas com outras corretoras
 //   resumo: [{ label, valor }]           // números extras na lateral (ex.: recebidos)
 //   vendidoTotal: [{ grao, safra, sacas }] // opcional: tudo o que já foi vendido com a Nexus (pra barra),
 //                                          // quando as tabelas mostram só parte dos negócios (ex.: em aberto)
@@ -45,24 +46,44 @@
     const volumeTotal = todosNegocios.reduce((s, n) => s + Number(n.sacas || 0), 0);
     const valorTotal = todosNegocios.reduce((s, n) => s + Number(n.valorLiquido || 0), 0);
 
-    // Barra por grão + safra: vendido com a Nexus x saldo nos armazéns.
+    const externos = m.externos || [];
+
+    // Barra por grão + safra: vendido com a Nexus x vendido com outras corretoras x saldo nos armazéns.
     const pos = new Map();
     const chave = (g, s) => `${g || "—"}__${s || ""}`;
-    const pega = (g, s) => { const k = chave(g, s); if (!pos.has(k)) pos.set(k, { grao: g || "—", safra: s || "", vendido: 0, saldo: 0 }); return pos.get(k); };
+    const pega = (g, s) => { const k = chave(g, s); if (!pos.has(k)) pos.set(k, { grao: g || "—", safra: s || "", vendido: 0, outras: 0, saldo: 0 }); return pos.get(k); };
     if (m.vendidoTotal) m.vendidoTotal.forEach(v => { pega(v.grao, v.safra).vendido += Number(v.sacas || 0); });
     else grupos.forEach(g => { pega(g.grao, g.safra).vendido += g.negocios.reduce((s, n) => s + Number(n.sacas || 0), 0); });
+    externos.forEach(x => { pega(x.grao, x.safra).outras += Number(x.sacas || 0); });
     saldos.forEach(s => { pega(s.grao, s.safra).saldo += Number(s.sacas || 0); });
     const posicoes = [...pos.values()].sort((a, b) => a.grao.localeCompare(b.grao, "pt-BR") || a.safra.localeCompare(b.safra, "pt-BR"));
     const barras = posicoes.map(p => {
-      const total = p.vendido + p.saldo;
-      const pct = total ? Math.round(p.vendido / total * 100) : 0;
-      const wV = total ? p.vendido / total * 100 : 0;
-      const sold = p.vendido ? `<i class="sold" style="width:${wV}%">${num(p.vendido)} vendido${p.saldo ? "" : " · sem saldo informado"}</i>` : "";
-      const stock = p.saldo ? `<i class="stock" style="width:${100 - wV}%">${num(p.saldo, 2)} em armazém</i>` : "";
-      const lado = p.saldo ? `<b>${pct}%</b>comercializado` : `<b>${num(p.vendido)}</b>sacas vendidas`;
+      const total = p.vendido + p.outras + p.saldo;
+      const w = (v) => (total ? v / total * 100 : 0);
+      const vendidoTudo = p.vendido + p.outras;
+      const sozinho = !p.outras && !p.saldo;
+      const sold = p.vendido ? `<i class="sold" style="width:${w(p.vendido)}%" title="Vendido com a Nexus">${num(p.vendido)} Nexus${sozinho ? " · sem saldo informado" : ""}</i>` : "";
+      const other = p.outras ? `<i class="other" style="width:${w(p.outras)}%" title="Vendido com outras corretoras">${num(p.outras)} outras</i>` : "";
+      const stock = p.saldo ? `<i class="stock" style="width:${w(p.saldo)}%" title="Ainda no armazém">${num(p.saldo, 2)} em armazém</i>` : "";
+      const pctVendido = total ? Math.round(vendidoTudo / total * 100) : 0;
+      const pctNexus = vendidoTudo ? Math.round(p.vendido / vendidoTudo * 100) : 0;
+      const lado = sozinho ? `<b>${num(p.vendido)}</b>sacas vendidas`
+        : p.saldo ? `<b>${pctVendido}%</b>comercializado${p.outras ? `<small>Nexus: ${pctNexus}% das vendas</small>` : ""}`
+        : `<b>${pctNexus}%</b>vendido com a Nexus`;
       return `<div class="bar-row"><div class="g">${esc(p.grao)}<small>${esc(p.safra || "—")}</small></div>
-        <div class="track">${sold}${stock}</div><div class="pct">${lado}</div></div>`;
+        <div class="track">${sold}${other}${stock}</div><div class="pct">${lado}</div></div>`;
     }).join("");
+    const legendaBarras = externos.length || saldos.length ? `<div class="bar-legend"><span><i class="sold"></i>Nexus</span>${externos.length ? `<span><i class="other"></i>Outras corretoras</span>` : ""}${saldos.length ? `<span><i class="stock"></i>Em armazém</span>` : ""}</div>` : "";
+
+    // Vendas com outras corretoras (tabela).
+    const externosOrd = [...externos].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || (a.data || "").localeCompare(b.data || ""));
+    const totalExtSc = externos.reduce((s, x) => s + Number(x.sacas || 0), 0);
+    const totalExtValor = externos.reduce((s, x) => s + Number(x.sacas || 0) * Number(x.preco || 0), 0);
+    const blocoExternos = externos.length ? `<section class="bloco"><h4>Vendas com outras corretoras <em>${externos.length} venda${externos.length === 1 ? "" : "s"} · ${num(totalExtSc)} sc${totalExtValor ? " · " + money(totalExtValor) : ""}</em></h4>
+      <table><thead><tr><th>Data</th>${varios ? "<th>Produtor</th>" : ""}<th>Corretora</th><th>Grão</th><th class="num">Sacas</th><th class="num">R$/sc</th><th class="num">Valor</th></tr></thead>
+      <tbody>${externosOrd.map(x => `<tr><td class="mono">${data(x.data)}</td>${varios ? `<td>${esc(x.produtor)}</td>` : ""}<td>${esc(x.corretora || "—")}</td>
+        <td class="nw">${esc(x.grao)} <span class="det">${esc(x.safra || "")}</span></td><td class="num mono">${num(x.sacas)}</td>
+        <td class="num mono">${x.preco != null ? num(x.preco, 2) : "—"}</td><td class="num mono">${x.preco != null ? num(Number(x.sacas || 0) * Number(x.preco), 2) : "—"}</td></tr>`).join("")}</tbody></table></section>` : "";
 
     // Saldo em armazém por grão (pra lateral).
     const saldoPorGrao = {};
@@ -106,6 +127,7 @@
     const stats = [
       todosNegocios.length ? `<div class="stat"><b>${moneyCurto(valorTotal)}</b><span>valor líquido em ${todosNegocios.length} negócio${todosNegocios.length === 1 ? "" : "s"}</span></div>` : "",
       todosNegocios.length ? `<div class="stat"><b>${num(volumeTotal)} sc</b><span>negociadas com a Nexus</span></div>` : "",
+      totalExtSc ? `<div class="stat small"><b>${num(totalExtSc)} sc</b><span>vendidas com outras corretoras</span></div>` : "",
       ...Object.entries(saldoPorGrao).map(([g, q]) => `<div class="stat"><b>${num(Math.round(q))} sc</b><span>de ${esc(String(g).toLowerCase())} ainda em armazém</span></div>`),
       ...(m.resumo || []).map(r => `<div class="stat small"><b>${esc(r.valor)}</b><span>${esc(r.label)}</span></div>`),
     ].join("");
@@ -153,6 +175,14 @@
   .track i { display:flex; align-items:center; padding:0 8px; font-family:"IBM Plex Mono",monospace; font-style:normal; font-size:10px; white-space:nowrap; overflow:hidden; color:#fff }
   .track .sold { background:linear-gradient(90deg,var(--gold-3),var(--gold-2)) }
   .track .stock { background:#3a3d45 }
+  .track .other { background:#8e95a3 }
+  .bar-legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin:-10px 0 18px; font-family:"IBM Plex Mono",monospace; font-size:9.5px; color:var(--soft) }
+  .bar-legend span { display:inline-flex; align-items:center; gap:5px }
+  .bar-legend i { width:10px; height:10px; border-radius:2px; display:inline-block }
+  .bar-legend .sold { background:linear-gradient(90deg,var(--gold-3),var(--gold-2)) }
+  .bar-legend .other { background:#8e95a3 }
+  .bar-legend .stock { background:#3a3d45 }
+  .bar-row .pct small { display:block; font-size:9.5px; margin-top:1px }
   .bar-row .pct { font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--soft); text-align:right }
   .bar-row .pct b { font-family:"Archivo",sans-serif; font-stretch:112%; color:var(--ink); font-size:17px; display:block }
   .bloco { margin-bottom:16px; break-inside:auto }
@@ -225,8 +255,9 @@
   </aside>
   <main>
     <div class="title"><h1>${esc(m.titulo)}</h1><span>${esc(m.subtitulo || "")}</span></div>
-    ${barras ? `<div class="bars">${barras}</div>` : ""}
+    ${barras ? `<div class="bars">${barras}</div>${legendaBarras}` : ""}
     ${tabelasNegocios || `<p class="vazio">${esc(m.vazioNegocios || "Nenhum negócio no período.")}</p>`}
+    ${blocoExternos}
     ${blocoSaldos && blocoCronograma && cronograma.length <= 8 ? `<div class="cols"><div>${blocoSaldos}</div><div>${blocoCronograma}</div></div>` : blocoSaldos + blocoCronograma}
   </main>
 </div>
