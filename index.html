@@ -1152,6 +1152,10 @@
             <h3>Relatório de negócios por produtor</h3>
             <div class="hint">Pra responder rápido quando o cliente pergunta quais negócios já fez com a Nexus: escolha um ou mais produtores (útil pra grupos que negociam juntos, com CPFs diferentes) e as safras, e gere um relatório com vendas, recebimentos e embarques.</div>
             <div class="field">
+              <label>Grupo <span style="font-weight:400;color:var(--ink-soft)">(opcional — marca todos os produtores do grupo)</span></label>
+              <select id="relGrupoSelect" onchange="onRelGrupoChange(this.value)"><option value="">— Escolher produtores um a um —</option></select>
+            </div>
+            <div class="field">
               <label>Produtor(es)</label>
               <input type="text" class="search-input" id="relProdutorSearch" placeholder="Buscar produtor..." oninput="renderRelProdutorList()" style="width:100%;margin-bottom:6px">
               <div id="relProdutorList" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px"></div>
@@ -5996,6 +6000,7 @@ document.querySelectorAll(".rel-subtab-btn").forEach(btn => {
 function renderRelatorios() {
   const list = document.getElementById("relProdutorList");
   if (!list) return;
+  renderRelGrupoSelect();
   renderRelProdutorList();
   popularFechamentoSelects();
 }
@@ -6181,6 +6186,36 @@ function renderEmailLog() {
   el.innerHTML = list.length === 0 ? `<div class="placeholder-box">Nenhuma comunicação enviada ainda.</div>` : list.map(emailLogRowHtml).join("");
 }
 let relProdutoresSelecionados = new Set();
+let relGrupoId = "";
+// Grupos com produtores cadastrados, pro atalho "Grupo" do relatório por produtor.
+function renderRelGrupoSelect() {
+  const sel = document.getElementById("relGrupoSelect");
+  if (!sel) return;
+  const grupos = data.grupos
+    .map(g => ({ g, membros: data.cadastros.filter(c => c.tipo === "Produtor" && c.grupo_id === g.id) }))
+    .filter(x => x.membros.length > 0)
+    .sort((a, b) => a.g.nome.localeCompare(b.g.nome, "pt-BR"));
+  if (relGrupoId && !grupos.some(x => x.g.id === relGrupoId)) relGrupoId = "";
+  sel.innerHTML = `<option value="">— Escolher produtores um a um —</option>` + grupos.map(x => `<option value="${x.g.id}" ${x.g.id === relGrupoId ? "selected" : ""}>${escapeHtml(x.g.nome)} (${x.membros.length} produtor${x.membros.length === 1 ? "" : "es"}: ${escapeHtml(x.membros.map(m => m.nome.split(" ")[0]).join(", "))})</option>`).join("");
+}
+function onRelGrupoChange(grupoId) {
+  relGrupoId = grupoId || "";
+  relProdutoresSelecionados = new Set(relGrupoId ? data.cadastros.filter(c => c.tipo === "Produtor" && c.grupo_id === relGrupoId).map(c => c.id) : []);
+  renderRelProdutorList();
+  atualizarRelSafras();
+  loadSaldosArmazem().then(atualizarRelSafras);
+}
+// Nome do grupo quando os produtores marcados são exatamente os membros de um grupo.
+function grupoDosSelecionados() {
+  const ids = [...relProdutoresSelecionados];
+  if (ids.length < 2) return null;
+  const cads = ids.map(id => data.cadastros.find(c => c.id === id));
+  const gid = cads[0] && cads[0].grupo_id;
+  if (!gid || cads.some(c => !c || c.grupo_id !== gid)) return null;
+  const membros = data.cadastros.filter(c => c.tipo === "Produtor" && c.grupo_id === gid);
+  if (membros.length !== ids.length) return null;
+  return data.grupos.find(g => g.id === gid) || null;
+}
 function renderRelProdutorList() {
   const list = document.getElementById("relProdutorList");
   if (!list) return;
@@ -6191,6 +6226,10 @@ function renderRelProdutorList() {
 }
 function onRelProdutorCheckChange(produtorId, checked) {
   if (checked) relProdutoresSelecionados.add(produtorId); else relProdutoresSelecionados.delete(produtorId);
+  const g = grupoDosSelecionados();
+  relGrupoId = g ? g.id : "";
+  const sel = document.getElementById("relGrupoSelect");
+  if (sel) sel.value = relGrupoId;
   atualizarRelSafras();
   // Saldos nos armazéns podem ter sido lançados por outro corretor depois que a página abriu: recarrega.
   loadSaldosArmazem().then(atualizarRelSafras);
@@ -6259,7 +6298,7 @@ function gerarRelatorioProdutor() {
 
   const fazendaDe = (id) => id ? data.fazendas.find(f => f.id === id) : null;
   const html = renderRelatorioPosicao({
-    titulo: grupo ? "Posição do grupo" : "Posição do produtor",
+    titulo: (() => { const g = grupoDosSelecionados(); if (!grupo) return "Posição do produtor"; if (!g) return "Posição do grupo"; return /^grupo\b/i.test(g.nome) ? `Posição do ${g.nome}` : `Posição do grupo ${g.nome}`; })(),
     subtitulo: `Relatório de negócios${safrasSelecionadas.length ? ` · Safra${safrasSelecionadas.length > 1 ? "s" : ""} ${safrasSelecionadas.join(" · ")}` : ""}`,
     emitidoEm: todayISO(),
     logoUrl: location.origin + "/logo-nexus-escuro.png",
