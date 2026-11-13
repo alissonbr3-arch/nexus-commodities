@@ -62,7 +62,7 @@ export default async (req) => {
     get(`nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct`).then(arr),
     get(`nexus_saldos_armazem?produtor_id=in.(${ids})&select=*`).then(arr),
     // Tudo o que já foi vendido com a Nexus (qualquer status), pra barra de "comercializado" por grão/safra.
-    get(`nexus_negocios?produtor_id=in.(${ids})&deleted_at=is.null&select=grao,safra,quantidade`).then(arr),
+    get(`nexus_negocios?produtor_id=in.(${ids})&deleted_at=is.null&select=grao,safra,quantidade,produtor_id,data,fazenda_id,numero_contrato,status`).then(arr),
     // Vendas com outras corretoras (lançadas pela equipe ou pelo produtor no portal).
     get(`nexus_contratos_externos?cadastro_id=in.(${ids})&select=*&order=data_venda.asc`).then(arr),
   ]);
@@ -115,9 +115,13 @@ export default async (req) => {
     vendidoTotal: vendidos.map(v => ({ grao: v.grao, safra: v.safra, sacas: Number(v.quantidade || 0) })),
     externos: externos.map(x => ({ corretora: x.corretora_nome || "—", produtor: nomeProdutor(x.cadastro_id), grao: x.grao, safra: x.safra, sacas: Number(x.quantidade || 0), preco: x.preco == null ? null : Number(x.preco), data: x.data_venda })),
     tituloCronograma: "Pagamentos previstos",
-    saldos: saldos.map(s => {
+    // Saldo = posição informada menos as vendas feitas depois dela (mesma regra do painel, em relatorio-posicao.js).
+    saldos: globalThis.saldosDescontandoVendas(saldos, [
+      ...vendidos.filter(v => v.status !== "Cancelado").map(v => ({ produtor: v.produtor_id, grao: v.grao, safra: v.safra, data: v.data, sacas: Number(v.quantidade || 0), fazenda: v.fazenda_id, rotulo: v.numero_contrato || "Nexus" })),
+      ...externos.map(x => ({ produtor: x.cadastro_id, grao: x.grao, safra: x.safra, data: x.data_venda, sacas: Number(x.quantidade || 0), fazenda: null, rotulo: x.corretora_nome || "outra corretora" })),
+    ]).map(({ s, resta, vendido, contratos }) => {
       const f = s.fazenda_id ? fazendas.find(x => x.id === s.fazenda_id) : null;
-      return { armazem: s.armazem_id ? (cadastro(s.armazem_id)?.nome || "—") : (s.armazem_nome || "—"), ie: f?.inscricao_estadual || "", fazenda: f?.nome || "", produtor: nomeProdutor(s.produtor_id), grao: s.grao, safra: s.safra, sacas: Number(s.quantidade || 0), data: s.data_referencia };
+      return { armazem: s.armazem_id ? (cadastro(s.armazem_id)?.nome || "—") : (s.armazem_nome || "—"), ie: f?.inscricao_estadual || "", fazenda: f?.nome || "", produtor: nomeProdutor(s.produtor_id), grao: s.grao, safra: s.safra, sacas: resta, informado: Number(s.quantidade || 0), vendidoDepois: vendido, contratosDepois: contratos, data: s.data_referencia };
     }),
     resumo: negocios.length ? [{ label: "negócios em aberto", valor: String(negocios.length) }] : [],
     vazioNegocios: `${isGrupo ? "Vocês não têm" : "Você não tem"} nenhum negócio em aberto com a Nexus no momento.`,

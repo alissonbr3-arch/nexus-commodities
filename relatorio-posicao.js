@@ -12,7 +12,8 @@
 //   grupos: [{ grao, safra, negocios: [{ contrato, data, produtor, comprador, sacas, precoLiquido, valorLiquido,
 //             pagamento, status, statusDetalhe, parcelas: [{ label, sacas, valor, data, status }] }] }],
 //   cronograma: [{ data, contrato, produtor, comprador, parcela, sacas, valor, status, estimativa }],
-//   saldos: [{ armazem, ie, fazenda, produtor, grao, safra, sacas, data }],
+//   saldos: [{ armazem, ie, fazenda, produtor, grao, safra, sacas, data, informado?, vendidoDepois?, contratosDepois? }]
+//           (sacas = saldo atual; informado − vendidoDepois quando houve venda depois da posição),
 //   externos: [{ corretora, produtor, grao, safra, sacas, preco, data }],  // vendas com outras corretoras
 //   resumo: [{ label, valor }]           // números extras na lateral (ex.: recebidos)
 //   vendidoTotal: [{ grao, safra, sacas }] // opcional: tudo o que já foi vendido com a Nexus (pra barra),
@@ -114,7 +115,7 @@
     const blocoSaldos = saldos.length ? `<section class="bloco"><h4>Saldo nos armazéns <em>${armazensUnicos.length === 1 ? esc(armazensUnicos[0]) + " · " : ""}${umaData ? "posição em " + data(datasSaldo[0]) : "posição informada"}</em></h4>
       <table><thead><tr>${armazensUnicos.length > 1 ? "<th>Armazém</th>" : ""}<th>Fazenda · IE</th>${varios ? "<th>Produtor</th>" : ""}<th>Grão</th><th class="num">Saldo (sc)</th>${umaData ? "" : "<th>Posição</th>"}</tr></thead>
       <tbody>${ordenados.map(s => `<tr>${armazensUnicos.length > 1 ? `<td>${esc(s.armazem)}</td>` : ""}<td>${esc(s.fazenda || "—")}<div class="det">IE ${esc(s.ie || "—")}</div></td>${varios ? `<td>${esc(s.produtor)}</td>` : ""}
-        <td class="nw">${esc(s.grao)} <span class="det">${esc(s.safra || "")}</span></td><td class="num mono"><b>${num(s.sacas, 2)}</b></td>${umaData ? "" : `<td class="mono">${data(s.data)}</td>`}</tr>`).join("")}</tbody></table></section>`
+        <td class="nw">${esc(s.grao)} <span class="det">${esc(s.safra || "")}</span></td><td class="num mono"><b>${num(s.sacas, 2)}</b>${s.vendidoDepois > 0 ? `<div class="det">${num(s.informado, 2)} informado − ${num(s.vendidoDepois, 2)} vendido${s.contratosDepois && s.contratosDepois.length ? ` (${esc(s.contratosDepois.join(", "))})` : ""}</div>` : ""}</td>${umaData ? "" : `<td class="mono">${data(s.data)}</td>`}</tr>`).join("")}</tbody></table>${saldos.some(s => s.vendidoDepois > 0) ? `<div class="det" style="margin-top:6px">Saldo = posição informada pelo produtor menos as vendas feitas depois dessa data.</div>` : ""}</section>`
       : "";
 
     // Até 8 pagamentos: saldo e linha do tempo lado a lado. Mais que isso: um embaixo do outro, cada um na largura
@@ -267,5 +268,23 @@
 </body></html>`;
   }
 
+  // Saldo atualizado nos armazéns: a posição informada pelo produtor menos o que ele vendeu DEPOIS da data dela
+  // (Nexus e outras corretoras), do mesmo grão e safra. Venda com fazenda definida sai do saldo dessa fazenda;
+  // sem fazenda (ou com mais de um saldo possível) sai do maior saldo primeiro. Nunca fica negativo.
+  // saldos: linhas de nexus_saldos_armazem; vendas: [{ produtor, grao, safra, data, sacas, fazenda?, rotulo }]
+  // -> [{ s (a linha original), resta, vendido, contratos }]
+  function saldosDescontandoVendas(saldos, vendas) {
+    const lista = (saldos || []).map(s => ({ s, resta: Number(s.quantidade || 0), vendido: 0, contratos: [] }));
+    const vs = (vendas || []).filter(v => v.data && Number(v.sacas) > 0).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    for (const v of vs) {
+      let cands = lista.filter(l => l.s.produtor_id === v.produtor && l.s.grao === v.grao && (l.s.safra || "") === (v.safra || "") && l.s.data_referencia && String(v.data).slice(0, 10) > l.s.data_referencia && l.resta > 0);
+      if (v.fazenda && cands.some(l => l.s.fazenda_id === v.fazenda)) cands = cands.filter(l => l.s.fazenda_id === v.fazenda);
+      let falta = Number(v.sacas);
+      for (const l of cands.sort((a, b) => b.resta - a.resta)) { if (falta <= 0) break; const d = Math.min(l.resta, falta); l.resta -= d; l.vendido += d; falta -= d; if (v.rotulo) l.contratos.push(v.rotulo); }
+    }
+    return lista.map(l => ({ ...l, resta: Math.round(l.resta * 100) / 100, vendido: Math.round(l.vendido * 100) / 100, contratos: [...new Set(l.contratos)] }));
+  }
+
   globalThis.renderRelatorioPosicao = renderRelatorioPosicao;
+  globalThis.saldosDescontandoVendas = saldosDescontandoVendas;
 })();

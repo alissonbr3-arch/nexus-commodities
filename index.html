@@ -4725,6 +4725,13 @@ function fazendaSaldoLabel(s) {
   if (!f) return "—";
   return `${f.inscricao_estadual ? "IE " + f.inscricao_estadual : "Sem IE"} (${f.nome})`;
 }
+// Vendas que descontam do saldo informado no armazém (ver saldosDescontandoVendas em relatorio-posicao.js).
+function vendasParaSaldo() {
+  return [
+    ...data.negocios.filter(n => !n.deleted_at && n.status !== "Cancelado").map(n => ({ produtor: n.produtor_id, grao: n.grao, safra: n.safra, data: n.data, sacas: Number(n.quantidade || 0), fazenda: n.fazenda_id, rotulo: n.numero_contrato || "Nexus" })),
+    ...data.externos.map(x => ({ produtor: x.cadastro_id, grao: x.grao, safra: x.safra, data: x.data_venda, sacas: Number(x.quantidade || 0), fazenda: null, rotulo: x.corretora_nome || "outra corretora" })),
+  ];
+}
 function ordenarSaldos(lista) {
   return [...lista].sort((a, b) => (a.grao || "").localeCompare(b.grao || "", "pt-BR") || (a.safra || "").localeCompare(b.safra || "", "pt-BR") || nomeArmazemSaldo(a).localeCompare(nomeArmazemSaldo(b), "pt-BR") || fazendaSaldoLabel(a).localeCompare(fazendaSaldoLabel(b), "pt-BR"));
 }
@@ -6381,7 +6388,7 @@ function gerarRelatorioProdutor() {
     empresa: NEXUS_EMPRESA,
     produtores: produtores.map(p => ({ nome: p.nome, documento: p.cpf ? `${tipoCpfCnpj(p.cpf)} ${p.cpf}` : "", cidade: p.cidade })),
     grupos, cronograma,
-    saldos: saldos.map(s => { const f = fazendaDe(s.fazenda_id); return { armazem: nomeArmazemSaldo(s), ie: f ? f.inscricao_estadual : "", fazenda: f ? f.nome : "", produtor: nomeCadastro(s.produtor_id), grao: s.grao, safra: s.safra, sacas: Number(s.quantidade || 0), data: s.data_referencia }; }),
+    saldos: saldosDescontandoVendas(saldos, vendasParaSaldo()).map(({ s, resta, vendido, contratos }) => { const f = fazendaDe(s.fazenda_id); return { armazem: nomeArmazemSaldo(s), ie: f ? f.inscricao_estadual : "", fazenda: f ? f.nome : "", produtor: nomeCadastro(s.produtor_id), grao: s.grao, safra: s.safra, sacas: resta, informado: Number(s.quantidade || 0), vendidoDepois: vendido, contratosDepois: contratos, data: s.data_referencia }; }),
     externos: externos.map(x => ({ corretora: x.corretora_nome || "—", produtor: nomeCadastro(x.cadastro_id), grao: x.grao, safra: x.safra, sacas: Number(x.quantidade || 0), preco: x.preco == null ? null : Number(x.preco), data: x.data_venda })),
     resumo: negocios.length ? [{ label: "negócios recebidos", valor: `${recebidos} de ${negocios.length}` }] : [],
     vazioNegocios: "Nenhum negócio nas safras selecionadas.",
