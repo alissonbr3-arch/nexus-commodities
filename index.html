@@ -1974,7 +1974,7 @@ function renderCarteiraConversaoRanking() {
 // ---------------- FEEDBACK MENSAL DOS CORRETORES ----------------
 // Todo dia 1º o Dashboard passa a mostrar o fechamento do mês que acabou, com números e estratégia
 // para cada corretor (pedido do Álisson em 16/11/2026). Calculado aqui, a partir dos negócios —
-// não precisa de rotina no servidor. O proprietário vê a equipe toda; cada corretor vê só o dele.
+// não precisa de rotina no servidor. Todos veem o feedback de todos (pedido do Álisson em 16/11/2026).
 let feedbackMesOffset = 1; // 1 = mês passado; 2 = retrasado...
 function feedbackMudarMes(d) { feedbackMesOffset = Math.max(1, feedbackMesOffset + d); renderFeedbackMensal(); }
 function fbMes(offset) {
@@ -2052,8 +2052,7 @@ function feedbackDoCorretor(e, mes, ant, todos) {
 function renderFeedbackMensal() {
   const el = document.getElementById("feedbackMensalPanel");
   if (!el || !data.equipe || !data.equipe.length) return;
-  const prop = equipeProprietario(), souProp = prop && prop.user_id === currentUserId;
-  const equipe = souProp ? data.equipe : data.equipe.filter(e => e.user_id === currentUserId);
+  const equipe = data.equipe, souProp = true; // todos veem a equipe toda
   if (!equipe.length) { el.style.display = "none"; return; }
   const mes = fbMes(feedbackMesOffset), ant = fbMes(feedbackMesOffset + 1);
   const todos = data.negocios.filter(n => n.status !== "Cancelado");
@@ -2065,7 +2064,7 @@ function renderFeedbackMensal() {
   el.style.display = "";
   el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div><h3 style="margin:0">Feedback do mês ${novo ? '<span class="badge" style="background:var(--gold-soft);color:var(--gold);margin-left:6px">Novo</span>' : ""}</h3>
-      <div class="hint" style="margin:2px 0 0">Fechamento de <b>${mes.nome}</b> e estratégia para o mês seguinte${souProp ? " — equipe toda" : ""}. Sai sozinho todo dia 1º.</div></div>
+      <div class="hint" style="margin:2px 0 0">Fechamento de <b>${mes.nome}</b> e estratégia de cada corretor para o mês seguinte. Sai sozinho todo dia 1º.</div></div>
       <div style="display:flex;gap:6px;align-items:center"><button class="period-btn" onclick="feedbackMudarMes(1)">‹ anterior</button>${feedbackMesOffset > 1 ? `<button class="period-btn" onclick="feedbackMudarMes(-1)">próximo ›</button>` : ""}</div>
     </div>
     ${souProp ? `<div style="font-size:12.5px;margin-top:10px;padding:10px 12px;background:var(--gold-soft);border-radius:10px">Nexus no mês: <b>${fmtNum(Math.round(eq.sacas))} sacas</b> ${fbVar(eq.sacas, eqAnt.sacas)} · <b>${eq.n} negócios</b> ${fbVar(eq.n, eqAnt.n)} · ticket médio <b>${fmtNum(Math.round(eq.ticket))} sc</b> ${fbVar(eq.ticket, eqAnt.ticket)}</div>` : ""}
