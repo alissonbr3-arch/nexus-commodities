@@ -530,6 +530,7 @@
           </div>
           <div class="cards" id="dashCards"></div>
           <div class="panel-card" id="minhaMetaPanel" style="display:none;margin-bottom:18px"></div>
+          <div class="panel-card" id="feedbackMensalPanel" style="display:none;margin-bottom:18px"></div>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Volume por comprador</h3>
@@ -1970,6 +1971,107 @@ function renderCarteiraConversaoRanking() {
     }).join("");
 }
 
+// ---------------- FEEDBACK MENSAL DOS CORRETORES ----------------
+// Todo dia 1º o Dashboard passa a mostrar o fechamento do mês que acabou, com números e estratégia
+// para cada corretor (pedido do Álisson em 16/11/2026). Calculado aqui, a partir dos negócios —
+// não precisa de rotina no servidor. O proprietário vê a equipe toda; cada corretor vê só o dele.
+let feedbackMesOffset = 1; // 1 = mês passado; 2 = retrasado...
+function feedbackMudarMes(d) { feedbackMesOffset = Math.max(1, feedbackMesOffset + d); renderFeedbackMensal(); }
+function fbMes(offset) {
+  const [y, m] = todayISO().split("-").map(Number); const d = new Date(y, m - 1 - offset, 1);
+  const yy = d.getFullYear(), mm = d.getMonth() + 1, ult = new Date(yy, mm, 0).getDate(), pad = x => String(x).padStart(2, "0");
+  return { ini: `${yy}-${pad(mm)}-01`, fim: `${yy}-${pad(mm)}-${pad(ult)}`, nome: d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
+}
+function fbStats(negs) {
+  const sacas = negs.reduce((s, n) => s + Number(n.quantidade || 0), 0);
+  return { n: negs.length, sacas, ticket: negs.length ? sacas / negs.length : 0 };
+}
+function fbTop(negs, campo, nomeFn) {
+  const tot = negs.reduce((s, n) => s + Number(n.quantidade || 0), 0), m = new Map();
+  negs.forEach(n => { const k = n[campo] || "—"; m.set(k, (m.get(k) || 0) + Number(n.quantidade || 0)); });
+  return [...m.entries()].map(([k, v]) => ({ id: k, nome: nomeFn ? nomeFn(k) : k, v, pct: tot ? v / tot * 100 : 0 })).sort((a, b) => b.v - a.v);
+}
+const fbEsc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fbPrim = nome => String(nome || "").split(" ")[0];
+const fbK = v => v >= 1000 ? fmtNum(Math.round(v / 100) / 10).replace(/,0$/, "") + " mil" : fmtNum(Math.round(v));
+function fbVar(a, b) { if (!b) return ""; const v = (a - b) / b * 100; return `<span style="color:${v >= 0 ? "var(--green)" : "var(--red)"};font-weight:600">${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(0)}%</span>`; }
+function feedbackDoCorretor(e, mes, ant, todos) {
+  const doMes = (negs, p) => negs.filter(n => n.data && n.data >= p.ini && n.data <= p.fim && n.status !== "Cancelado");
+  const meus = negociosDoCorretorUI(e);
+  const negs = doMes(meus, mes), negsAnt = doMes(meus, ant);
+  const st = fbStats(negs), sa = fbStats(negsAnt);
+  // janela de 3 meses (o mês e os 2 anteriores) para concentração e mix — um mês só engana
+  const tri = { ini: fbMes(feedbackMesOffset + 2).ini, fim: mes.fim };
+  const negs3 = doMes(meus, tri), negsEquipe3 = doMes(todos, tri);
+  const prods = fbTop(negs3, "produtor_id", nomeCadastro), comps = fbTop(negs3, "cliente_id", id => id === "—" ? "—" : nomeCadastro(id));
+  const graos = fbTop(negs3, "grao"), graosEquipe = fbTop(negsEquipe3, "grao");
+  const totEquipeMes = fbStats(doMes(todos, mes)).sacas;
+  const meta = Number(e.meta_mensal_sacas || 0);
+  const ultimo = meus.map(n => n.data).filter(Boolean).sort().pop();
+  // carteira parada: produtores do corretor sem negócio nenhum (de ninguém) há 60+ dias
+  const corte = new Date(mes.fim + "T12:00:00"); corte.setDate(corte.getDate() - 60); const corteISO = corte.toISOString().slice(0, 10);
+  const parados = data.cadastros.filter(c => c.tipo === "Produtor" && c.owner_id === e.user_id)
+    .filter(c => !todos.some(n => n.produtor_id === c.id && n.data && n.data > corteISO && n.data <= mes.fim)).map(c => c.apelido || c.nome);
+
+  const bons = [], acoes = [];
+  if (!st.n) acoes.push(`Nenhum negócio em ${mes.nome.split(" ")[0]}. Sentar junto esta semana e entender o que travou: falta de produtor, de preço ou de tempo.`);
+  if (st.n && sa.ticket && st.ticket > sa.ticket * 1.1) bons.push(`Ticket médio subiu para ${fmtNum(Math.round(st.ticket))} sc por negócio (era ${fmtNum(Math.round(sa.ticket))}).`);
+  if (st.n && sa.sacas && st.sacas > sa.sacas * 1.1) bons.push(`Volume cresceu: ${fbK(st.sacas)} sacas contra ${fbK(sa.sacas)} no mês anterior.`);
+  if (meta && st.sacas >= meta) bons.push(`Meta batida: ${fbK(st.sacas)} de ${fbK(meta)} sacas.`);
+  if (totEquipeMes && st.sacas / totEquipeMes >= 0.4) bons.push(`Respondeu por ${(st.sacas / totEquipeMes * 100).toFixed(0)}% do volume da Nexus no mês.`);
+  if (st.n && sa.n && st.n < sa.n * 0.6) acoes.push(`Caiu de ${sa.n} para ${st.n} negócios. Meta de atividade: 10 contatos com proposta por semana, conferidos na segunda.`);
+  else if (st.n > 0 && st.n <= 2) acoes.push(`Só ${st.n} negócio${st.n > 1 ? "" : ""} no mês. Meta de atividade: 10 contatos com proposta por semana, conferidos na segunda.`);
+  if (st.n && sa.ticket && st.ticket < sa.ticket * 0.8) acoes.push(`Ticket caiu para ${fmtNum(Math.round(st.ticket))} sc. Focar nos produtores maiores da carteira e oferecer lotes cheios.`);
+  const top3 = prods.slice(0, 3), top3pct = top3.reduce((s, x) => s + x.pct, 0);
+  if (prods.length >= 3 && top3pct >= 45) acoes.push(`${top3.map(x => fbEsc(x.nome)).join(", ")} somam ${top3pct.toFixed(0)}% do volume dos últimos 3 meses. Visitar os três todo mês, levar o relatório de posição e já combinar o próximo lote. Abrir 2 a 3 produtores novos para diluir o risco.`);
+  else if (top3.length) acoes.push(`Pedir o próximo lote a quem já confia: ${top3.map(x => fbEsc(x.nome)).join(", ")}.`);
+  if (comps[0] && comps[0].id !== "—" && comps[0].pct >= 35) acoes.push(`${comps[0].pct.toFixed(0)}% das vendas foram para ${fbEsc(comps[0].nome)}. Cotar sempre com mais 2 compradores para não depender de um só.`);
+  graosEquipe.filter(g => g.pct >= 10).forEach(g => { const meu = graos.find(x => x.id === g.id); if (negs3.length && (!meu || meu.pct < 5)) acoes.push(`Quase não negociou ${String(g.id).toLowerCase()} (${meu ? meu.pct.toFixed(0) : 0}%), que é ${g.pct.toFixed(0)}% da Nexus. Perguntar aos produtores da carteira quanto plantaram.`); });
+  if (parados.length) acoes.push(`Produtores da carteira sem negócio há mais de 60 dias (${parados.length}): ${parados.slice(0, 6).map(fbEsc).join(", ")}${parados.length > 6 ? "…" : ""}. Ligar com o preço do dia.`);
+  const metaSug = Math.max(meta, Math.ceil(Math.max(st.sacas, sa.sacas) * 1.1 / 5000) * 5000);
+  if (metaSug > 0) acoes.push(meta ? (metaSug > meta ? `Meta para o próximo mês: subir de ${fbK(meta)} para ${fbK(metaSug)} sacas.` : `Manter a meta de ${fbK(meta)} sacas no próximo mês.`) : `Definir meta para o próximo mês: sugestão de ${fbK(metaSug)} sacas (em Equipe).`);
+
+  const mix = graos.slice(0, 3).map(g => `${fbEsc(g.id)} ${g.pct.toFixed(0)}%`).join(" · ");
+  return `<div style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+      <div style="font-size:15px;font-weight:700">${fbEsc(e.nome)}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft)">último negócio: ${ultimo ? fmtDate(ultimo) : "—"}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0 12px">
+      <div><div style="font-size:11px;color:var(--ink-soft)">Sacas</div><div style="font-size:18px;font-weight:700">${fmtNum(Math.round(st.sacas))}</div><div style="font-size:11px">${fbVar(st.sacas, sa.sacas)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-soft)">Negócios</div><div style="font-size:18px;font-weight:700">${st.n}</div><div style="font-size:11px">${fbVar(st.n, sa.n)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-soft)">Ticket médio</div><div style="font-size:18px;font-weight:700">${fmtNum(Math.round(st.ticket))} sc</div><div style="font-size:11px">${fbVar(st.ticket, sa.ticket)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-soft)">Meta</div><div style="font-size:18px;font-weight:700">${meta ? (st.sacas / meta * 100).toFixed(0) + "%" : "—"}</div><div style="font-size:11px;color:var(--ink-soft)">${meta ? "de " + fbK(meta) + " sc" : "sem meta"}</div></div>
+    </div>
+    ${mix ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px">Mix (3 meses): ${mix} · ${prods.length} produtores · ${comps.filter(c => c.id !== "—").length} compradores</div>` : ""}
+    ${bons.length ? `<div style="font-size:12.5px;font-weight:700;color:var(--green);margin-top:6px">O que foi bem</div><ul style="margin:4px 0 0 18px;font-size:12.5px;line-height:1.55">${bons.map(b => `<li>${b}</li>`).join("")}</ul>` : ""}
+    <div style="font-size:12.5px;font-weight:700;color:var(--gold);margin-top:8px">Estratégia para o próximo mês</div>
+    <ol style="margin:4px 0 0 18px;font-size:12.5px;line-height:1.55">${acoes.map(a => `<li>${a}</li>`).join("")}</ol>
+  </div>`;
+}
+function renderFeedbackMensal() {
+  const el = document.getElementById("feedbackMensalPanel");
+  if (!el || !data.equipe || !data.equipe.length) return;
+  const prop = equipeProprietario(), souProp = prop && prop.user_id === currentUserId;
+  const equipe = souProp ? data.equipe : data.equipe.filter(e => e.user_id === currentUserId);
+  if (!equipe.length) { el.style.display = "none"; return; }
+  const mes = fbMes(feedbackMesOffset), ant = fbMes(feedbackMesOffset + 1);
+  const todos = data.negocios.filter(n => n.status !== "Cancelado");
+  const doMes = p => todos.filter(n => n.data && n.data >= p.ini && n.data <= p.fim);
+  const eq = fbStats(doMes(mes)), eqAnt = fbStats(doMes(ant));
+  const novo = feedbackMesOffset === 1 && Number(todayISO().slice(8)) <= 7;
+  // cada corretor ordenado por sacas no mês
+  const ordem = equipe.map(e => ({ e, s: fbStats(negociosDoCorretorUI(e).filter(n => n.data && n.data >= mes.ini && n.data <= mes.fim)).sacas })).sort((a, b) => b.s - a.s);
+  el.style.display = "";
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div><h3 style="margin:0">Feedback do mês ${novo ? '<span class="badge" style="background:var(--gold-soft);color:var(--gold);margin-left:6px">Novo</span>' : ""}</h3>
+      <div class="hint" style="margin:2px 0 0">Fechamento de <b>${mes.nome}</b> e estratégia para o mês seguinte${souProp ? " — equipe toda" : ""}. Sai sozinho todo dia 1º.</div></div>
+      <div style="display:flex;gap:6px;align-items:center"><button class="period-btn" onclick="feedbackMudarMes(1)">‹ anterior</button>${feedbackMesOffset > 1 ? `<button class="period-btn" onclick="feedbackMudarMes(-1)">próximo ›</button>` : ""}</div>
+    </div>
+    ${souProp ? `<div style="font-size:12.5px;margin-top:10px;padding:10px 12px;background:var(--gold-soft);border-radius:10px">Nexus no mês: <b>${fmtNum(Math.round(eq.sacas))} sacas</b> ${fbVar(eq.sacas, eqAnt.sacas)} · <b>${eq.n} negócios</b> ${fbVar(eq.n, eqAnt.n)} · ticket médio <b>${fmtNum(Math.round(eq.ticket))} sc</b> ${fbVar(eq.ticket, eqAnt.ticket)}</div>` : ""}
+    ${ordem.map(({ e }) => feedbackDoCorretor(e, mes, ant, todos)).join("")}`;
+}
+
 // ---------------- DASHBOARD ----------------
 let dashVolumeUnit = "sc";
 function setDashVolumeUnit(u) { dashVolumeUnit = u; renderDashboard(); }
@@ -1992,7 +2094,7 @@ function renderDashboard() {
   document.getElementById("dashCards").innerHTML = cards.map(c => `
     <div class="card"><div class="top-row"><div class="label">${c.label}</div><div class="ic-badge" style="background:${c.bg};color:${c.color}">${c.ic}</div></div>
     <div class="value ${c.warn ? "alert" : ""}">${c.value}</div>${c.foot ? `<div class="foot">${c.foot}</div>` : ""}</div>`).join("");
-  renderCuriosidades(); renderMinhaMeta(); renderOfertadosDash();
+  renderCuriosidades(); renderMinhaMeta(); renderOfertadosDash(); renderFeedbackMensal();
   renderGraoChart(list); renderComissaoChart(); renderDashCompradorChart(list); renderDashCorretorChart(list); renderDashCorretorVolumeChart(list);
 }
 // ---------------- CURIOSIDADES (desde o primeiro negócio) ----------------
