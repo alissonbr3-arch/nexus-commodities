@@ -1646,8 +1646,11 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
     if (btn.dataset.page === "briefing") briefingCarregar(false);
     // Toda vez que entra em Negociações, volta o filtro pros próprios negócios do corretor —
     // quem quiser ver de todo mundo escolhe "Todos os corretores" de novo no filtro.
+    // Exceção (pedido do Álisson em 16/11/2026): o Maycon abre sempre vendo o negócio de todo mundo.
     if (btn.dataset.page === "negociacoes") {
-      document.getElementById("negFilterCorretor").value = "eu";
+      const eu = data.equipe.find(e => e.user_id === currentUserId);
+      const veTodos = /maycon/i.test((eu && eu.nome) || "");
+      document.getElementById("negFilterCorretor").value = veTodos ? "" : "eu";
       renderNegocios();
     }
   });
