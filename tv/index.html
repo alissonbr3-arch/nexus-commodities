@@ -287,6 +287,15 @@
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// TV aberta, sem login: busca tudo pela função tv-dados (decisão do Álisson em 16/11/2026, pra não precisar digitar
+// e-mail e senha com o controle remoto). O login antigo fica só como reserva se TV_ABERTA virar false.
+const TV_ABERTA = true;
+async function tvApi(q, extra = {}) {
+  const r = await fetch(`/.netlify/functions/tv-dados?${new URLSearchParams({ q, ...extra })}`, { cache: "no-store" });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) throw new Error(j.erro || "Falha ao buscar dados da TV");
+  return j;
+}
 
 function fmtMoney(v) { return "R$ " + Number(v||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtNum2(v) { return Number(v||0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -608,7 +617,12 @@ async function carregarNoticiasTv() {
 async function carregarDadosTv() {
   const hoje = new Date();
   const desde = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
-  const [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }, { data: cfgRow }, { data: compRows }] = await Promise.all([
+  let cotRows, dolarRow, histRows, negociosRows, cfgRow, compRows;
+  if (TV_ABERTA) {
+    const r = await tvApi("dados");
+    ({ cot: cotRows, dolar: dolarRow, hist: histRows, negocios: negociosRows, cfg: cfgRow, compradores: compRows } = r);
+    novosNegociosTv(negociosRows || []);
+  } else [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }, { data: cfgRow }, { data: compRows }] = await Promise.all([
     sb.from("nexus_cotacoes").select("*").order("produto"),
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
     sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
@@ -634,7 +648,7 @@ async function carregarDadosTv() {
 let pagamentosHoje = [], liquidoCtx = { cfg: {}, compradores: new Map() };
 async function carregarPagamentosTv() {
   const hoje = new Date().toLocaleDateString("en-CA");
-  const { data } = await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento, pagamentos_extra, pagamento_dias_apos_entrega, data_pagamento, preco_liquido, funrural_forma, comissao, comissao_pagador")
+  const { data } = TV_ABERTA ? { data: (await tvApi("pagamentos", { hoje })).negocios } : await sb.from("nexus_negocios").select("id, numero_contrato, grao, safra, quantidade, preco, contraparte, cliente_id, produtor_id, check_pagamento, pagamentos_extra, pagamento_dias_apos_entrega, data_pagamento, preco_liquido, funrural_forma, comissao, comissao_pagador")
     .or(`data_pagamento.eq.${hoje},pagamentos_extra.cs.${JSON.stringify([{ data: hoje }])}`).is("deleted_at", null).order("numero_contrato");
   // Pagamento em parcelas: entra só a parcela de hoje, com as sacas e o "pago" dela (mesma leitura da Agenda do painel).
   pagamentosHoje = [];
@@ -948,7 +962,9 @@ function lancarConfete() {
 
 // ---------------- ANIVERSARIANTES ----------------
 async function carregarPessoasTv() {
-  const [{ data: cads }, { data: eq }] = await Promise.all([
+  let cads, eq;
+  if (TV_ABERTA) ({ cadastros: cads, equipe: eq } = await tvApi("pessoas"));
+  else [{ data: cads }, { data: eq }] = await Promise.all([
     sb.from("nexus_cadastros").select("id, nome, apelido, tipo, data_nascimento").limit(5000),
     sb.from("nexus_equipe").select("user_id, nome, data_nascimento"),
   ]);
@@ -1055,9 +1071,9 @@ function iniciarApp() {
   carregarIntraday(); setInterval(carregarIntraday, 180000); // a cada 3 min (a fonte já tem ~15 min de atraso; economiza créditos do Netlify)
   carregarPessoasTv().then(() => { const d = new URLSearchParams(location.search).get("demo"); if (d) setTimeout(() => tvDemo(d), 3000); });
   setInterval(carregarPessoasTv, 300000);
-  setInterval(carregarDadosTv, 60000);
+  setInterval(carregarDadosTv, TV_ABERTA ? 30000 : 60000); // sem login não tem tempo real: confere a cada 30 s
   setInterval(carregarNoticiasTv, 600000);
-  sb.channel("tv-realtime")
+  if (!TV_ABERTA) sb.channel("tv-realtime")
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_cotacoes" }, carregarDadosTv)
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, carregarDadosTv)
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_negocios" }, carregarDadosTv)
@@ -1065,7 +1081,17 @@ function iniciarApp() {
     .subscribe();
 }
 
+// Sem tempo real (TV aberta): a cada busca, negócio que não estava na anterior e foi criado há pouco = negócio
+// fechado agora, e dispara a mesma comemoração do tempo real.
+let negociosVistosTv = null;
+function novosNegociosTv(lista) {
+  const ids = new Set(lista.map(n => n.id));
+  if (negociosVistosTv) lista.filter(n => !negociosVistosTv.has(n.id) && n.created_at && Date.now() - new Date(n.created_at).getTime() < 10 * 60000).forEach(n => negocioFechadoTv(n));
+  negociosVistosTv = ids;
+}
+
 (async () => {
+  if (TV_ABERTA) { iniciarApp(); return; }
   const { data: { session } } = await sb.auth.getSession();
   if (session) { iniciarApp(); } else { document.getElementById("loginBox").style.display = "flex"; }
 })();
