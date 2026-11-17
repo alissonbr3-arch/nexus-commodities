@@ -812,6 +812,21 @@
           </table></div>
         </div>
 
+        <div class="panel-card" id="precoVazamentoPanel" style="margin-top:18px">
+          <h3>&#128270; Descobrir vazamento</h3>
+          <div class="hint">Cada contato recebe a mensagem com pequenas diferenças (ordem dos grãos, marcador das linhas, emoji da saudação, ":" no título) — os preços são os mesmos. As marcas mudam todo dia. Quando o preço aparecer no concorrente, cole aqui o texto (ou preencha os detalhes olhando o print) e veja de quem saiu.</div>
+          <div class="field-row"><div class="field" style="max-width:170px"><label>Dia em que o preço foi enviado</label><input type="date" id="pv_data"></div></div>
+          <div class="field"><label>Texto que chegou no concorrente (opcional)</label><textarea id="pv_texto" rows="5" placeholder="Cole aqui a mensagem encaminhada" oninput="peDescobrirLerTexto()"></textarea></div>
+          <div class="field-row">
+            <div class="field"><label>Ordem dos grãos</label><input type="text" id="pv_ordem" placeholder="Ex.: milho, soja, sorgo"></div>
+            <div class="field"><label>Marcador das linhas</label><select id="pv_bala"><option value="">Não sei</option><option value="0">•  (bolinha)</option><option value="1">◦  (bolinha vazada)</option><option value="2">▸  (setinha)</option><option value="3">–  (traço)</option></select></div>
+            <div class="field"><label>Saudação</label><select id="pv_saud"><option value="">Não sei</option><option value="0">emoji antes (☀️ 🌤️ 🌙)</option><option value="1">emoji depois (☀️ 🌤️ 🌙)</option><option value="2">emoji antes (🌞 ⛅ 🌛)</option><option value="3">emoji depois (🌞 ⛅ 🌛)</option></select></div>
+            <div class="field"><label>Título do grão</label><select id="pv_dois"><option value="">Não sei</option><option value="0">Sem dois-pontos (Soja)</option><option value="1">Com dois-pontos (Soja:)</option></select></div>
+          </div>
+          <div style="margin:4px 0 12px"><button class="btn-primary" onclick="peDescobrir()">Descobrir</button></div>
+          <div id="pv_resultado"></div>
+        </div>
+
       </div>
 
       <!-- BRIEFING DIÁRIO (imagem pro Instagram) -->
@@ -2866,20 +2881,23 @@ function precoEnvioExtras(grao) {
   })).filter(x => x.preco != null);
 }
 // Mensagem com {{SAUDACAO}} e {{NOME}}. Todo cliente recebe todas as linhas de preço preenchidas.
-function precoEnvioTemplate() {
+function precoEnvioTemplate(cod = 0) {
+  const mk = peMarcaPartes(cod);
   const sd = precoEnvioNum("pe_soja_disp"), sf = precoEnvioNum("pe_soja_fut"), md = precoEnvioNum("pe_milho_disp"), mf = precoEnvioNum("pe_milho_fut");
   const refS = (document.getElementById("pe_soja_ref")?.value || "").trim(), refM = (document.getElementById("pe_milho_ref")?.value || "").trim();
   const obs = (document.getElementById("pe_obs")?.value || "").trim();
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const qual = id => (document.getElementById(id)?.value || "").trim();
-  const linha = (rot, v, q) => `• ${rot}: ${q ? q + " " : ""}*${fmtMoney(v)}/sc*`;
+  const linha = (rot, v, q) => `${mk.bala} ${rot}: ${q ? q + " " : ""}*${fmtMoney(v)}/sc*`;
   const extras = g => precoEnvioExtras(g).map(x => linha(`Disponível${x.rotulo ? " (" + x.rotulo + ")" : ""}`, x.preco, x.obs)); // igual ao futuro: "Disponível (Pagamento 10/11)"
   const blocoSoja = [sd != null ? linha("Disponível", sd, qual("pe_soja_disp_obs")) : null, ...extras("soja"), sf != null ? linha(`Futuro${refS ? " (" + refS + ")" : ""}`, sf, qual("pe_soja_fut_obs")) : null].filter(Boolean);
   const blocoMilho = [md != null ? linha("Disponível", md, qual("pe_milho_disp_obs")) : null, ...extras("milho"), mf != null ? linha(`Futuro${refM ? " (" + refM + ")" : ""}`, mf, qual("pe_milho_fut_obs")) : null].filter(Boolean);
   const gd = precoEnvioNum("pe_sorgo_disp"), gf = precoEnvioNum("pe_sorgo_fut"), refG = (document.getElementById("pe_sorgo_ref")?.value || "").trim();
   const blocoSorgo = [gd != null ? linha("Disponível", gd, qual("pe_sorgo_disp_obs")) : null, ...extras("sorgo"), gf != null ? linha(`Futuro${refG ? " (" + refG + ")" : ""}`, gf, qual("pe_sorgo_fut_obs")) : null].filter(Boolean);
   if (!blocoSoja.length && !blocoMilho.length && !blocoSorgo.length) return "";
-  const precos = [blocoSoja.length ? `*Soja*\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `*Milho*\n${blocoMilho.join("\n")}` : "", blocoSorgo.length ? `*Sorgo*\n${blocoSorgo.join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const tit = g => `*${g}${mk.dois ? ":" : ""}*`;
+  const blocos = [blocoSoja.length ? `${tit("Soja")}\n${blocoSoja.join("\n")}` : "", blocoMilho.length ? `${tit("Milho")}\n${blocoMilho.join("\n")}` : "", blocoSorgo.length ? `${tit("Sorgo")}\n${blocoSorgo.join("\n")}` : ""];
+  const precos = mk.ordem.map(i => blocos[i]).filter(Boolean).join("\n\n");
   let texto = (document.getElementById("pe_texto")?.value || "").trim() || PE_TEXTO_PADRAO;
   if (!/\{\{PRECOS\}\}/.test(texto)) texto += "\n\n{{PRECOS}}"; // sem o marcador dos preços, a mensagem sairia sem preço nenhum
   return texto.replace(/\{\{DATA\}\}/g, hoje).replace(/\{\{PRECOS\}\}/g, precos).replace(/\{\{OBS\}\}/g, obs).replace(/\n{3,}/g, "\n\n").trim();
@@ -2890,8 +2908,14 @@ function precoEnvioNome(nomeOuCliente) {
   if (/\b(ltda|s\.?a\.?|eireli|me|epp|agro|agropecu\w*|grupo|cooperativa|fazendas?|comercio|comércio|cereais|armaz\w+)\b/i.test(n)) return n;
   const p = n.split(/\s+/)[0] || n; return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
-function precoEnvioSaudacao() { const h = new Date().getHours(); return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite"; }
-function precoEnvioMensagemPara(c) { return precoEnvioTemplate().replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao()).replace(/\{\{NOME\}\}/g, precoEnvioNome(c)); }
+function precoEnvioSaudacao(cod = 0) { const h = new Date().getHours(); return PE_SAUD[h < 12 ? "dia" : h < 18 ? "tarde" : "noite"][peMarcaPartes(cod).saud]; }
+// cod = marca do contato no dia; chave = id do contato (vai escondido, em caracteres invisíveis, no fim da 1ª linha)
+function precoEnvioMensagemPara(c, cod = 0, chave = null) {
+  const t = precoEnvioTemplate(cod).replace(/\{\{SAUDACAO\}\}/g, precoEnvioSaudacao(cod)).replace(/\{\{NOME\}\}/g, precoEnvioNome(c));
+  if (!t || !chave) return t;
+  const i = t.indexOf("\n"); const inv = peInvisivel(chave);
+  return i < 0 ? t + inv : t.slice(0, i) + inv + t.slice(i);
+}
 function precoEnvioTextoPadrao() { document.getElementById("pe_texto").value = PE_TEXTO_PADRAO; precoEnvioPrevia(); }
 // Salva só o texto da mensagem, sem mexer nos preços já salvos (os campos de preço podem estar sendo editados).
 async function salvarTextoEnvio() {
@@ -2985,10 +3009,11 @@ function precoEnvioAbrirWhats(telDigitos, texto) {
 }
 async function abrirPrecoNoWhatsapp(cadastroId) {
   const c = data.cadastros.find(x => x.id === cadastroId); if (!c) return;
-  const msg = precoEnvioMensagemPara(c);
-  if (!msg) { alert("Preencha ao menos um preço."); return; }
+  if (!precoEnvioTemplate()) { alert("Preencha ao menos um preço."); return; }
+  const cod = await peMarcaParaHoje(c.id);
+  const msg = precoEnvioMensagemPara(c, cod, c.id);
   const tel = precoEnvioAbrirWhats(c.telefone, msg);
-  await sb.from("nexus_email_log").insert({ negocio_id: null, tipo: "WhatsApp Preço do dia (manual)", destinatarios: `cadastro:${c.id} ${c.nome} (${tel})`, enviado_por: currentUserId, sucesso: true, erro: null });
+  await sb.from("nexus_email_log").insert({ negocio_id: null, tipo: "WhatsApp Preço do dia (manual)", destinatarios: `cadastro:${c.id} ${c.nome} (${tel}) marca:${cod}`, enviado_por: currentUserId, sucesso: true, erro: null });
   await loadPrecoEnvio(); renderPrecoEnvioLista();
 }
 async function precoEnvioSalvarApelido(cadastroId, valor) {
@@ -3007,11 +3032,94 @@ function precoEnvioTeste() {
   const eu = data.equipe.find(e => e.user_id === currentUserId);
   const dig = String((eu && eu.telefone) || "").replace(/\D/g, "");
   if (dig.length < 10) { alert("Cadastre o seu telefone em Equipe pra testar no seu número."); return; }
-  const msg = precoEnvioMensagemPara({ nome: eu.nome, flag_soja_disponivel: false });
+  const cod = peHash("teste:" + currentUserId + todayISO()) % PE_NCOD;
+  const msg = precoEnvioMensagemPara({ nome: eu.nome, flag_soja_disponivel: false }, cod, "teste:" + currentUserId);
   if (!msg) { alert("Preencha ao menos um preço."); return; }
   precoEnvioAbrirWhats(dig, "🧪 TESTE\n\n" + msg);
 }
-function renderPrecoEnvio() { precoEnvioMontarSeletorCorretor(); precoEnvioPreencherForm(); const sel = document.getElementById("pe_abrir_em"); if (sel) sel.value = precoEnvioAbrirEm(); precoEnvioPrevia(); }
+function renderPrecoEnvio() { renderPrecoVazamento(); precoEnvioMontarSeletorCorretor(); precoEnvioPreencherForm(); const sel = document.getElementById("pe_abrir_em"); if (sel) sel.value = precoEnvioAbrirEm(); precoEnvioPrevia(); }
+
+// ---------------- MARCA POR CONTATO / DESCOBRIR VAZAMENTO ----------------
+// Pedido do Álisson em 17/11/2026: o preço estava chegando no concorrente. Cada contato recebe, a cada dia, uma versão
+// levemente diferente da mesma mensagem (mesmos preços): ordem dos grãos, marcador das linhas, emoji da saudação e ":" no
+// título — 6 × 4 × 4 × 2 = 192 combinações, sem repetir no mesmo dia. A marca vai gravada no log do envio ("marca:N").
+// Além disso, vai uma assinatura invisível (caracteres de largura zero) com o id do contato: sobrevive a encaminhar/copiar
+// o texto, mas não a print — por isso a marca visível. "Descobrir vazamento" faz o caminho de volta.
+const PE_ORDENS = [[0, 1, 2], [1, 0, 2], [0, 2, 1], [2, 0, 1], [1, 2, 0], [2, 1, 0]]; // 0 soja, 1 milho, 2 sorgo
+const PE_GRAOS = ["Soja", "Milho", "Sorgo"];
+const PE_BALAS = ["•", "◦", "▸", "–"];
+const PE_SAUD = { dia: ["☀️ Bom dia", "Bom dia ☀️", "🌞 Bom dia", "Bom dia 🌞"], tarde: ["🌤️ Boa tarde", "Boa tarde 🌤️", "⛅ Boa tarde", "Boa tarde ⛅"], noite: ["🌙 Boa noite", "Boa noite 🌙", "🌛 Boa noite", "Boa noite 🌛"] };
+const PE_SAUD_DESC = ["emoji antes (☀️ 🌤️ 🌙)", "emoji depois (☀️ 🌤️ 🌙)", "emoji antes (🌞 ⛅ 🌛)", "emoji depois (🌞 ⛅ 🌛)"];
+const PE_NCOD = 6 * 4 * 4 * 2;
+function peMarcaPartes(cod) { cod = ((Number(cod) || 0) % PE_NCOD + PE_NCOD) % PE_NCOD; return { ordem: PE_ORDENS[cod % 6], bala: PE_BALAS[Math.floor(cod / 6) % 4], saud: Math.floor(cod / 24) % 4, dois: Math.floor(cod / 96) % 2 === 1 }; }
+function peHash(str) { let h = 2166136261; for (const ch of String(str)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function peInvisivel(chave) { const b = (peHash(chave) & 0xffff).toString(2).padStart(16, "0"); return "⁠" + [...b].map(x => x === "1" ? "‌" : "​").join("") + "⁠"; }
+function peLerInvisivel(texto) { const m = /⁠([​‌]{16})⁠/.exec(texto || ""); return m ? parseInt([...m[1]].map(x => x === "‌" ? "1" : "0").join(""), 2) : null; }
+// Envios de preço de um dia, de todos os corretores: [{ id, nome, marca, at, por }]
+async function peEnviosDoDia(dia) {
+  const fim = new Date(dia + "T12:00:00"); fim.setDate(fim.getDate() + 1); const fimISO = fim.toISOString().slice(0, 10);
+  const { data: logs } = await sb.from("nexus_email_log").select("destinatarios, created_at, enviado_por").in("tipo", PE_TIPOS_LOG).eq("sucesso", true)
+    .gte("created_at", dia + "T00:00:00-04:00").lt("created_at", fimISO + "T00:00:00-04:00").order("created_at");
+  return (logs || []).map(l => { const m = /^cadastro:([0-9a-f-]{36}) (.*?)(?: marca:(\d+))?$/.exec(l.destinatarios || ""); return m ? { id: m[1], nome: m[2].replace(/\s*\(\d+\)$/, ""), marca: m[3] != null ? Number(m[3]) : null, at: l.created_at, por: l.enviado_por } : null; }).filter(Boolean);
+}
+// Marca do contato hoje: a mesma se ele já recebeu hoje; senão, uma que ninguém recebeu hoje (começa num ponto "aleatório" fixo do contato no dia)
+async function peMarcaParaHoje(cadastroId) {
+  const hoje = todayISO(); let envios = [];
+  try { envios = await peEnviosDoDia(hoje); } catch (e) {}
+  const ja = envios.find(x => x.id === cadastroId && x.marca != null); if (ja) return ja.marca;
+  const usadas = new Set(envios.map(x => x.marca).filter(x => x != null));
+  const ini = peHash(cadastroId + hoje) % PE_NCOD;
+  for (let k = 0; k < PE_NCOD; k++) { const c = (ini + k) % PE_NCOD; if (!usadas.has(c)) return c; }
+  return ini;
+}
+// Lê o que der do texto colado e preenche os campos (cada campo pode ser corrigido à mão, olhando o print)
+function peDescobrirLerTexto() {
+  const t = document.getElementById("pv_texto").value || "";
+  const pos = PE_GRAOS.map(g => { const m = new RegExp("^\\s*\\*?" + g + "\\*?:?\\*?\\s*$", "mi").exec(t); return m ? { g, i: m.index } : null; }).filter(Boolean).sort((a, b) => a.i - b.i);
+  if (pos.length >= 2) document.getElementById("pv_ordem").value = pos.map(x => x.g).join(", ");
+  const bal = PE_BALAS.findIndex(b => new RegExp("^\\s*" + b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s", "m").test(t)); if (bal >= 0) document.getElementById("pv_bala").value = String(bal);
+  const sd = [0, 1, 2, 3].find(i => Object.values(PE_SAUD).some(v => t.includes(v[i]))); if (sd != null) document.getElementById("pv_saud").value = String(sd);
+  if (pos.length) document.getElementById("pv_dois").value = /^\s*\*?(Soja|Milho|Sorgo):\*?\s*$/mi.test(t) || /^\s*\*?(Soja|Milho|Sorgo)\*?:\s*$/mi.test(t) ? "1" : "0";
+}
+async function peDescobrir() {
+  const out = document.getElementById("pv_resultado");
+  const dia = document.getElementById("pv_data").value || todayISO(), texto = document.getElementById("pv_texto").value || "";
+  out.innerHTML = `<div class="hint">Procurando…</div>`;
+  let envios; try { envios = await peEnviosDoDia(dia); } catch (e) { out.innerHTML = `<div style="color:var(--red)">Não consegui ler os envios: ${escapeHtml(e.message)}</div>`; return; }
+  // assinatura invisível: aponta o contato exato
+  const inv = peLerInvisivel(texto);
+  if (inv != null) {
+    const cands = data.cadastros.filter(c => (peHash(c.id) & 0xffff) === inv);
+    const testes = data.equipe.filter(e => (peHash("teste:" + e.user_id) & 0xffff) === inv);
+    if (cands.length || testes.length) {
+      out.innerHTML = `<div style="padding:12px 14px;border-radius:10px;background:var(--red-soft);border:1px solid var(--red)"><div style="font-weight:700;margin-bottom:4px">&#128270; Assinatura invisível encontrada — saiu de:</div>${cands.map(c => `<div style="font-size:15px;font-weight:700">${escapeHtml(c.nome)}</div><div class="hint" style="margin:0">Responsável: ${escapeHtml(nomeCorretor(c.owner_id) || "—")}${envios.some(x => x.id === c.id) ? " · recebeu o preço nesse dia" : ""}</div>`).join("")}${testes.map(e => `<div style="font-size:15px;font-weight:700">Teste de ${escapeHtml(e.nome)}</div><div class="hint" style="margin:0">É a mensagem de teste mandada para o próprio número.</div>`).join("")}</div>`;
+      return;
+    }
+  }
+  if (!envios.length) { out.innerHTML = `<div class="hint">Nenhum envio de preço registrado em ${fmtDate(dia)}.</div>`; return; }
+  const ordemTxt = (document.getElementById("pv_ordem").value || "").toLowerCase();
+  const ordemRel = ordemTxt.split(/[,;>\s]+/).map(w => PE_GRAOS.findIndex(g => g.toLowerCase().startsWith(w.slice(0, 3)) && w.length >= 3)).filter(i => i >= 0);
+  const bala = document.getElementById("pv_bala").value, saud = document.getElementById("pv_saud").value, dois = document.getElementById("pv_dois").value;
+  const filtros = (ordemRel.length >= 2 ? 1 : 0) + (bala !== "" ? 1 : 0) + (saud !== "" ? 1 : 0) + (dois !== "" ? 1 : 0);
+  if (!filtros) { out.innerHTML = `<div class="hint">Cole o texto ou preencha pelo menos um detalhe (ordem dos grãos, marcador, saudação ou dois-pontos).</div>`; return; }
+  const bate = mk => {
+    if (ordemRel.length >= 2) { const pos = ordemRel.map(g => mk.ordem.indexOf(g)); for (let i = 1; i < pos.length; i++) if (pos[i] < pos[i - 1]) return false; }
+    if (bala !== "" && mk.bala !== PE_BALAS[Number(bala)]) return false;
+    if (saud !== "" && mk.saud !== Number(saud)) return false;
+    if (dois !== "" && mk.dois !== (dois === "1")) return false;
+    return true;
+  };
+  const vistos = new Set();
+  const cands = envios.filter(x => x.marca != null && bate(peMarcaPartes(x.marca)) && !vistos.has(x.id) && vistos.add(x.id));
+  const semMarca = envios.filter(x => x.marca == null).length;
+  const hora = iso => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  out.innerHTML = (cands.length ? `<div style="font-weight:700;margin-bottom:6px">${cands.length === 1 ? "Saiu de:" : `${cands.length} contatos receberam uma mensagem com esses detalhes em ${fmtDate(dia)}:`}</div>` +
+    cands.map(x => { const c = data.cadastros.find(y => y.id === x.id); return `<div style="padding:8px 12px;border-radius:8px;background:${cands.length === 1 ? "var(--red-soft)" : "var(--card-alt)"};margin-bottom:6px"><b>${escapeHtml(c ? c.nome : x.nome)}</b> <span class="hint" style="margin:0">· recebeu às ${hora(x.at)} por ${escapeHtml(nomeCorretor(x.por) || "—")}</span></div>`; }).join("") +
+    (cands.length > 1 ? `<div class="hint">Preencha mais detalhes para afunilar. Se continuar mais de um, mande o preço amanhã normalmente: as marcas mudam todo dia e, no próximo vazamento, quem se repetir é a pessoa.</div>` : "")
+    : `<div class="hint">Ninguém recebeu uma mensagem com esses detalhes em ${fmtDate(dia)}. Confira a data e os detalhes — ou o preço foi repassado de outro jeito (digitado/falado).</div>`) +
+    (semMarca ? `<div class="hint">${semMarca} envio(s) desse dia são de antes da marcação existir e não entram na busca.</div>` : "");
+}
+function renderPrecoVazamento() { const d = document.getElementById("pv_data"); if (d && !d.value) d.value = todayISO(); }
 
 function renderPrecoMercado() {
   const body = document.getElementById("precoMercadoBody");
