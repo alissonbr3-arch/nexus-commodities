@@ -262,10 +262,7 @@
       <div class="slide" data-nome="Basis">
         <div class="slide-title">Basis do milho — <b>último negócio Nexus × B3 contrato vigente</b> · preço bruto por saca, desde a abertura da corretora</div>
         <div class="preco-cards" id="basisCardsTv"></div>
-        <div class="two-cols">
-          <div class="panel"><h2>Milho B3 vigente × último negócio Nexus (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasisPreco"></canvas></div></div>
-          <div class="panel"><h2>Basis = B3 vigente − último negócio (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasis"></canvas></div></div>
-        </div>
+        <div class="panel" style="flex:1;min-height:0"><h2>Basis = B3 vigente − último negócio (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasis"></canvas></div></div>
       </div>
       <div class="slide" data-nome="Curiosidades">
         <div class="slide-title">Curiosidades <b>Nexus Commodities</b></div>
@@ -577,7 +574,7 @@ async function renderBasisTv(negocios, hist) {
   const rotulos = pontos.map(p => dm(p.data));
   const raio = pontos.map(p => (p.negociouHoje ? 4 : 0));
   const tooltipTitulo = items => { const p = pontos[items[0].dataIndex]; return `${fmtDateBR(p.data)}${p.contrato ? " · B3 " + p.contrato : ""}`; };
-  const eixoX = { grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 10, maxRotation: 0, font: { size: 13 } } };
+  const eixoX = { grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 18, maxRotation: 0, font: { size: 13 } } };
   const LEGENDA_BASIS = { position: "top", align: "start", labels: { color: "#e6e8ea", boxWidth: 22, boxHeight: 4, padding: 18, font: { size: 15, weight: "600" } } };
   const eixoY = { ...OPCOES_EIXOS, ticks: { color: "#9aa1a9", font: { size: 13 }, callback: v => "R$ " + v }, title: { display: true, text: "R$/saca", color: "#9aa1a9", font: { size: 13 } } };
   // Rótulo com o valor de hoje no fim de cada linha (na cor da linha).
@@ -607,7 +604,8 @@ async function renderBasisTv(negocios, hist) {
     ctx.restore();
   } };
   if (tvChartBasisPrecoInstance) tvChartBasisPrecoInstance.destroy();
-  tvChartBasisPrecoInstance = new Chart(document.getElementById("tvChartBasisPreco"), {
+  tvChartBasisPrecoInstance = null;
+  if (document.getElementById("tvChartBasisPreco")) tvChartBasisPrecoInstance = new Chart(document.getElementById("tvChartBasisPreco"), {
     type: "line",
     data: { labels: rotulos, datasets: [
       { label: `Milho B3 vigente (CCM${ult.contrato ? " " + ult.contrato : ""})`, data: pontos.map(p => p.b3), borderColor: "#4a8bb0", backgroundColor: "transparent", borderWidth: 2.5, pointRadius: 0, tension: 0.2 },
