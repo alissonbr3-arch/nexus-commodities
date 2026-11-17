@@ -96,7 +96,7 @@
   .painel-tag { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); background: var(--gold-soft); border: 1px solid var(--gold); border-radius: 12px; padding: 2px 10px; }
   .two-cols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-height: 0; }
   .preco-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
-  #basisCardsTv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #basisCardsTv, #basisSojaCardsTv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .preco-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; }
   .preco-card .safra { font-size: 15px; font-weight: 700; color: var(--ink-soft); }
   .preco-card .medio { font-size: clamp(30px, 4vw, 48px); font-weight: 800; color: var(--gold); margin-top: 6px; font-variant-numeric: tabular-nums; }
@@ -264,6 +264,11 @@
         <div class="preco-cards" id="basisCardsTv"></div>
         <div class="panel" style="flex:1;min-height:0"><h2>Basis = B3 vigente − último negócio (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasis"></canvas></div></div>
       </div>
+      <div class="slide" data-nome="Basis soja">
+        <div class="slide-title">Basis da soja — <b>último negócio Nexus × Paranaguá</b> · indicador CEPEA/ESALQ Paranaguá, preço bruto por saca, desde a abertura da corretora</div>
+        <div class="preco-cards" id="basisSojaCardsTv"></div>
+        <div class="panel" style="flex:1;min-height:0"><h2>Basis = Paranaguá − último negócio (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasisSoja"></canvas></div></div>
+      </div>
       <div class="slide" data-nome="Curiosidades">
         <div class="slide-title">Curiosidades <b>Nexus Commodities</b></div>
         <div class="curios-grid" id="curiosTv"></div>
@@ -338,7 +343,7 @@ function renderDolarTv(d) {
 
 // Milho CBOT sai do gráfico: escala de preço muito diferente da Soja, achata a linha.
 // Continua aparecendo normalmente no card de cotação, só não entra nos gráficos.
-const CODIGO_FORA_DO_GRAFICO = ["ZC=F", "CCM"]; // CCM (Milho B3) tem gráfico próprio
+const CODIGO_FORA_DO_GRAFICO = ["ZC=F", "CCM", "PARANAGUA"]; // CCM (Milho B3) tem gráfico próprio
 
 let tvChartInstance = null;
 const PALETTE_TV = ["#e0b23f", "#4a8bb0", "#6fa348", "#c0574a", "#8a6bbf", "#3f9e91"];
@@ -520,54 +525,66 @@ function renderPrecosNegociosTv(negocios, cfg, compradores) {
   });
 }
 
-// ---------------- BASIS DO MILHO (painel 8) ----------------
-// Basis de cada dia (mostrado positivo, a pedido do Álisson) = fechamento do contrato de milho B3 vigente − último negócio
-// de milho disponível fechado na Nexus até aquele dia (preço bruto). B3 vigente (vencimento mais próximo) no mesmo dia. O histórico da B3 de antes do banco guardar
-// todo dia vem do arquivo /b3-milho-historico.json (Notícias Agrícolas); o resto vem de nexus_cotacoes_historico (CCM).
-// Negócios de safra futura (ex.: 2027/2027 fechado em 2026) ficam de fora: comparam com outro vencimento.
-let b3MilhoBackfill = null, tvChartBasisPrecoInstance = null, tvChartBasisInstance = null;
-async function carregarB3MilhoBackfill() {
-  if (b3MilhoBackfill) return b3MilhoBackfill;
-  try { const j = await (await fetch("/b3-milho-historico.json", { cache: "no-cache" })).json(); b3MilhoBackfill = j.serie || []; }
-  catch { b3MilhoBackfill = []; }
-  return b3MilhoBackfill;
+// ---------------- BASIS DO MILHO (painel 8) E DA SOJA (painel 9) ----------------
+// Basis de cada dia (mostrado positivo, a pedido do Álisson) = preço de referência − último negócio disponível do grão
+// fechado na Nexus até aquele dia (preço bruto).
+//   Milho: referência = fechamento do contrato de milho B3 vigente (vencimento mais próximo, base Campinas).
+//   Soja:  referência = Indicador da Soja CEPEA/ESALQ Paranaguá.
+// O histórico de antes do banco guardar todo dia vem de um arquivo publicado com a TV (Notícias Agrícolas); o resto vem
+// de nexus_cotacoes_historico (CCM / PARANAGUA). Negócios de safra futura ficam de fora: comparam com outra referência.
+const BASIS_CFG = {
+  milho: { grao: "Milho", codigo: "CCM", arquivo: "/b3-milho-historico.json", cards: "basisCardsTv", canvas: "tvChartBasis",
+    ref: "B3", refLongo: "Milho B3 vigente", refObs: "vencimento mais próximo (CCM)", refQuando: "fechamento", venceContrato: true },
+  soja: { grao: "Soja", codigo: "PARANAGUA", arquivo: "/soja-paranagua-historico.json", cards: "basisSojaCardsTv", canvas: "tvChartBasisSoja",
+    ref: "Paranaguá", refLongo: "Soja Paranaguá", refObs: "Indicador CEPEA/ESALQ", refQuando: "indicador de" },
+};
+const basisBackfill = {}, basisCharts = {};
+async function carregarBasisBackfill(arquivo) {
+  if (basisBackfill[arquivo]) return basisBackfill[arquivo];
+  try { const j = await (await fetch(arquivo, { cache: "no-cache" })).json(); basisBackfill[arquivo] = j.serie || []; }
+  catch { basisBackfill[arquivo] = []; }
+  return basisBackfill[arquivo];
 }
-function serieBasisMilho(negocios, hist, backfill) {
-  const b3 = new Map();
-  (backfill || []).forEach(([data, v, contrato]) => b3.set(data, { v: Number(v), contrato }));
-  (hist || []).filter(h => h.codigo === "CCM" && Number(h.preco_saca_brl || h.ultima) > 0).forEach(h => {
-    const ant = b3.get(h.data); b3.set(h.data, { v: Number(h.preco_saca_brl || h.ultima), contrato: ant ? ant.contrato : null });
+function serieBasis(cfg, negocios, hist, backfill) {
+  const ref = new Map();
+  (backfill || []).forEach(([data, v, contrato]) => ref.set(data, { v: Number(v), contrato: contrato || null }));
+  (hist || []).filter(h => h.codigo === cfg.codigo && Number(h.preco_saca_brl || h.ultima) > 0).forEach(h => {
+    const ant = ref.get(h.data); ref.set(h.data, { v: Number(h.preco_saca_brl || h.ultima), contrato: ant ? ant.contrato : null });
   });
   const disponivel = n => { const anoSafra = Number(String(n.safra || "").split("/").pop()); return !anoSafra || anoSafra <= Number(String(n.data).slice(0, 4)); };
-  const neg = negocios.filter(n => n.grao === "Milho" && n.data && n.data >= INICIO_MERCADO && Number(n.preco) > 0 && disponivel(n))
+  const neg = negocios.filter(n => n.grao === cfg.grao && n.data && n.data >= INICIO_MERCADO && Number(n.preco) > 0 && disponivel(n))
     .sort((a, b) => (a.data + (a.created_at || "")).localeCompare(b.data + (b.created_at || "")));
   const ultimoDoDia = new Map(); neg.forEach(n => ultimoDoDia.set(n.data, n)); // fica o último de cada dia
-  const datas = [...new Set([...b3.keys(), ...ultimoDoDia.keys()])].filter(d => d >= INICIO_MERCADO).sort();
+  const datas = [...new Set([...ref.keys(), ...ultimoDoDia.keys()])].filter(d => d >= INICIO_MERCADO).sort();
   const MES_B3 = { Jan: "01", Mar: "03", Mai: "05", Jul: "07", Set: "09", Nov: "11" };
-  const venceB3 = c => { const m = String(c || "").match(/^(\w{3})\/(\d{2})$/); return m && MES_B3[m[1]] ? `20${m[2]}-${MES_B3[m[1]]}-15` : null; };
-  let ultNeg = null, ultB3 = null;
+  const venceB3 = c => { const m = String(c || "").match(/^(\w{3})\/(\d{2})$/); return cfg.venceContrato && m && MES_B3[m[1]] ? `20${m[2]}-${MES_B3[m[1]]}-15` : null; };
+  let ultNeg = null, ultRef = null;
   const pontos = [];
   datas.forEach(d => {
     if (ultimoDoDia.has(d)) ultNeg = { preco: Number(ultimoDoDia.get(d).preco), data: d };
-    if (b3.has(d)) ultB3 = { ...b3.get(d), data: d };
-    if (!ultNeg || !ultB3) return;
-    if (ultB3.data !== d && venceB3(ultB3.contrato) && d > venceB3(ultB3.contrato)) return; // não arrasta preço de contrato já vencido
-    pontos.push({ data: d, b3: ultB3.v, contrato: ultB3.contrato, negocio: ultNeg.preco, dataNegocio: ultNeg.data, negociouHoje: ultimoDoDia.has(d), basis: ultB3.v - ultNeg.preco }); // positivo = quanto o físico está abaixo da B3
+    if (ref.has(d)) ultRef = { ...ref.get(d), data: d };
+    if (!ultNeg || !ultRef) return;
+    if (ultRef.data !== d && venceB3(ultRef.contrato) && d > venceB3(ultRef.contrato)) return; // não arrasta preço de contrato já vencido
+    pontos.push({ data: d, ref: ultRef.v, dataRef: ultRef.data, contrato: ultRef.contrato, negocio: ultNeg.preco, dataNegocio: ultNeg.data, negociouHoje: ultimoDoDia.has(d), basis: ultRef.v - ultNeg.preco }); // positivo = quanto o físico está abaixo da referência
   });
   return pontos;
 }
 async function renderBasisTv(negocios, hist) {
-  const pontos = serieBasisMilho(negocios, hist, await carregarB3MilhoBackfill());
-  const cards = document.getElementById("basisCardsTv");
+  for (const chave of Object.keys(BASIS_CFG)) await renderBasisGraoTv(BASIS_CFG[chave], negocios, hist);
+}
+async function renderBasisGraoTv(cfg, negocios, hist) {
+  const pontos = serieBasis(cfg, negocios, hist, await carregarBasisBackfill(cfg.arquivo));
+  const cards = document.getElementById(cfg.cards);
+  if (!cards) return;
   if (!pontos.length) { cards.innerHTML = `<div class="preco-card"><div class="safra">Basis</div><div class="faixa">sem dados ainda</div></div>`; return; }
   const ult = pontos[pontos.length - 1], bases = pontos.map(p => p.basis);
   const media = bases.reduce((a, b) => a + b, 0) / bases.length, iMin = bases.indexOf(Math.min(...bases)), iMax = bases.indexOf(Math.max(...bases));
   const sinal = v => (v < -0.005 ? "−" : "") + fmtMoney(Math.abs(v));
   const dm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   cards.innerHTML = [
-    { t: "Basis hoje", v: sinal(ult.basis), f: `${fmtMoney(ult.b3)} − ${fmtMoney(ult.negocio)}`, q: `B3 de ${dm(ult.data)} − último negócio de ${dm(ult.dataNegocio)}` },
-    { t: "Último negócio Nexus", v: fmtMoney(ult.negocio), f: `fechado em ${fmtDateBR(ult.dataNegocio)}`, q: "milho disponível · preço bruto" },
-    { t: `Milho B3 vigente${ult.contrato ? " · " + ult.contrato : ""}`, v: fmtMoney(ult.b3), f: `fechamento de ${fmtDateBR(ult.data)}`, q: "vencimento mais próximo (CCM)" },
+    { t: "Basis hoje", v: sinal(ult.basis), f: `${fmtMoney(ult.ref)} − ${fmtMoney(ult.negocio)}`, q: `${cfg.ref} de ${dm(ult.dataRef)} − último negócio de ${dm(ult.dataNegocio)}` },
+    { t: "Último negócio Nexus", v: fmtMoney(ult.negocio), f: `fechado em ${fmtDateBR(ult.dataNegocio)}`, q: `${cfg.grao.toLowerCase()} disponível · preço bruto` },
+    { t: `${cfg.refLongo}${ult.contrato ? " · " + ult.contrato : ""}`, v: fmtMoney(ult.ref), f: `${cfg.refQuando} ${fmtDateBR(ult.dataRef)}`, q: cfg.refObs },
     { t: "Basis médio desde a abertura", v: sinal(media), f: `de ${sinal(bases[iMin])} (${dm(pontos[iMin].data)}) a ${sinal(bases[iMax])} (${dm(pontos[iMax].data)})`, q: `${pontos.length} dias desde ${fmtDateBR(pontos[0].data)}` },
   ].map(c => `<div class="preco-card"><div class="safra">${c.t}</div><div class="medio">${c.v}</div><div class="faixa">${c.f}</div><div class="qtd">${c.q}</div></div>`).join("");
 
@@ -603,31 +620,16 @@ async function renderBasisTv(negocios, hist) {
     });
     ctx.restore();
   } };
-  if (tvChartBasisPrecoInstance) tvChartBasisPrecoInstance.destroy();
-  tvChartBasisPrecoInstance = null;
-  if (document.getElementById("tvChartBasisPreco")) tvChartBasisPrecoInstance = new Chart(document.getElementById("tvChartBasisPreco"), {
+  if (basisCharts[cfg.canvas]) basisCharts[cfg.canvas].destroy();
+  basisCharts[cfg.canvas] = new Chart(document.getElementById(cfg.canvas), {
     type: "line",
     data: { labels: rotulos, datasets: [
-      { label: `Milho B3 vigente (CCM${ult.contrato ? " " + ult.contrato : ""})`, data: pontos.map(p => p.b3), borderColor: "#4a8bb0", backgroundColor: "transparent", borderWidth: 2.5, pointRadius: 0, tension: 0.2 },
-      { label: "Último negócio Nexus (● dia com negócio)", rotuloPontos: v => fmtDec2(v), data: pontos.map(p => p.negocio), borderColor: "#e0b23f", backgroundColor: "#e0b23f", borderWidth: 2.5, pointRadius: raio, stepped: true },
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: LEGENDA_BASIS,
-        tooltip: { callbacks: { title: tooltipTitulo, label: c => `${c.dataset.label}: ${fmtMoney(c.parsed.y)}` } } },
-      layout: { padding: { right: 92 } },
-      scales: { y: eixoY, x: eixoX } },
-    plugins: [rotuloFinal, rotuloPontos],
-  });
-  if (tvChartBasisInstance) tvChartBasisInstance.destroy();
-  tvChartBasisInstance = new Chart(document.getElementById("tvChartBasis"), {
-    type: "line",
-    data: { labels: rotulos, datasets: [
-      { label: "Basis = B3 − negócio (● dia com negócio)", rotulo: sinal, rotuloPontos: v => fmtDec2(v), data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
+      { label: `Basis = ${cfg.ref} − negócio (● dia com negócio)`, rotulo: sinal, rotuloPontos: v => fmtDec2(v), data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
       { label: `Média desde a abertura (${sinal(media)})`, semRotulo: true, data: bases.map(() => media), borderColor: "#9aa1a9", borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0, fill: false },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
       plugins: { legend: LEGENDA_BASIS,
-        tooltip: { callbacks: { title: tooltipTitulo, label: c => c.datasetIndex ? `Média: ${sinal(c.parsed.y)}` : `Basis: ${sinal(c.parsed.y)} (B3 ${fmtMoney(pontos[c.dataIndex].b3)} − negócio ${fmtMoney(pontos[c.dataIndex].negocio)})` } } },
+        tooltip: { callbacks: { title: tooltipTitulo, label: c => c.datasetIndex ? `Média: ${sinal(c.parsed.y)}` : `Basis: ${sinal(c.parsed.y)} (${cfg.ref} ${fmtMoney(pontos[c.dataIndex].ref)} − negócio ${fmtMoney(pontos[c.dataIndex].negocio)})` } } },
       layout: { padding: { right: 92 } },
       scales: { y: eixoY, x: eixoX } },
     plugins: [rotuloFinal, rotuloPontos],
@@ -666,8 +668,8 @@ function renderCuriosidadesTv(negocios) {
 // o Chicago ao vivo entra duas vezes no ciclo e fica mais tempo; fora do pregão ele aparece uma vez, rápido.
 let playlistPos = 0, slideTimer = null, modoVivo = false;
 const FATOR_TEMPO = {
-  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Basis": 1, "Curiosidades": 0.6, "Aniversariantes": 1, "Cotações": 1.25, "Pagamentos": 1.25 },
-  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Basis": 1.25, "Curiosidades": 0.75, "Aniversariantes": 1.25, "Cotações": 1.25, "Pagamentos": 1.25 },
+  vivo: { "Chicago": 1.5, "Mercado": 1.5, "Preços dos negócios": 0.75, "Basis": 1, "Basis soja": 1, "Curiosidades": 0.6, "Aniversariantes": 1, "Cotações": 1.25, "Pagamentos": 1.25 },
+  parado: { "Chicago": 0.6, "Mercado": 1, "Preços dos negócios": 1, "Basis": 1.25, "Basis soja": 1.25, "Curiosidades": 0.75, "Aniversariantes": 1.25, "Cotações": 1.25, "Pagamentos": 1.25 },
 };
 // Cada painel tem número e nome fixos (o número não muda com a ordem do rodízio). Teclas 1–9 (ou os números do
 // controle) pulam direto pro painel; /tv/?painel=2 abre já nele; /tv/?paineis=1,2,5 gira só entre esses.
@@ -680,14 +682,15 @@ const PAINEIS = [
   { num: 6, chave: "Cotações", nome: "NexusConsult" },
   { num: 7, chave: "Pagamentos", nome: "Pagamentos do dia" },
   { num: 8, chave: "Basis", nome: "Basis do milho" },
+  { num: 9, chave: "Basis soja", nome: "Basis da soja" },
 ];
 const painelDe = chave => PAINEIS.find(p => p.chave === chave) || { num: "", nome: chave };
 const SO_PAINEIS = (new URLSearchParams(location.search).get("paineis") || "").split(",").map(Number).filter(Boolean);
 function montarPlaylist() {
   const ok = new Set([...document.querySelectorAll("#slides .slide")].filter(el => el.dataset.off !== "1").map(el => el.dataset.nome));
   const base = modoVivo
-    ? ["Chicago", "Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Basis", "Chicago", "Aniversariantes", "Curiosidades"]
-    : ["Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Basis", "Chicago", "Aniversariantes", "Curiosidades"];
+    ? ["Chicago", "Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Basis", "Basis soja", "Chicago", "Aniversariantes", "Curiosidades"]
+    : ["Cotações", "Pagamentos", "Mercado", "Preços dos negócios", "Basis", "Basis soja", "Chicago", "Aniversariantes", "Curiosidades"];
   let lista = base.filter(n => ok.has(n));
   if (SO_PAINEIS.length) { const so = lista.filter(n => SO_PAINEIS.includes(painelDe(n).num)); if (so.length) lista = so; }
   return lista.length ? lista : ["Mercado"];
@@ -746,7 +749,7 @@ async function carregarDadosTv() {
   } else [{ data: cotRows }, { data: dolarRow }, { data: histRows }, { data: negociosRows }, { data: cfgRow }, { data: compRows }] = await Promise.all([
     sb.from("nexus_cotacoes").select("*").order("produto"),
     sb.from("nexus_dolar").select("*").eq("id", 1).single(),
-    sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000),
+    sb.from("nexus_cotacoes_historico").select("*").order("data", { ascending: false }).limit(3000).then(r => ({ ...r, data: (r.data || []).reverse() })),
     sb.from("nexus_negocios").select("data, created_at, grao, safra, quantidade, preco, preco_liquido, funrural_forma, comissao, comissao_pagador, cliente_id, produtor_id, contraparte").is("deleted_at", null).limit(5000),
     sb.from("nexus_config").select("fundersul_saca, fundems_saca, funrural_pct, soja_contrato_vigente, soja_premio_basis, soja_taxa_portuaria, soja_frete, milho_desconto_b3").eq("id", 1).single(),
     sb.from("nexus_cadastros").select("id, categoria_comprador").eq("tipo", "Comprador"),

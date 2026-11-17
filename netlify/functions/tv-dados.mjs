@@ -20,7 +20,7 @@ export default async (req) => {
     const [cot, dolar, hist, negocios, cfg, compradores] = await Promise.all([
       get("nexus_cotacoes?select=*&order=produto"),
       get("nexus_dolar?id=eq.1&select=*"),
-      get("nexus_cotacoes_historico?select=*&order=data&limit=2000"),
+      get("nexus_cotacoes_historico?select=*&order=data.desc&limit=3000").then(l => l.reverse()), // mais novos primeiro no corte, devolve em ordem de data
       get("nexus_negocios?deleted_at=is.null&select=id,created_at,data,grao,safra,quantidade,preco,preco_liquido,funrural_forma,comissao,comissao_pagador,cliente_id,produtor_id,corretor_id,contraparte&limit=5000"),
       get("nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct,soja_contrato_vigente,soja_premio_basis,soja_taxa_portuaria,soja_frete,milho_desconto_b3"),
       get("nexus_cadastros?tipo=eq.Comprador&select=id,categoria_comprador"),

@@ -147,6 +147,44 @@ async function atualizarMilhoB3PeloTradingView(sbHeaders, motivo) {
   });
   return { codigo: "CCM", produto: "Milho", mes: v.mes, ultima: v.ultima, pct: v.pct, fonte: "TradingView", motivo, ok: upd.ok, status: upd.status };
 }
+// Soja Paranaguá (Indicador CEPEA/ESALQ, R$/saca de 60 kg) pro basis da soja na TV. Lê a página do CEPEA (a primeira tabela,
+// logo depois do título "PARANAGUÁ") e grava os últimos dias em nexus_cotacoes_historico com o código PARANAGUA.
+// Se o CEPEA falhar, tenta o Notícias Agrícolas (que hoje bloqueia o Netlify, mas fica de reserva).
+export function lerParanaguaCepea(html) {
+  const i = html.search(/INDICADOR DA SOJA CEPEA\/ESALQ\s*-\s*PARANAGU/i);
+  if (i < 0) return [];
+  const tb = (html.slice(i).match(/<table[\s\S]*?<\/table>/) || [])[0] || "";
+  return lerLinhasDataValor(tb);
+}
+function lerLinhasDataValor(tb) {
+  return [...tb.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(m => [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(c => c[1].replace(/<[^>]+>/g, "").trim()))
+    .filter(c => c.length >= 2 && /^\d{2}\/\d{2}\/\d{4}$/.test(c[0]))
+    .map(c => ({ data: `${c[0].slice(6)}-${c[0].slice(3, 5)}-${c[0].slice(0, 2)}`, valor: Number(c[1].replace(/\./g, "").replace(",", ".")) }))
+    .filter(x => x.valor > 0);
+}
+export async function lerSojaParanagua() {
+  const UA = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" };
+  try {
+    const r = await fetch("https://www.cepea.org.br/br/indicador/soja.aspx", { headers: UA });
+    if (r.ok) { const l = lerParanaguaCepea(await r.text()); if (l.length) return { fonte: "CEPEA", linhas: l }; }
+  } catch {}
+  try {
+    const r = await fetch("https://www.noticiasagricolas.com.br/cotacoes/soja/soja-indicador-cepea-esalq-porto-paranagua", { headers: UA });
+    if (r.ok) { const html = await r.text(); const l = (html.match(/<table[^>]*class="cot-fisicas"[\s\S]*?<\/table>/g) || []).flatMap(lerLinhasDataValor); if (l.length) return { fonte: "Notícias Agrícolas", linhas: l }; }
+  } catch {}
+  return null;
+}
+export async function atualizarSojaParanagua() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" };
+  try {
+    const p = await lerSojaParanagua();
+    if (!p) return { codigo: "PARANAGUA", ok: false, erro: "CEPEA e Notícias Agrícolas sem dados" };
+    const linhas = p.linhas.slice(0, 5).map(x => ({ codigo: "PARANAGUA", produto: "Soja", mes: "Paranaguá", data: x.data, ultima: x.valor, preco_saca_brl: x.valor }));
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes_historico?on_conflict=codigo,data`, { method: "POST", headers: sbHeaders, body: JSON.stringify(linhas) });
+    return { codigo: "PARANAGUA", ok: r.ok, status: r.status, fonte: p.fonte, ultimo: linhas[0] };
+  } catch (e) { return { codigo: "PARANAGUA", ok: false, erro: String(e) }; }
+}
 export async function atualizarMilhoB3() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
@@ -290,6 +328,7 @@ export async function atualizarCotacoes() {
   }
 
   resultados.push(await atualizarMilhoB3());
+  resultados.push(await atualizarSojaParanagua());
   resultados.push(await atualizarPremioSoja());
   return { ok: true, cambio, dolar, atualizadoEm: new Date().toISOString(), resultados };
 }

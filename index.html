@@ -1516,7 +1516,7 @@ async function loadCadastros() { const { data: rows, error } = await sb.from("ne
 async function loadGrupos() { const { data: rows, error } = await sb.from("nexus_grupos").select("*").order("nome"); if (!error) data.grupos = rows || []; }
 async function loadTarefas() { const { data: rows, error } = await sb.from("nexus_tarefas").select("*").order("prazo"); if (!error) data.tarefas = rows || []; }
 async function loadCotacoes() { const { data: rows, error } = await sb.from("nexus_cotacoes").select("*").order("produto"); if (!error) data.cotacoes = rows || []; }
-async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data").limit(2000); if (!error) data.cotacoesHistorico = rows || []; }
+async function loadCotacoesHistorico() { const { data: rows, error } = await sb.from("nexus_cotacoes_historico").select("*").order("data", { ascending: false }).limit(3000); if (!error) data.cotacoesHistorico = (rows || []).reverse(); }
 async function loadPrecoCompradorHistorico() { const { data: rows, error } = await sb.from("nexus_preco_comprador_historico").select("*").order("data").limit(2000); if (!error) data.precoCompradorHistorico = rows || []; }
 async function loadDespesas() { const { data: rows, error } = await sb.from("nexus_despesas").select("*").order("data", { ascending: false }); if (!error) data.despesas = rows || []; }
 async function loadReceitas() { const { data: rows, error } = await sb.from("nexus_receitas").select("*").order("data", { ascending: false }); if (!error) data.receitas = rows || []; }
@@ -3202,7 +3202,7 @@ function renderCotacoesHistoricoChart() {
   if (!canvas) return;
   // "ZS=F" e "ZC=F-5A" são a série contínua de 5 anos (card "Soja & Milho — 5 anos" logo
   // acima) — ficam fora daqui pra não esticar o eixo de datas dos contratos específicos.
-  const hist = (data.cotacoesHistorico || []).filter(h => h.codigo !== "ZS=F" && h.codigo !== "ZC=F-5A");
+  const hist = (data.cotacoesHistorico || []).filter(h => h.codigo !== "ZS=F" && h.codigo !== "ZC=F-5A" && h.codigo !== "PARANAGUA");
   if (hist.length === 0) {
     if (cotacoesHistoricoChart) { cotacoesHistoricoChart.destroy(); cotacoesHistoricoChart = null; }
     return;
