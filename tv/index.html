@@ -96,6 +96,7 @@
   .painel-tag { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); background: var(--gold-soft); border: 1px solid var(--gold); border-radius: 12px; padding: 2px 10px; }
   .two-cols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-height: 0; }
   .preco-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  #basisCardsTv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .preco-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; }
   .preco-card .safra { font-size: 15px; font-weight: 700; color: var(--ink-soft); }
   .preco-card .medio { font-size: clamp(30px, 4vw, 48px); font-weight: 800; color: var(--gold); margin-top: 6px; font-variant-numeric: tabular-nums; }
@@ -593,7 +594,7 @@ async function renderBasisTv(negocios, hist) {
   tvChartBasisInstance = new Chart(document.getElementById("tvChartBasis"), {
     type: "line",
     data: { labels: rotulos, datasets: [
-      { label: "Basis (dia com negócio = ponto)", data: bases, borderColor: "#c0574a", backgroundColor: "rgba(192,87,74,.18)", fill: "origin", borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
+      { label: "Basis (dia com negócio = ponto)", data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
       { label: `Média ${sinal(media)}`, data: bases.map(() => media), borderColor: "#9aa1a9", borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0, fill: false },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
