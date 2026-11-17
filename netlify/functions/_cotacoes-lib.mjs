@@ -116,14 +116,46 @@ export async function lerFechamentoMilhoB3() {
     return r.ok ? lerMilhoB3(await r.text()) : null;
   } catch { return null; }
 }
+// Contrato vigente do milho B3 (o vencimento mais próximo que ainda não venceu) pelo scanner público do TradingView.
+const LETRAS_B3 = [["F", "Jan", 1], ["H", "Mar", 3], ["K", "Mai", 5], ["N", "Jul", 7], ["U", "Set", 9], ["X", "Nov", 11]];
+export async function milhoB3VigenteTradingView(agora = new Date()) {
+  const local = new Date(agora.getTime() - 4 * 3600 * 1000), ano = local.getUTCFullYear();
+  const hojeNum = Number(local.toISOString().slice(0, 10).replace(/-/g, ""));
+  const tickers = [ano, ano + 1].flatMap(a => LETRAS_B3.map(([l]) => `BMFBOVESPA:CCM${l}${a}`));
+  const r = await fetch("https://scanner.tradingview.com/futures/scan", {
+    method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
+    body: JSON.stringify({ symbols: { tickers }, columns: ["close", "change", "expiration"] }),
+  });
+  const j = await r.json();
+  const vivos = (j.data || []).map(d => ({ s: d.s, close: Number(d.d[0]), pct: Number(d.d[1]) || 0, vence: Number(d.d[2]) }))
+    .filter(x => x.close > 0 && x.vence >= hojeNum).sort((a, b) => a.vence - b.vence);
+  if (!vivos.length) return null;
+  const v = vivos[0], m = v.s.match(/CCM([FHKNUX])(\d{4})$/), mes = LETRAS_B3.find(x => x[0] === m[1])[1];
+  return { ultima: v.close, pct: v.pct, mes: `B3 ${mes}/${m[2].slice(2)}`, data: local.toISOString().slice(0, 10), hora: local.toISOString().slice(11, 16), dia: local.getUTCDay() };
+}
+async function atualizarMilhoB3PeloTradingView(sbHeaders, motivo) {
+  const v = await milhoB3VigenteTradingView().catch(() => null);
+  if (!v) return { codigo: "CCM", ok: false, erro: `${motivo}; TradingView sem dados` };
+  const anterior = v.pct > -100 ? v.ultima / (1 + v.pct / 100) : v.ultima;
+  const upd = await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes?codigo=eq.CCM`, {
+    method: "PATCH", headers: sbHeaders,
+    body: JSON.stringify({ ultima: v.ultima, varr: v.ultima - anterior, pct: Number(v.pct.toFixed(2)), previa: anterior, preco_saca_brl: v.ultima, mes: v.mes, observacao: `Preço do dia · atraso de 15 min · ${v.hora}`, updated_at: new Date().toISOString() }),
+  });
+  if (v.dia >= 1 && v.dia <= 5) await fetch(`${SUPABASE_URL}/rest/v1/nexus_cotacoes_historico?on_conflict=codigo,data`, {
+    method: "POST", headers: { ...sbHeaders, Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({ codigo: "CCM", produto: "Milho", mes: "B3", data: v.data, ultima: v.ultima, preco_saca_brl: v.ultima }),
+  });
+  return { codigo: "CCM", produto: "Milho", mes: v.mes, ultima: v.ultima, pct: v.pct, fonte: "TradingView", motivo, ok: upd.ok, status: upd.status };
+}
 export async function atualizarMilhoB3() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
   try {
     const r = await fetch("https://www.noticiasagricolas.com.br/cotacoes/milho/milho-b3-prego-regular", { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" } });
-    if (!r.ok) return { codigo: "CCM", ok: false, erro: `HTTP ${r.status}` };
-    const b3 = lerMilhoB3(await r.text());
-    if (!b3) return { codigo: "CCM", ok: false, erro: "não achei a tabela do Milho B3 na página" };
+    const b3 = r.ok ? lerMilhoB3(await r.text()) : null;
+    // Desde 12/11/2026 o Notícias Agrícolas responde 403 pros servidores do Netlify: aí o contrato vigente vem do
+    // TradingView (preço do dia, 15 min de atraso; à noite é o fechamento do pregão) e o histórico grava com a data de hoje.
+    if (!b3) return await atualizarMilhoB3PeloTradingView(sbHeaders, r.ok ? "sem tabela no Notícias Agrícolas" : `Notícias Agrícolas HTTP ${r.status}`);
     let ultima = b3.ultima, pct = b3.pct, anterior = b3.pct > -100 ? b3.ultima / (1 + b3.pct / 100) : b3.ultima;
     let observacao = b3.data ? `Fechamento de ${b3.data.slice(8, 10)}/${b3.data.slice(5, 7)}` : "Fechamento do pregão anterior";
 
