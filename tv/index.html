@@ -577,30 +577,46 @@ async function renderBasisTv(negocios, hist) {
   const rotulos = pontos.map(p => dm(p.data));
   const raio = pontos.map(p => (p.negociouHoje ? 4 : 0));
   const tooltipTitulo = items => { const p = pontos[items[0].dataIndex]; return `${fmtDateBR(p.data)}${p.contrato ? " · B3 " + p.contrato : ""}`; };
-  const eixoX = { grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 10, maxRotation: 0 } };
+  const eixoX = { grid: { display: false }, ticks: { color: "#9aa1a9", maxTicksLimit: 10, maxRotation: 0, font: { size: 13 } } };
+  const LEGENDA_BASIS = { position: "top", align: "start", labels: { color: "#e6e8ea", boxWidth: 22, boxHeight: 4, padding: 18, font: { size: 15, weight: "600" } } };
+  const eixoY = { ...OPCOES_EIXOS, ticks: { color: "#9aa1a9", font: { size: 13 }, callback: v => "R$ " + v }, title: { display: true, text: "R$/saca", color: "#9aa1a9", font: { size: 13 } } };
+  // Rótulo com o valor de hoje no fim de cada linha (na cor da linha).
+  const rotuloFinal = { id: "rotuloFinal", afterDatasetsDraw(chart) {
+    const { ctx } = chart; ctx.save(); ctx.font = "700 15px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i); if (meta.hidden || ds.semRotulo) return;
+      const pt = meta.data[meta.data.length - 1], v = ds.data[ds.data.length - 1]; if (!pt || v == null) return;
+      ctx.fillStyle = ds.borderColor; ctx.fillText(ds.rotulo ? ds.rotulo(v) : fmtMoney(v), pt.x + 8, pt.y);
+    });
+    ctx.restore();
+  } };
   if (tvChartBasisPrecoInstance) tvChartBasisPrecoInstance.destroy();
   tvChartBasisPrecoInstance = new Chart(document.getElementById("tvChartBasisPreco"), {
     type: "line",
     data: { labels: rotulos, datasets: [
-      { label: "Milho B3 vigente", data: pontos.map(p => p.b3), borderColor: "#4a8bb0", backgroundColor: "transparent", borderWidth: 2.5, pointRadius: 0, tension: 0.2 },
-      { label: "Último negócio Nexus", data: pontos.map(p => p.negocio), borderColor: "#e0b23f", backgroundColor: "#e0b23f", borderWidth: 2.5, pointRadius: raio, stepped: true },
+      { label: `Milho B3 vigente (CCM${ult.contrato ? " " + ult.contrato : ""})`, data: pontos.map(p => p.b3), borderColor: "#4a8bb0", backgroundColor: "transparent", borderWidth: 2.5, pointRadius: 0, tension: 0.2 },
+      { label: "Último negócio Nexus (● dia com negócio)", data: pontos.map(p => p.negocio), borderColor: "#e0b23f", backgroundColor: "#e0b23f", borderWidth: 2.5, pointRadius: raio, stepped: true },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 12 } } },
+      plugins: { legend: LEGENDA_BASIS,
         tooltip: { callbacks: { title: tooltipTitulo, label: c => `${c.dataset.label}: ${fmtMoney(c.parsed.y)}` } } },
-      scales: { y: { ...OPCOES_EIXOS, ticks: { color: "#9aa1a9", callback: v => "R$ " + v } }, x: eixoX } },
+      layout: { padding: { right: 92 } },
+      scales: { y: eixoY, x: eixoX } },
+    plugins: [rotuloFinal],
   });
   if (tvChartBasisInstance) tvChartBasisInstance.destroy();
   tvChartBasisInstance = new Chart(document.getElementById("tvChartBasis"), {
     type: "line",
     data: { labels: rotulos, datasets: [
-      { label: "Basis (dia com negócio = ponto)", data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
-      { label: `Média ${sinal(media)}`, data: bases.map(() => media), borderColor: "#9aa1a9", borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0, fill: false },
+      { label: "Basis = negócio − B3 (● dia com negócio)", rotulo: sinal, data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
+      { label: `Média desde a abertura (${sinal(media)})`, semRotulo: true, data: bases.map(() => media), borderColor: "#9aa1a9", borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0, fill: false },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "bottom", labels: { color: "#9aa1a9", boxWidth: 12, font: { size: 12 } } },
+      plugins: { legend: LEGENDA_BASIS,
         tooltip: { callbacks: { title: tooltipTitulo, label: c => c.datasetIndex ? `Média: ${sinal(c.parsed.y)}` : `Basis: ${sinal(c.parsed.y)} (negócio ${fmtMoney(pontos[c.dataIndex].negocio)} − B3 ${fmtMoney(pontos[c.dataIndex].b3)})` } } },
-      scales: { y: { ...OPCOES_EIXOS, ticks: { color: "#9aa1a9", callback: v => "R$ " + v } }, x: eixoX } },
+      layout: { padding: { right: 92 } },
+      scales: { y: eixoY, x: eixoX } },
+    plugins: [rotuloFinal],
   });
 }
 
