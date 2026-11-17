@@ -165,8 +165,11 @@ function lerLinhasDataValor(tb) {
 export async function lerSojaParanagua() {
   const UA = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" };
   try {
-    const r = await fetch("https://www.cepea.org.br/br/indicador/soja.aspx", { headers: UA });
-    if (r.ok) { const l = lerParanaguaCepea(await r.text()); if (l.length) return { fonte: "CEPEA", linhas: l }; }
+    // cepea.org.br responde 403 (Cloudflare) pro Netlify; o espelho da ESALQ responde normal.
+    for (const u of ["https://www.cepea.esalq.usp.br/br/indicador/soja.aspx", "https://www.cepea.org.br/br/indicador/soja.aspx"]) {
+      const r = await fetch(u, { headers: UA });
+      if (r.ok) { const l = lerParanaguaCepea(await r.text()); if (l.length) return { fonte: "CEPEA", linhas: l }; }
+    }
   } catch {}
   try {
     const r = await fetch("https://www.noticiasagricolas.com.br/cotacoes/soja/soja-indicador-cepea-esalq-porto-paranagua", { headers: UA });
