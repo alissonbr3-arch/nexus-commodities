@@ -264,7 +264,7 @@
         <div class="preco-cards" id="basisCardsTv"></div>
         <div class="two-cols">
           <div class="panel"><h2>Milho B3 vigente × último negócio Nexus (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasisPreco"></canvas></div></div>
-          <div class="panel"><h2>Basis = último negócio − B3 vigente (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasis"></canvas></div></div>
+          <div class="panel"><h2>Basis = B3 vigente − último negócio (R$/saca)</h2><div class="chart-box"><canvas id="tvChartBasis"></canvas></div></div>
         </div>
       </div>
       <div class="slide" data-nome="Curiosidades">
@@ -524,8 +524,8 @@ function renderPrecosNegociosTv(negocios, cfg, compradores) {
 }
 
 // ---------------- BASIS DO MILHO (painel 8) ----------------
-// Basis de cada dia = último negócio de milho disponível fechado na Nexus até aquele dia (preço bruto) − fechamento do
-// contrato de milho B3 vigente (vencimento mais próximo) no mesmo dia. O histórico da B3 de antes do banco guardar
+// Basis de cada dia (mostrado positivo, a pedido do Álisson) = fechamento do contrato de milho B3 vigente − último negócio
+// de milho disponível fechado na Nexus até aquele dia (preço bruto). B3 vigente (vencimento mais próximo) no mesmo dia. O histórico da B3 de antes do banco guardar
 // todo dia vem do arquivo /b3-milho-historico.json (Notícias Agrícolas); o resto vem de nexus_cotacoes_historico (CCM).
 // Negócios de safra futura (ex.: 2027/2027 fechado em 2026) ficam de fora: comparam com outro vencimento.
 let b3MilhoBackfill = null, tvChartBasisPrecoInstance = null, tvChartBasisInstance = null;
@@ -555,7 +555,7 @@ function serieBasisMilho(negocios, hist, backfill) {
     if (b3.has(d)) ultB3 = { ...b3.get(d), data: d };
     if (!ultNeg || !ultB3) return;
     if (ultB3.data !== d && venceB3(ultB3.contrato) && d > venceB3(ultB3.contrato)) return; // não arrasta preço de contrato já vencido
-    pontos.push({ data: d, b3: ultB3.v, contrato: ultB3.contrato, negocio: ultNeg.preco, dataNegocio: ultNeg.data, negociouHoje: ultimoDoDia.has(d), basis: ultNeg.preco - ultB3.v });
+    pontos.push({ data: d, b3: ultB3.v, contrato: ultB3.contrato, negocio: ultNeg.preco, dataNegocio: ultNeg.data, negociouHoje: ultimoDoDia.has(d), basis: ultB3.v - ultNeg.preco }); // positivo = quanto o físico está abaixo da B3
   });
   return pontos;
 }
@@ -565,10 +565,10 @@ async function renderBasisTv(negocios, hist) {
   if (!pontos.length) { cards.innerHTML = `<div class="preco-card"><div class="safra">Basis</div><div class="faixa">sem dados ainda</div></div>`; return; }
   const ult = pontos[pontos.length - 1], bases = pontos.map(p => p.basis);
   const media = bases.reduce((a, b) => a + b, 0) / bases.length, iMin = bases.indexOf(Math.min(...bases)), iMax = bases.indexOf(Math.max(...bases));
-  const sinal = v => (v > 0.005 ? "+" : v < -0.005 ? "−" : "") + fmtMoney(Math.abs(v));
+  const sinal = v => (v < -0.005 ? "−" : "") + fmtMoney(Math.abs(v));
   const dm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   cards.innerHTML = [
-    { t: "Basis hoje", v: sinal(ult.basis), f: `${fmtMoney(ult.negocio)} − ${fmtMoney(ult.b3)}`, q: `último negócio de ${dm(ult.dataNegocio)} × B3 de ${dm(ult.data)}` },
+    { t: "Basis hoje", v: sinal(ult.basis), f: `${fmtMoney(ult.b3)} − ${fmtMoney(ult.negocio)}`, q: `B3 de ${dm(ult.data)} − último negócio de ${dm(ult.dataNegocio)}` },
     { t: "Último negócio Nexus", v: fmtMoney(ult.negocio), f: `fechado em ${fmtDateBR(ult.dataNegocio)}`, q: "milho disponível · preço bruto" },
     { t: `Milho B3 vigente${ult.contrato ? " · " + ult.contrato : ""}`, v: fmtMoney(ult.b3), f: `fechamento de ${fmtDateBR(ult.data)}`, q: "vencimento mais próximo (CCM)" },
     { t: "Basis médio desde a abertura", v: sinal(media), f: `de ${sinal(bases[iMin])} (${dm(pontos[iMin].data)}) a ${sinal(bases[iMax])} (${dm(pontos[iMax].data)})`, q: `${pontos.length} dias desde ${fmtDateBR(pontos[0].data)}` },
@@ -590,33 +590,49 @@ async function renderBasisTv(negocios, hist) {
     });
     ctx.restore();
   } };
+  // Valor pequenininho em cada ponto (dia com negócio), alternando em cima/embaixo pra não encavalar.
+  const fmtDec2 = v => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rotuloPontos = { id: "rotuloPontos", afterDatasetsDraw(chart) {
+    const { ctx } = chart; ctx.save(); ctx.font = "600 10.5px system-ui, sans-serif"; ctx.textAlign = "center";
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.rotuloPontos || chart.getDatasetMeta(i).hidden) return;
+      let k = 0;
+      chart.getDatasetMeta(i).data.forEach((pt, j) => {
+        if (!pontos[j].negociouHoje || j === pontos.length - 1) return;
+        const cima = k++ % 2 === 0;
+        ctx.fillStyle = "#c9ced3"; ctx.textBaseline = cima ? "bottom" : "top";
+        ctx.fillText(ds.rotuloPontos(ds.data[j]), pt.x, pt.y + (cima ? -6 : 6));
+      });
+    });
+    ctx.restore();
+  } };
   if (tvChartBasisPrecoInstance) tvChartBasisPrecoInstance.destroy();
   tvChartBasisPrecoInstance = new Chart(document.getElementById("tvChartBasisPreco"), {
     type: "line",
     data: { labels: rotulos, datasets: [
       { label: `Milho B3 vigente (CCM${ult.contrato ? " " + ult.contrato : ""})`, data: pontos.map(p => p.b3), borderColor: "#4a8bb0", backgroundColor: "transparent", borderWidth: 2.5, pointRadius: 0, tension: 0.2 },
-      { label: "Último negócio Nexus (● dia com negócio)", data: pontos.map(p => p.negocio), borderColor: "#e0b23f", backgroundColor: "#e0b23f", borderWidth: 2.5, pointRadius: raio, stepped: true },
+      { label: "Último negócio Nexus (● dia com negócio)", rotuloPontos: v => fmtDec2(v), data: pontos.map(p => p.negocio), borderColor: "#e0b23f", backgroundColor: "#e0b23f", borderWidth: 2.5, pointRadius: raio, stepped: true },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
       plugins: { legend: LEGENDA_BASIS,
         tooltip: { callbacks: { title: tooltipTitulo, label: c => `${c.dataset.label}: ${fmtMoney(c.parsed.y)}` } } },
       layout: { padding: { right: 92 } },
       scales: { y: eixoY, x: eixoX } },
-    plugins: [rotuloFinal],
+    plugins: [rotuloFinal, rotuloPontos],
   });
   if (tvChartBasisInstance) tvChartBasisInstance.destroy();
   tvChartBasisInstance = new Chart(document.getElementById("tvChartBasis"), {
     type: "line",
     data: { labels: rotulos, datasets: [
-      { label: "Basis = negócio − B3 (● dia com negócio)", rotulo: sinal, data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
+      { label: "Basis = B3 − negócio (● dia com negócio)", rotulo: sinal, rotuloPontos: v => fmtDec2(v), data: bases, borderColor: "#c0574a", backgroundColor: "#c0574a", fill: false, borderWidth: 2.5, pointRadius: raio, pointBackgroundColor: "#c0574a", tension: 0.15 },
       { label: `Média desde a abertura (${sinal(media)})`, semRotulo: true, data: bases.map(() => media), borderColor: "#9aa1a9", borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0, fill: false },
     ] },
     options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
       plugins: { legend: LEGENDA_BASIS,
-        tooltip: { callbacks: { title: tooltipTitulo, label: c => c.datasetIndex ? `Média: ${sinal(c.parsed.y)}` : `Basis: ${sinal(c.parsed.y)} (negócio ${fmtMoney(pontos[c.dataIndex].negocio)} − B3 ${fmtMoney(pontos[c.dataIndex].b3)})` } } },
+        tooltip: { callbacks: { title: tooltipTitulo, label: c => c.datasetIndex ? `Média: ${sinal(c.parsed.y)}` : `Basis: ${sinal(c.parsed.y)} (B3 ${fmtMoney(pontos[c.dataIndex].b3)} − negócio ${fmtMoney(pontos[c.dataIndex].negocio)})` } } },
       layout: { padding: { right: 92 } },
       scales: { y: eixoY, x: eixoX } },
-    plugins: [rotuloFinal],
+    plugins: [rotuloFinal, rotuloPontos],
   });
 }
 
