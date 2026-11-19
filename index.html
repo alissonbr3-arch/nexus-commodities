@@ -4711,6 +4711,107 @@ async function gerarLiberacaoPdfNativo(negocioId) {
 
   return doc;
 }
+// Ficha cadastral do produtor em PDF (padrão Nexus, mesmo cabeçalho/tabelas da Liberação) pra mandar a
+// cerealistas/tradings fazerem o cadastro do produtor. Botão "Ficha cadastral (PDF)" no cadastro.
+async function gerarFichaCadastralPdf(cadastroId) {
+  const c = data.cadastros.find(x => x.id === cadastroId);
+  if (!c) return;
+  const logo = await logoParaPdf();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = 595.28, pageH = 841.89, margem = 42, larguraUtil = pageW - margem * 2;
+  let y = margem;
+  const garanteEspaco = altura => { if (y + altura > pageH - margem) { doc.addPage(); y = margem; } };
+  const titulo3 = texto => { garanteEspaco(40); y += 10; doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.text(texto, margem, y); y += 9; };
+  const tabela = linhas => {
+    const larguraLabel = 165, padding = 6;
+    doc.setFontSize(9.5);
+    for (const [label, valor] of linhas.filter(l => l[1] != null && String(l[1]).trim() !== "")) {
+      doc.setFont("helvetica", "normal");
+      const linhasValor = doc.splitTextToSize(String(valor), larguraUtil - larguraLabel - padding * 2);
+      const altura = Math.max(20, linhasValor.length * 12 + 8);
+      garanteEspaco(altura);
+      doc.setDrawColor(153); doc.setFillColor(242, 242, 242);
+      doc.rect(margem, y, larguraLabel, altura, "FD");
+      doc.rect(margem + larguraLabel, y, larguraUtil - larguraLabel, altura, "S");
+      doc.setFont("helvetica", "bold"); doc.text(label, margem + padding, y + 13);
+      doc.setFont("helvetica", "normal"); linhasValor.forEach((l, i) => doc.text(l, margem + larguraLabel + padding, y + 13 + i * 12));
+      y += altura;
+    }
+    y += 10;
+  };
+
+  // cabeçalho padrão Nexus
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(NEXUS_EMPRESA.nome, margem, y);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(NEXUS_EMPRESA.endereco, margem, y + 13);
+  doc.text(`${NEXUS_EMPRESA.email} · Tel.: ${NEXUS_EMPRESA.telefone}`, margem, y + 24);
+  doc.addImage(logo, "PNG", pageW - margem - 44, y - 10, 44, 44, undefined, "MEDIUM");
+  y += 36;
+  doc.setDrawColor(184, 134, 11); doc.setLineWidth(1.3); doc.line(margem, y, pageW - margem, y); doc.setLineWidth(.5);
+  y += 22;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  doc.text(`São Gabriel do Oeste - MS, ${new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}`, pageW - margem, y, { align: "right" });
+  y += 24;
+  const comprador = c.tipo === "Comprador";
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13.5);
+  doc.text(comprador ? "FICHA CADASTRAL" : "FICHA CADASTRAL DO PRODUTOR RURAL", pageW / 2, y, { align: "center" });
+  y += 10;
+
+  const fazendas = data.fazendas.filter(f => f.produtor_id === c.id);
+  const doc1 = c.cpf || c.cnpj || "";
+  const ehCnpj = doc1.replace(/\D/g, "").length > 11;
+  const ies = [...new Set([c.inscricao_estadual, ...fazendas.map(f => f.inscricao_estadual)].filter(Boolean))];
+  titulo3(comprador ? "1. DADOS DA EMPRESA" : "1. DADOS DO PRODUTOR");
+  tabela([
+    [ehCnpj || comprador ? "Razão social" : "Nome completo", c.nome],
+    [ehCnpj || comprador ? "CNPJ" : "CPF", doc1 || "—"],
+    ["Inscrição Estadual", ies.length ? ies.join(" · ") : "—"],
+    ["Data de nascimento", !ehCnpj && !comprador && c.data_nascimento ? fmtDate(c.data_nascimento) : ""],
+    ["Telefone", [c.telefone, ...(c.telefones_extra || [])].filter(Boolean).join(" · ")],
+    ["E-mail", [c.email, ...(c.emails_extra || [])].filter(Boolean).join(" · ")],
+  ]);
+
+  const endereco = [c.endereco, c.endereco_numero && "nº " + c.endereco_numero, c.complemento].filter(Boolean).join(", ");
+  titulo3("2. ENDEREÇO");
+  tabela([
+    ["Logradouro", endereco || "—"],
+    ["Bairro", c.bairro],
+    ["Município / UF", c.cidade || "—"],
+    ["CEP", c.cep],
+  ]);
+
+  if (!comprador) {
+    titulo3("3. PROPRIEDADES RURAIS");
+    if (fazendas.length) tabela(fazendas.map((f, i) => [fazendas.length > 1 ? `Fazenda ${i + 1}` : "Fazenda",
+      [f.nome, f.municipio_uf, f.inscricao_estadual && "IE " + f.inscricao_estadual].filter(Boolean).join(" — ")]));
+    else tabela([["Fazenda", "—"]]);
+
+    titulo3("4. DADOS BANCÁRIOS");
+    tabela([
+      [`Conta ${c.dados_bancarios_secundaria || c.dados_bancarios_terciaria ? "principal" : "para pagamento"}`, c.dados_bancarios || "—"],
+      ["Conta secundária", c.dados_bancarios_secundaria],
+      ["Conta terciária", c.dados_bancarios_terciaria],
+      ["Titular", c.nome + (doc1 ? ` — ${ehCnpj ? "CNPJ" : "CPF"} ${doc1}` : "")],
+    ]);
+
+    titulo3("5. INFORMAÇÕES FISCAIS");
+    tabela([["Recolhimento do Funrural", c.funrural_forma_padrao || "A informar"]]);
+  }
+
+  y += 14; garanteEspaco(60);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.setTextColor(90);
+  doc.splitTextToSize(`Dados informados pelo ${comprador ? "cliente" : "produtor"} e mantidos no cadastro da Nexus Commodities, enviados para fins exclusivos de cadastro comercial. Documento gerado em ${new Date().toLocaleString("pt-BR")}.`, larguraUtil)
+    .forEach(l => { doc.text(l, margem, y); y += 11; });
+  doc.setTextColor(0);
+  y += 18; garanteEspaco(50);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+  doc.text(NEXUS_EMPRESA.nome, pageW / 2, y, { align: "center" }); y += 12;
+  doc.text(NEXUS_EMPRESA.endereco, pageW / 2, y, { align: "center" }); y += 12;
+  doc.text(`Fone / WhatsApp: ${NEXUS_EMPRESA.telefone} · E-mail: ${NEXUS_EMPRESA.email}`, pageW / 2, y, { align: "center" });
+
+  doc.save(`Ficha cadastral - ${c.nome.replace(/[\\/:*?"<>|]/g, "")}.pdf`);
+}
 // Manda a Liberação de Embarque em PDF (nativo, texto de verdade) por e-mail já anexado, via
 // Resend — antes ia como HTML completo no corpo do e-mail, agora vai como anexo PDF de verdade.
 async function enviarLiberacaoPorEmail(negocioId) {
@@ -5376,7 +5477,7 @@ function openContatoModal(id) {
     <div class="field-row"><div class="field"><label>Volume anual soja (sc)</label><input type="number" id="f_volumeSoja" value="${item.volume_anual_soja||""}"></div><div class="field"><label>Volume anual milho (sc)</label><input type="number" id="f_volumeMilho" value="${item.volume_anual_milho||""}"></div></div>
     <div class="field"><label>Lembrete de contato</label><input type="text" id="f_lembrete" value="${item.lembrete||""}" placeholder="Ex: ligar sobre preço da soja"></div>
     <div class="field"><label>Observações</label><textarea id="f_cobs" rows="2">${item.obs || ""}</textarea></div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveContato('${id || ""}')">Salvar</button></div>`;
+    <div class="modal-actions">${id && (item.tipo === "Produtor" || item.tipo === "Comprador") ? `<button class="btn-ghost" style="margin-right:auto" title="Baixa um PDF com os dados salvos deste cadastro, pra mandar ao cerealista" onclick="gerarFichaCadastralPdf('${id}')">📄 Ficha cadastral (PDF)</button>` : ""}<button class="btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn-primary" onclick="saveContato('${id || ""}')">Salvar</button></div>`;
   showModal();
 }
 async function saveContato(id) {
