@@ -1360,7 +1360,7 @@ function quantidadePrimeiraParcela(n) {
   const somaSacasExtras = (n.pagamentos_extra || []).filter(p => p.unidade === "sc").reduce((s, p) => s + Number(p.valor || 0), 0);
   return Math.max(0, Number(n.quantidade || 0) - somaSacasExtras);
 }
-// Pagamento "X dias após o recebimento", carga a carga: cada carga que chega no armazém tem a sua data de
+// Pagamento "X dias após a entrega", carga a carga (CIF: a carga é entregue no comprador): cada carga entregue tem a sua data de
 // pagamento (chegada + X dias). O negócio guarda a lista em `cargas` e data_pagamento = a ÚLTIMA data de
 // pagamento (a do final do negócio — é o campo que comissão, agenda e avisos já leem). Enquanto falta
 // receber, entra a estimativa do que falta: fim do embarque + X dias.
@@ -1368,8 +1368,19 @@ function somarDiasISO(iso, dias) { const [y, m, d] = iso.split("-").map(Number);
 function dataEntregaBase(n) { return n.embarque_finalizado_em ? new Date(n.embarque_finalizado_em).toLocaleDateString("en-CA") : (n.data_fim_embarque || null); }
 function cargasDoNegocio(n) { return Array.isArray(n.cargas) ? n.cargas : []; }
 function sacasRecebidas(n) { return cargasDoNegocio(n).reduce((s, c) => s + Number(c.sacas || 0), 0); }
+// Prazo contado da ENTREGA TOTAL do contrato (pagamento_base = "total"): uma data só = dia em que a última
+// carga foi entregue (ou a finalização do embarque) + X dias; enquanto falta entregar, estimativa pelo fim do embarque.
+function pagaNaEntregaTotal(n) { return n.pagamento_dias_apos_entrega != null && n.pagamento_base === "total"; }
+function pagaPorCarga(n) { return n.pagamento_dias_apos_entrega != null && n.pagamento_base !== "total"; }
+function dataEntregaTotal(n) {
+  if (n.embarque_finalizado_em) return dataEntregaBase(n);
+  const cargas = cargasDoNegocio(n).filter(c => c.data);
+  if (cargas.length && Number(n.quantidade || 0) - sacasRecebidas(n) <= 0.5) return cargas.map(c => c.data).sort().pop();
+  return n.data_fim_embarque || null;
+}
 function dataPagamentoPorEntrega(n) {
   if (n.pagamento_dias_apos_entrega == null) return null;
+  if (pagaNaEntregaTotal(n)) { const base = dataEntregaTotal(n); return base ? somarDiasISO(base, Number(n.pagamento_dias_apos_entrega)) : null; }
   const dias = Number(n.pagamento_dias_apos_entrega), datas = cargasDoNegocio(n).filter(c => c.data).map(c => somarDiasISO(c.data, dias));
   if (!n.embarque_finalizado_em && Number(n.quantidade || 0) - sacasRecebidas(n) > 0.5 && n.data_fim_embarque) datas.push(somarDiasISO(n.data_fim_embarque, dias)); // o que ainda falta chegar
   if (!datas.length && n.embarque_finalizado_em) datas.push(somarDiasISO(dataEntregaBase(n), dias));
@@ -1387,7 +1398,7 @@ function linhasPagamento(n) {
       return [`DATA DE PAGAMENTO (${i + 1}ª PARC)`, `${fmtDate(p.data)} — ${valor}`];
     });
   }
-  const linhas = [[`DATA DE PAGAMENTO${extras.length ? " (1ª PARC)" : ""}`, (n.pagamento_dias_apos_entrega != null ? `${n.pagamento_dias_apos_entrega} DIAS APÓS O RECEBIMENTO DE CADA CARGA NO ARMAZÉM` : fmtDate(n.data_pagamento)) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
+  const linhas = [[`DATA DE PAGAMENTO${extras.length ? " (1ª PARC)" : ""}`, (n.pagamento_dias_apos_entrega != null ? (n.pagamento_base === "total" ? `${n.pagamento_dias_apos_entrega} DIAS APÓS A ENTREGA TOTAL DO CONTRATO` : `${n.pagamento_dias_apos_entrega} DIAS APÓS A ENTREGA DE CADA CARGA`) : fmtDate(n.data_pagamento)) + (extras.length ? ` — ${fmtNum(quantidadePrimeiraParcela(n))} sc` : "")]];
   extras.forEach((p, i) => {
     const valor = p.unidade === "sc" ? `${fmtNum(p.valor)} sc` : fmtMoney(p.valor);
     linhas.push([`DATA DE PAGAMENTO (${i + 2}ª PARC)`, `${fmtDate(p.data)} — ${valor}`]);
@@ -1396,11 +1407,12 @@ function linhasPagamento(n) {
 }
 // As parcelas de pagamento do negócio pro Relatório de Negócios: [{data, sacas, valor}], seguindo a mesma
 // leitura de linhasPagamento (parcelas extras / extras como lista completa) e, no "carga a carga", uma
-// parcela por carga recebida + a estimativa do que ainda falta chegar. Valor = líquido proporcional às sacas
+// parcela por carga entregue + a estimativa do que ainda falta chegar. Valor = líquido proporcional às sacas
 // (parcela em R$ entra pelo próprio valor); a 1ª parcela implícita fica com o restante do líquido.
 function parcelasRelatorio(n) {
   const { precoLiquido, liquidoTotal } = precoLiquidoNegocio(n);
   const deExtra = p => p.unidade === "sc" ? { data: p.data, sacas: Number(p.valor || 0), valor: Number(p.valor || 0) * precoLiquido } : { data: p.data, sacas: null, valor: Number(p.valor || 0) };
+  if (pagaNaEntregaTotal(n)) return [{ data: n.data_pagamento, sacas: Number(n.quantidade || 0), valor: liquidoTotal }];
   if (n.pagamento_dias_apos_entrega != null) {
     const dias = Number(n.pagamento_dias_apos_entrega);
     const lista = [...cargasDoNegocio(n)].filter(c => c.data).sort((a, b) => a.data.localeCompare(b.data)).map(c => ({ data: somarDiasISO(c.data, dias), sacas: Number(c.sacas || 0), valor: Number(c.sacas || 0) * precoLiquido, carga: c.data }));
@@ -3605,9 +3617,9 @@ function openNegocioModal(id) {
     <div class="field-row"><div class="field"><label>Modalidade</label><select id="f_modalidade" onchange="onModalidadeChange()"><option ${(!item.modalidade||item.modalidade==="FOB")?"selected":""}>FOB</option><option ${item.modalidade==="CIF"?"selected":""}>CIF</option></select></div><div class="field"><label id="f_localOrigemLabel">Local de retirada</label><input type="text" id="f_localOrigem" value="${item.local_origem||""}"></div></div>
     <div class="field"><label>Armazém (opcional — pra mandar a Liberação de Embarque também pro e-mail dele)</label><select id="f_armazemSelect"><option value="">— Nenhum —</option>${data.cadastros.filter(c => c.tipo === "Armazém").map(c => `<option value="${c.id}" ${item.armazem_id===c.id?"selected":""}>${c.nome}</option>`).join("")}</select></div>
     <div class="field-row"><div class="field"><label>Data início embarque</label><input type="date" id="f_dataInicioEmbarque" value="${item.data_inicio_embarque||""}"></div><div class="field"><label>Data fim embarque</label><input type="date" id="f_dataFimEmbarque" oninput="pagModoMudou()" value="${item.data_fim_embarque||""}"></div></div>
-    <div class="field-row"><div class="field"><label>Forma de pagamento</label><select id="f_pagModo" onchange="pagModoMudou()"><option value="data" ${item.pagamento_dias_apos_entrega == null ? "selected" : ""}>Em data</option><option value="entrega" ${item.pagamento_dias_apos_entrega != null ? "selected" : ""}>Dias após o recebimento (carga a carga)</option></select></div>
+    <div class="field-row"><div class="field"><label>Forma de pagamento</label><select id="f_pagModo" onchange="pagModoMudou()"><option value="data" ${item.pagamento_dias_apos_entrega == null ? "selected" : ""}>Em data</option><option value="entrega" ${item.pagamento_dias_apos_entrega != null && item.pagamento_base !== "total" ? "selected" : ""}>Dias após a entrega (carga a carga)</option><option value="total" ${item.pagamento_dias_apos_entrega != null && item.pagamento_base === "total" ? "selected" : ""}>Dias após a entrega total do contrato</option></select></div>
       <div class="field" id="f_pagDataWrap"><label>Data de pagamento</label><input type="date" id="f_dataPagamento" value="${item.data_pagamento||""}"></div>
-      <div class="field" id="f_pagDiasWrap" style="display:none"><label>Dias após o recebimento de cada carga</label><input type="number" min="0" id="f_pagDias" value="${item.pagamento_dias_apos_entrega ?? 21}" oninput="pagModoMudou()"></div></div>
+      <div class="field" id="f_pagDiasWrap" style="display:none"><label id="f_pagDiasLabel">Dias após a entrega de cada carga</label><input type="number" min="0" id="f_pagDias" value="${item.pagamento_dias_apos_entrega ?? 21}" oninput="pagModoMudou()"></div></div>
     <div class="hint" id="f_pagPrevisto" style="display:none;margin:-6px 0 10px"></div>
     <div class="field-row"><div class="field"><label>Data</label><input type="date" id="f_data" value="${item.data||""}"></div></div>
     <div class="field">
@@ -3636,14 +3648,16 @@ function openNegocioModal(id) {
 // Forma de pagamento do negócio: em data fixa, ou X dias depois da entrega (data calculada pelo fim do embarque).
 function pagModoMudou() {
   const modo = document.getElementById("f_pagModo")?.value; if (!modo) return;
-  const entrega = modo === "entrega", it = window.__pagItem || {};
+  const total = modo === "total", entrega = modo === "entrega" || total, it = window.__pagItem || {};
+  const lbl = document.getElementById("f_pagDiasLabel"); if (lbl) lbl.textContent = total ? "Dias após a entrega total do contrato" : "Dias após a entrega de cada carga";
   document.getElementById("f_pagDataWrap").style.display = entrega ? "none" : "";
   document.getElementById("f_pagDiasWrap").style.display = entrega ? "" : "none";
   const info = document.getElementById("f_pagPrevisto"); info.style.display = entrega ? "" : "none";
   if (!entrega) return;
   const dias = Number(document.getElementById("f_pagDias").value), fim = document.getElementById("f_dataFimEmbarque").value;
-  const prev = dataPagamentoPorEntrega({ ...it, data_fim_embarque: fim, pagamento_dias_apos_entrega: dias }), nCargas = cargasDoNegocio(it).length;
-  info.textContent = `Cada carga é paga ${dias} dias depois de chegar no armazém. ` + (nCargas ? `${nCargas} carga(s) já registrada(s); último pagamento previsto: ${fmtDate(prev)}.` : prev ? `Sem cargas registradas ainda — estimativa pelo fim do embarque: ${fmtDate(prev)}. Registre cada carga em Embarques > Cargas.` : "Informe a data de fim do embarque pra estimar, e registre as cargas em Embarques > Cargas.");
+  const prev = dataPagamentoPorEntrega({ ...it, data_fim_embarque: fim, pagamento_dias_apos_entrega: dias, pagamento_base: total ? "total" : "carga" }), nCargas = cargasDoNegocio(it).length;
+  if (total) { info.textContent = `Pagamento único, ${dias} dias depois que o contrato inteiro for entregue. ` + (prev ? `Previsto: ${fmtDate(prev)}${it.embarque_finalizado_em || (nCargas && Number(it.quantidade || 0) - sacasRecebidas(it) <= 0.5) ? "." : " (estimativa pelo fim do embarque; a data acerta sozinha quando o embarque for finalizado)."}` : "Informe a data de fim do embarque pra estimar."); return; }
+  info.textContent = `Cada carga é paga ${dias} dias depois de entregue. ` + (nCargas ? `${nCargas} carga(s) já registrada(s); último pagamento previsto: ${fmtDate(prev)}.` : prev ? `Sem cargas registradas ainda — estimativa pelo fim do embarque: ${fmtDate(prev)}. Registre cada carga em Embarques > Cargas.` : "Informe a data de fim do embarque pra estimar, e registre as cargas em Embarques > Cargas.");
 }
 // Sincroniza a linha do comprador em "Preço do dia" (Mercado) com o preço LIVRE (líquido) do
 // negócio recém salvo — o mesmo preço líquido que o resto do app usa (o informado no negócio, ou
@@ -3671,17 +3685,19 @@ async function saveNegocio(id) {
   if (!cliente_id && !contraparte.trim().length) { const p = data.cadastros.find(x => x.id === produtorVal); if (p) contraparte = p.nome; }
   const comissaoSaca = n("f_comissaoSaca");
   const comissaoTotal = n("f_quantidade") * comissaoSaca;
-  const porEntrega = document.getElementById("f_pagModo").value === "entrega";
+  const pagModo = document.getElementById("f_pagModo").value, porEntrega = pagModo === "entrega" || pagModo === "total";
+  const pagamentoBase = pagModo === "total" ? "total" : porEntrega ? "carga" : null;
   const diasApos = porEntrega ? Math.max(0, Math.round(n("f_pagDias"))) : null;
   const existente = id ? data.negocios.find(x => x.id === id) : null;
-  const dataPag = porEntrega ? dataPagamentoPorEntrega({ ...(existente || {}), data_fim_embarque: v("f_dataFimEmbarque") || null, pagamento_dias_apos_entrega: diasApos }) : (v("f_dataPagamento") || null);
-  if (porEntrega && !dataPag) { alert("Pra pagar \"dias após o recebimento\", informe a data de fim do embarque (ou registre as cargas depois)."); return; }
+  const dataPag = porEntrega ? dataPagamentoPorEntrega({ ...(existente || {}), data_fim_embarque: v("f_dataFimEmbarque") || null, pagamento_dias_apos_entrega: diasApos, pagamento_base: pagamentoBase }) : (v("f_dataPagamento") || null);
+  if (porEntrega && !dataPag) { alert("Pra pagar \"dias após a entrega\", informe a data de fim do embarque (ou registre as cargas depois)."); return; }
   const payload = { grao: v("f_grao")||"—", contraparte, cliente_id, produtor_id: produtorVal || null, fazenda_id: v("f_fazendaSelect") || null, corretor_id: v("f_corretorSelect") || null, conta_bancaria: v("f_contaBancaria") || "Principal",
     quantidade: n("f_quantidade"), unidade: "sc", preco: n("f_preco"), preco_liquido: n("f_precoLiquido") || null, comissao: comissaoTotal, comissao_saca: comissaoSaca,
     comissao_corretora: comissaoTotal * data.config.comissao_pct_corretora/100, comissao_corretor: comissaoTotal * data.config.comissao_pct_corretor/100,
     comissao_pagador: v("f_comissaoPagador") || "Vendedor", funrural_forma: v("f_funruralForma") || "Comercialização",
     numero_contrato: v("f_numeroContrato"), safra: v("f_safra"), modalidade: v("f_modalidade") || "FOB", local_origem: v("f_localOrigem"), armazem_id: v("f_armazemSelect") || null,
     data_inicio_embarque: v("f_dataInicioEmbarque") || null, data_fim_embarque: v("f_dataFimEmbarque") || null, data_pagamento: dataPag, pagamento_dias_apos_entrega: diasApos,
+    ...(pagamentoBase === "total" || data.negocios.some(x => "pagamento_base" in x) ? { pagamento_base: pagamentoBase } : {}), // coluna nova: só manda quando já existe no banco
     pagamentos_extra: negocioPagamentosExtra.filter(p => p.data && Number(p.valor) > 0).map(p => ({ data: p.data, valor: Number(p.valor), unidade: p.unidade === "sc" ? "sc" : "R$", ...(p.pago ? { pago: true } : {}), ...(p.aviso_enviado && p.data === p.data_original ? { aviso_enviado: true } : {}) })),
     data: v("f_data") || null, status: v("f_status"), obs: v("f_obs") };
   // "Finalizado" dá baixa em tudo do checklist. A comissão é controlada à parte,
@@ -3692,9 +3708,10 @@ async function saveNegocio(id) {
     payload.embarque_finalizado = true;
     payload.embarque_finalizado_em = existing?.embarque_finalizado_em || new Date().toISOString();
   }
-  let savedId = id;
-  if (id) { await sb.from("nexus_negocios").update(payload).eq("id", id); }
-  else { const { data: rows } = await sb.from("nexus_negocios").insert([payload]).select(); savedId = rows && rows[0] ? rows[0].id : null; }
+  let savedId = id, erroSalvar = null;
+  if (id) { ({ error: erroSalvar } = await sb.from("nexus_negocios").update(payload).eq("id", id)); }
+  else { const { data: rows, error } = await sb.from("nexus_negocios").insert([payload]).select(); erroSalvar = error; savedId = rows && rows[0] ? rows[0].id : null; }
+  if (erroSalvar) { alert(/pagamento_base/.test(erroSalvar.message || "") ? "A opção \"dias após a entrega total\" ainda precisa de um ajuste no banco de dados (coluna pagamento_base). Fale com o Álisson." : "Não consegui salvar o negócio: " + erroSalvar.message); return; }
   await sincronizarPrecoMercadoComNegocio(payload);
   if (convertingIntencaoId && savedId) {
     await sb.from("nexus_intencoes").update({ status: "Convertido", negocio_id: savedId }).eq("id", convertingIntencaoId);
@@ -4371,7 +4388,7 @@ function renderEmbarquesPage() {
       const comprador = n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—");
       const acoes = finalizados
         ? `<span style="font-size:11.5px;color:var(--ink-soft)">Finalizado em ${fmtDate((n.embarque_finalizado_em||"").slice(0,10))}</span>`
-        : `${n.pagamento_dias_apos_entrega != null ? `<button class="btn-edit-text" title="Registrar as cargas que chegaram no armazém" onclick="abrirCargasModal('${n.id}')">Cargas (${fmtNum(sacasRecebidas(n))}/${fmtNum(n.quantidade)})</button>` : ""}<button class="btn-edit-text" onclick="abrirLiberacaoModal('${n.id}')">Liberação${n.liberacao_sacas != null && Number(n.liberacao_sacas) !== Number(n.quantidade) ? " (parcial)" : ""}</button><button class="btn-edit-text" title="Enviar Liberação por e-mail pro comprador e vendedor" onclick="enviarLiberacaoPorEmail('${n.id}')">&#128231;</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
+        : `${n.pagamento_dias_apos_entrega != null ? `<button class="btn-edit-text" title="Registrar as cargas entregues" onclick="abrirCargasModal('${n.id}')">Cargas (${fmtNum(sacasRecebidas(n))}/${fmtNum(n.quantidade)})</button>` : ""}<button class="btn-edit-text" onclick="abrirLiberacaoModal('${n.id}')">Liberação${n.liberacao_sacas != null && Number(n.liberacao_sacas) !== Number(n.quantidade) ? " (parcial)" : ""}</button><button class="btn-edit-text" title="Enviar Liberação por e-mail pro comprador e vendedor" onclick="enviarLiberacaoPorEmail('${n.id}')">&#128231;</button><button class="btn-edit-text" style="color:var(--green)" onclick="finalizarEmbarque('${n.id}')">Finalizar</button>`;
       const periodoCell = finalizados
         ? `<td>${periodo}</td>`
         : `<td><span id="embPeriodo-${n.id}" onclick="editEmbarquePeriodo('${n.id}')" style="cursor:pointer;border-bottom:1px dashed var(--ink-soft)" title="Clique para editar o período de embarque">${periodo}</span></td>`;
@@ -4379,21 +4396,21 @@ function renderEmbarquesPage() {
     }).join("");
 }
 document.getElementById("embSearch").addEventListener("input", renderEmbarquesPage);
-// ---- Cargas recebidas (pagamento carga a carga) ----
+// ---- Cargas entregues (pagamento carga a carga ou após a entrega total) ----
 function abrirCargasModal(id) {
   const n = data.negocios.find(x => x.id === id); if (!n) return;
   const dias = Number(n.pagamento_dias_apos_entrega), preco = Number(n.preco || 0), lista = [...cargasDoNegocio(n)].sort((a, b) => (a.data || "").localeCompare(b.data || ""));
   const recebido = sacasRecebidas(n), falta = Math.max(0, Number(n.quantidade || 0) - recebido);
   document.getElementById("modalContent").innerHTML = `
-    <h3>Cargas recebidas — ${escapeHtml(n.numero_contrato || "")}</h3>
-    <div class="hint">${escapeHtml(nomeCadastro(n.produtor_id))} → ${escapeHtml(n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || ""))} · ${escapeHtml(n.grao || "")} · cada carga é paga <b>${dias} dias</b> depois de chegar no armazém.</div>
+    <h3>Cargas entregues — ${escapeHtml(n.numero_contrato || "")}</h3>
+    <div class="hint">${escapeHtml(nomeCadastro(n.produtor_id))} → ${escapeHtml(n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || ""))} · ${escapeHtml(n.grao || "")} · ${pagaNaEntregaTotal(n) ? `pagamento único <b>${dias} dias</b> depois da entrega total do contrato.` : `cada carga é paga <b>${dias} dias</b> depois de entregue.`}</div>
     <div style="overflow-x:auto;margin:10px 0"><table>
-      <thead><tr><th>Chegou em</th><th style="text-align:right">Sacas</th><th style="text-align:right">Kg</th><th>Documento</th><th>Pagamento em</th><th style="text-align:right">Valor (bruto)</th><th></th></tr></thead>
-      <tbody>${lista.length ? lista.map(c => `<tr><td>${fmtDate(c.data)}</td><td style="text-align:right">${fmtNum(c.sacas)}</td><td style="text-align:right">${fmtNum(Number(c.sacas) * 60)}</td><td>${escapeHtml(c.doc || "—")}</td><td><b>${fmtDate(somarDiasISO(c.data, dias))}</b></td><td style="text-align:right">${preco ? fmtMoney(Number(c.sacas) * preco) : "—"}</td><td><button class="btn-danger-text" onclick="removerCarga('${id}','${c.id}')">Remover</button></td></tr>`).join("") : `<tr class="empty-row"><td colspan="7">Nenhuma carga registrada ainda.</td></tr>`}</tbody>
+      <thead><tr><th>Entregue em</th><th style="text-align:right">Sacas</th><th style="text-align:right">Kg</th><th>Documento</th><th>Pagamento em</th><th style="text-align:right">Valor (bruto)</th><th></th></tr></thead>
+      <tbody>${lista.length ? lista.map(c => `<tr><td>${fmtDate(c.data)}</td><td style="text-align:right">${fmtNum(c.sacas)}</td><td style="text-align:right">${fmtNum(Number(c.sacas) * 60)}</td><td>${escapeHtml(c.doc || "—")}</td><td>${pagaNaEntregaTotal(n) ? `<span style="color:var(--ink-soft)">na entrega total</span>` : `<b>${fmtDate(somarDiasISO(c.data, dias))}</b>`}</td><td style="text-align:right">${preco ? fmtMoney(Number(c.sacas) * preco) : "—"}</td><td><button class="btn-danger-text" onclick="removerCarga('${id}','${c.id}')">Remover</button></td></tr>`).join("") : `<tr class="empty-row"><td colspan="7">Nenhuma carga registrada ainda.</td></tr>`}</tbody>
     </table></div>
-    <div style="font-weight:600;margin-bottom:12px">Recebido: ${fmtNum(recebido)} de ${fmtNum(n.quantidade)} sc${falta > 0.5 ? ` — falta ${fmtNum(falta)} sc` : " — contrato completo ✓ (finalize o embarque)"}</div>
+    <div style="font-weight:600;margin-bottom:12px">Entregue: ${fmtNum(recebido)} de ${fmtNum(n.quantidade)} sc${falta > 0.5 ? ` — falta ${fmtNum(falta)} sc` : " — contrato completo ✓ (finalize o embarque)"}</div>
     <div class="field-row">
-      <div class="field"><label>Chegou no armazém em</label><input type="date" id="f_cgData" value="${todayISO()}"></div>
+      <div class="field"><label>Entregue em</label><input type="date" id="f_cgData" value="${todayISO()}"></div>
       <div class="field"><label>Quantidade</label><div style="display:flex;gap:6px"><input type="number" step="any" min="0" id="f_cgQtd" style="flex:1"><select id="f_cgUn" style="width:80px"><option value="kg">kg</option><option value="sc">sacas</option></select></div></div>
       <div class="field"><label>Ticket / NF (opcional)</label><input type="text" id="f_cgDoc"></div>
     </div>
@@ -4412,7 +4429,7 @@ async function salvarCargas(id, cargas) {
 async function adicionarCarga(id) {
   const n = data.negocios.find(x => x.id === id); if (!n) return;
   const dt = document.getElementById("f_cgData").value, qtd = Number(document.getElementById("f_cgQtd").value), un = document.getElementById("f_cgUn").value;
-  if (!dt || !(qtd > 0)) { alert("Informe a data de chegada e a quantidade."); return; }
+  if (!dt || !(qtd > 0)) { alert("Informe a data de entrega e a quantidade."); return; }
   const sacas = un === "kg" ? qtd / 60 : qtd;
   if (await salvarCargas(id, [...cargasDoNegocio(n), { id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), data: dt, sacas: Math.round(sacas * 1000) / 1000, doc: document.getElementById("f_cgDoc").value.trim() || null }])) abrirCargasModal(id);
 }
@@ -6698,7 +6715,7 @@ function gerarRelatorioProdutor() {
         sacas: Number(n.quantidade || 0), precoLiquido, valorLiquido: liquidoTotal,
         pagamento: varias ? `${parcelas.length} parcelas` : fmtDate(parcelas[0].data),
         status: statusContrato, statusDetalhe: statusContrato === "RECEBIDO PARCIAL" ? `${nRec} de ${parcelas.length} parcelas` : "",
-        parcelas: varias ? parcelas.map((p, i) => ({ label: `${i + 1}ª parcela${p.carga ? ` — carga recebida em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}`, sacas: p.sacas, valor: p.valor, data: p.data, status: p.recebido ? "RECEBIDO" : "A RECEBER" })) : [],
+        parcelas: varias ? parcelas.map((p, i) => ({ label: `${i + 1}ª parcela${p.carga ? ` — carga entregue em ${fmtDate(p.carga)}` : ""}${p.estimativa ? " — restante a entregar (estimativa)" : ""}`, sacas: p.sacas, valor: p.valor, data: p.data, status: p.recebido ? "RECEBIDO" : "A RECEBER" })) : [],
       };
     }),
   }));
