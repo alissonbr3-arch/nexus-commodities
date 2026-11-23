@@ -805,7 +805,7 @@ function renderPagamentosTv() {
       <div class="pc-top"><span>${n.numero_contrato || "—"}${n.parcela ? ` · ${n.parcela}` : ""}</span><span class="pc-st">${n.check_pagamento ? "✓ Pago" : "A pagar"}</span></div>
       <div class="pc-nome">${nome(n.produtor_id) || "—"}</div>
       <div class="pc-valor">${n.quantidade != null ? fmtInt(n.quantidade) + " sc" : "Parcela em R$"}</div>
-      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""} · ${fmtMoney(n.precoLiq)}/sc líquido</div>
+      <div class="pc-det">${n.grao || ""}${n.safra ? " " + n.safra : ""}</div>
       <div class="pc-det">Comprador: <b>${comprador}</b></div>
     </div>`;
   }).join("");
