@@ -4122,7 +4122,7 @@ function montarConfirmacaoHtml(negocioId) {
 // impressão. No celular (e no app instalado), a aba nova vira uma tela sem botão de voltar — então lá o
 // documento abre aqui dentro, por cima do app, com "Fechar" e "Enviar".
 // opts.gerarPdf (opcional): async () => Blob do PDF; o "Enviar" compartilha esse arquivo (WhatsApp, e-mail…).
-// Sem gerarPdf, o "Enviar" abre a folha de impressão/compartilhar do celular (dá pra salvar em PDF e mandar).
+// Sem gerarPdf, o "Enviar" monta o PDF a partir do próprio documento (pdfDoIframe) e compartilha igual.
 function usarVisualizadorInterno() {
   return window.matchMedia("(max-width: 900px)").matches
     || window.matchMedia("(display-mode: standalone)").matches
@@ -4178,34 +4178,96 @@ function abrirDocumento(html, opts = {}) {
   el._limpar = () => window.removeEventListener("resize", ajustar);
 
   const btn = el.querySelector("#docViewerEnviar");
-  btn.onclick = async () => {
-    if (!opts.gerarPdf) {
-      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
-      catch (e) { alert("Não consegui abrir o compartilhamento: " + e.message); }
-      return;
-    }
-    const rotulo = btn.textContent;
-    btn.disabled = true; btn.textContent = "Gerando…";
-    try {
-      const blob = await opts.gerarPdf();
-      if (!blob) return;
-      const nome = (opts.nomeArquivo || titulo).replace(/[\\/:*?"<>|]/g, "").trim() + ".pdf";
-      const arquivo = new File([blob], nome, { type: "application/pdf" });
-      if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
-        try { await navigator.share({ files: [arquivo], title: nome }); }
-        catch (e) { if (e.name !== "AbortError") throw e; }
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url; a.download = nome;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      }
-    } catch (e) {
-      alert("Erro ao gerar o PDF: " + e.message);
-    } finally {
-      btn.disabled = false; btn.textContent = rotulo;
+  let arquivoPronto = null; // PDF já gerado: o 2º toque compartilha na hora
+  const compartilhar = async (arquivo) => {
+    if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+      await navigator.share({ files: [arquivo], title: arquivo.name });
+    } else {
+      const url = URL.createObjectURL(arquivo);
+      const a = document.createElement("a"); a.href = url; a.download = arquivo.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
   };
+  btn.onclick = async () => {
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Gerando PDF…";
+    try {
+      if (!arquivoPronto) {
+        const blob = opts.gerarPdf ? await opts.gerarPdf() : await pdfDoIframe(iframe);
+        if (!blob) return;
+        const nome = (opts.nomeArquivo || titulo).replace(/[\\/:*?"<>|]/g, "").trim() + ".pdf";
+        arquivoPronto = new File([blob], nome, { type: "application/pdf" });
+      }
+      await compartilhar(arquivoPronto);
+    } catch (e) {
+      // O iPhone só abre o compartilhar logo depois do toque; se o PDF demorou pra ficar pronto, ele
+      // recusa (NotAllowedError). O PDF já está pronto: o próximo toque em "Compartilhar PDF" abre na hora.
+      if (e && e.name === "NotAllowedError" && arquivoPronto) { btn.disabled = false; btn.textContent = "Compartilhar PDF"; return; }
+      if (!(e && e.name === "AbortError")) alert("Erro ao gerar o PDF: " + (e && e.message || e));
+    } finally {
+      if (btn.textContent === "Gerando PDF…") { btn.disabled = false; btn.textContent = arquivoPronto ? "Enviar" : "Enviar"; }
+    }
+  };
+}
+// PDF a partir do documento aberto no visualizador (relatórios e recibos, que não têm PDF próprio): o
+// html2canvas fotografa a página e o jsPDF monta as folhas A4. No app instalado do iPhone a impressão
+// (window.print) não funciona, por isso o "Enviar" gera o PDF em vez de abrir a impressão.
+const HTML2CANVAS_URL = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+function carregarHtml2canvasNo(win) {
+  if (win.html2canvas) return Promise.resolve(win.html2canvas);
+  return new Promise((ok, erro) => {
+    const sc = win.document.createElement("script");
+    sc.src = HTML2CANVAS_URL;
+    sc.onload = () => win.html2canvas ? ok(win.html2canvas) : erro(new Error("biblioteca não carregou"));
+    sc.onerror = () => erro(new Error("sem internet para carregar o gerador de PDF"));
+    win.document.head.appendChild(sc);
+  });
+}
+async function pdfDoIframe(iframe) {
+  const win = iframe.contentWindow, doc = iframe.contentDocument;
+  const h2c = await carregarHtml2canvasNo(win);
+  if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+  const largura = Math.max(820, doc.documentElement.scrollWidth);
+  const canvas = await h2c(doc.body, {
+    scale: 2, useCORS: true, backgroundColor: "#ffffff",
+    width: largura, windowWidth: largura, windowHeight: doc.documentElement.scrollHeight,
+    x: 0, y: 0, scrollX: 0, scrollY: 0,
+  });
+  const { jsPDF } = window.jspdf;
+  const paisagem = largura > 900;
+  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: paisagem ? "landscape" : "portrait" });
+  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight(), margem = 18;
+  const escala = (pw - margem * 2) / canvas.width;          // pt por pixel do canvas
+  const alturaPagPx = Math.floor((ph - margem * 2) / escala); // quanto do canvas cabe numa folha
+  const ctx = canvas.getContext("2d");
+  // Procura, subindo a partir do fim da folha, uma faixa sem texto (linha de pixels igual às vizinhas —
+  // vale também com a lateral escura do relatório), pra não cortar texto no meio na troca de página.
+  const linhaLisa = (y) => {
+    const d = ctx.getImageData(0, y - 2, canvas.width, 5).data, w = canvas.width * 4;
+    for (let i = 0; i < w; i += 8) for (let r = 1; r < 5; r++) {
+      const j = i + r * w;
+      if (Math.abs(d[j] - d[i]) > 8 || Math.abs(d[j + 1] - d[i + 1]) > 8 || Math.abs(d[j + 2] - d[i + 2]) > 8) return false;
+    }
+    return true;
+  };
+  let y = 0, primeira = true;
+  while (y < canvas.height - 2) {
+    let fim = Math.min(canvas.height, y + alturaPagPx);
+    if (fim < canvas.height) {
+      const limite = Math.max(y + alturaPagPx * 0.75, y + 1);
+      for (let t = fim; t > limite; t -= 2) if (linhaLisa(t)) { fim = t; break; }
+    }
+    const fatia = document.createElement("canvas");
+    fatia.width = canvas.width; fatia.height = fim - y;
+    const fctx = fatia.getContext("2d");
+    fctx.fillStyle = "#fff"; fctx.fillRect(0, 0, fatia.width, fatia.height);
+    fctx.drawImage(canvas, 0, y, canvas.width, fatia.height, 0, 0, canvas.width, fatia.height);
+    if (!primeira) pdf.addPage();
+    pdf.addImage(fatia.toDataURL("image/jpeg", 0.9), "JPEG", margem, margem, canvas.width * escala, fatia.height * escala);
+    primeira = false; y = fim;
+  }
+  return pdf.output("blob");
 }
 function fecharDocumento(doHistorico) {
   const el = document.getElementById("docViewer");
