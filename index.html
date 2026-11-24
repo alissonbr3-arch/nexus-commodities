@@ -283,6 +283,17 @@
   .val-pos { color: var(--green); }
   .val-neg { color: var(--red); }
 
+  /* Visualizador de documentos no celular (Confirmação, relatórios, recibos): abre por cima do app,
+     com Fechar e Enviar, em vez de uma janela nova sem botões (no app instalado não dá pra voltar). */
+  .doc-viewer { position: fixed; inset: 0; z-index: 200; background: #6b6b6b; display: flex; flex-direction: column; }
+  .doc-viewer-bar { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; background: var(--card, #1c1f24); border-bottom: 1px solid var(--border, #333); }
+  .doc-viewer-bar .titulo { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-viewer-bar button { border: 1px solid var(--border, #444); background: transparent; color: var(--ink); border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600; }
+  .doc-viewer-bar button.enviar { background: var(--gold); border-color: var(--gold); color: #111; }
+  .doc-viewer-bar button:disabled { opacity: .6; }
+  .doc-viewer-body { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding-bottom: env(safe-area-inset-bottom); }
+  .doc-viewer-folha { background: #fff; transform-origin: top left; }
+  .doc-viewer-folha iframe { border: 0; display: block; background: #fff; }
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); align-items: center; justify-content: center; z-index: 50; }
   .overlay.active { display: flex; }
   /* Atalhos de teclado: letra no menu lateral + paleta (⌘K) */
@@ -4003,12 +4014,118 @@ function montarConfirmacaoHtml(negocioId) {
   </body></html>`;
   return { html, numeroContrato: n.numero_contrato };
 }
+// ---------------- VISUALIZADOR DE DOCUMENTOS ----------------
+// No computador, os documentos (Confirmação, relatórios, recibos) continuam abrindo numa aba nova com a
+// impressão. No celular (e no app instalado), a aba nova vira uma tela sem botão de voltar — então lá o
+// documento abre aqui dentro, por cima do app, com "Fechar" e "Enviar".
+// opts.gerarPdf (opcional): async () => Blob do PDF; o "Enviar" compartilha esse arquivo (WhatsApp, e-mail…).
+// Sem gerarPdf, o "Enviar" abre a folha de impressão/compartilhar do celular (dá pra salvar em PDF e mandar).
+function usarVisualizadorInterno() {
+  return window.matchMedia("(max-width: 900px)").matches
+    || window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+}
+function abrirDocumento(html, opts = {}) {
+  if (!usarVisualizadorInterno()) {
+    const win = window.open("", "_blank");
+    if (!win) { alert(opts.msgPopup || "Habilite pop-ups para abrir o documento."); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+    return;
+  }
+  fecharDocumento();
+  // Tira o window.print() automático: no celular quem decide é o botão "Enviar".
+  const semAutoPrint = html.replace(/<script>\s*window\.onload[\s\S]*?print\(\)[\s\S]*?<\/script>/i, "");
+  const titulo = opts.titulo || (html.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || "Documento";
+  const el = document.createElement("div");
+  el.className = "doc-viewer"; el.id = "docViewer";
+  el.innerHTML = `<div class="doc-viewer-bar">
+      <button type="button" onclick="fecharDocumento()">✕ Fechar</button>
+      <div class="titulo"></div>
+      <button type="button" class="enviar" id="docViewerEnviar">Enviar</button>
+    </div>
+    <div class="doc-viewer-body"><div class="doc-viewer-folha"><iframe title="Documento"></iframe></div></div>`;
+  el.querySelector(".titulo").textContent = titulo;
+  document.body.appendChild(el);
+  document.body.style.overflow = "hidden";
+  history.pushState({ docViewer: true }, "");
+
+  const body = el.querySelector(".doc-viewer-body");
+  const folha = el.querySelector(".doc-viewer-folha");
+  const iframe = el.querySelector("iframe");
+  // A folha é montada na largura de um documento (como no computador) e reduzida pra caber na tela.
+  const ajustar = () => {
+    const doc = iframe.contentDocument;
+    if (!doc || !doc.documentElement) return;
+    const larguraDoc = Math.max(820, doc.documentElement.scrollWidth);
+    iframe.style.width = larguraDoc + "px";
+    const altura = doc.documentElement.scrollHeight;
+    iframe.style.height = altura + "px";
+    const escala = Math.min(1, body.clientWidth / larguraDoc);
+    folha.style.transform = `scale(${escala})`;
+    folha.style.width = larguraDoc + "px";
+    folha.style.height = altura + "px";
+    folha.parentElement.style.height = "auto";
+    folha.style.marginBottom = (altura * escala - altura) + "px";
+  };
+  iframe.style.width = "820px";
+  iframe.onload = () => { ajustar(); setTimeout(ajustar, 400); setTimeout(ajustar, 1200); };
+  iframe.srcdoc = semAutoPrint;
+  el._ajustar = ajustar;
+  window.addEventListener("resize", ajustar);
+  el._limpar = () => window.removeEventListener("resize", ajustar);
+
+  const btn = el.querySelector("#docViewerEnviar");
+  btn.onclick = async () => {
+    if (!opts.gerarPdf) {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+      catch (e) { alert("Não consegui abrir o compartilhamento: " + e.message); }
+      return;
+    }
+    const rotulo = btn.textContent;
+    btn.disabled = true; btn.textContent = "Gerando…";
+    try {
+      const blob = await opts.gerarPdf();
+      if (!blob) return;
+      const nome = (opts.nomeArquivo || titulo).replace(/[\\/:*?"<>|]/g, "").trim() + ".pdf";
+      const arquivo = new File([blob], nome, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+        try { await navigator.share({ files: [arquivo], title: nome }); }
+        catch (e) { if (e.name !== "AbortError") throw e; }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = nome;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } catch (e) {
+      alert("Erro ao gerar o PDF: " + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = rotulo;
+    }
+  };
+}
+function fecharDocumento(doHistorico) {
+  const el = document.getElementById("docViewer");
+  if (!el) return;
+  if (el._limpar) el._limpar();
+  el.remove();
+  document.body.style.overflow = "";
+  if (doHistorico !== true && history.state && history.state.docViewer) history.back();
+}
+// Botão/gesto de voltar do celular fecha o documento em vez de sair do app.
+window.addEventListener("popstate", () => { if (document.getElementById("docViewer")) fecharDocumento(true); });
+
 function gerarConfirmacao(negocioId) {
   const r = montarConfirmacaoHtml(negocioId);
   if (!r) return;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
-  win.document.open(); win.document.write(r.html); win.document.close();
+  const n = data.negocios.find(x => x.id === negocioId);
+  const vendedor = n && data.cadastros.find(c => c.id === n.produtor_id);
+  abrirDocumento(r.html, {
+    msgPopup: "Habilite pop-ups para gerar a confirmação.",
+    titulo: `Confirmação ${r.numeroContrato || ""}`.trim(),
+    nomeArquivo: `Confirmação ${r.numeroContrato || ""}${vendedor ? " - " + vendedor.nome : ""}`,
+    gerarPdf: async () => { const doc = await gerarConfirmacaoPdfNativo(negocioId); return doc ? doc.output("blob") : null; },
+  });
 }
 async function enviarParaAssinatura(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
@@ -4583,9 +4700,10 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
 function gerarLiberacaoEmbarque(negocioId) {
   const r = montarLiberacaoEmbarqueHtml(negocioId);
   if (!r) return;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar a liberação."); return; }
-  win.document.open(); win.document.write(r.html); win.document.close();
+  abrirDocumento(r.html, {
+    msgPopup: "Habilite pop-ups para gerar a liberação.",
+    gerarPdf: async () => { const doc = await gerarLiberacaoPdfNativo(negocioId); return doc ? doc.output("blob") : null; },
+  });
 }
 // Gera a Liberação de Embarque como PDF nativo (texto vetorial de verdade, selecionável e
 // pesquisável) usando jsPDF, com o mesmo conteúdo/ordem do montarLiberacaoEmbarqueHtml (a via
@@ -5930,9 +6048,7 @@ function gerarRelatorioComissoes() {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
 }
 // ---------------- NOTA FISCAL DA COMISSÃO ----------------
 // A nota é emitida à mão no Emissor Nacional (login e senha — sem certificado digital, então não
@@ -6394,9 +6510,7 @@ function gerarReciboRepasseCorretor(negocioId) {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o recibo." });
 }
 
 // ---------------- CONFIGURAÇÕES (submenu) ----------------
@@ -6507,9 +6621,7 @@ function gerarFechamentoMensal() {
   </table>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
 }
 
 // ---------------- AUDITORIA ----------------
@@ -6735,9 +6847,7 @@ function gerarRelatorioProdutor() {
     resumo: negocios.length ? [{ label: "negócios recebidos", valor: `${recebidos} de ${negocios.length}` }] : [],
     vazioNegocios: "Nenhum negócio nas safras selecionadas.",
   });
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
 }
 
 function gerarReciboComissao(negocioId) {
@@ -6788,9 +6898,7 @@ function gerarReciboComissao(negocioId) {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o recibo." });
 }
 
 // Recibo único cobrindo vários negócios selecionados de uma vez — mesma regra do boleto
@@ -6852,9 +6960,7 @@ function gerarReciboComissaoAgrupado() {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
-  win.document.open(); win.document.write(html); win.document.close();
+  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
 }
 
 // ---------------- FINANCEIRO: DESPESAS ----------------
