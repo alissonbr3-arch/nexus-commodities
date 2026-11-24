@@ -881,6 +881,8 @@
             <select class="filter" id="negFilterStatus">
               <option value="">Todos os status</option><option>Negociação</option><option>Fechado</option><option>Finalizado</option>
             </select>
+            <select class="filter" id="negFilterGrao"><option value="">Todos os grãos</option></select>
+            <select class="filter" id="negFilterSafra"><option value="">Todas as safras</option></select>
             <select class="filter" id="negFilterCorretor">
               <option value="">Todos os negócios</option><option value="eu">Meus negócios</option>
             </select>
@@ -3433,13 +3435,28 @@ function renderNegFilterCorretorSelect() {
     + data.equipe.map(e => `<option value="${e.user_id}">${e.nome}</option>`).join("");
   sel.value = [...sel.options].some(o => o.value === atual) ? atual : "";
 }
+// Filtros de grão e safra: as opções saem das próprias negociações. A lista de safras acompanha o
+// grão escolhido (ex.: Soja → 2025/2026, 2026/2027), pra combinar "Soja 26/27", "Milho 26/26" etc.
+function renderNegFilterGraoSafraSelects() {
+  const selG = document.getElementById("negFilterGrao"), selS = document.getElementById("negFilterSafra");
+  if (!selG || !selS) return;
+  const graoAtual = selG.value, safraAtual = selS.value;
+  const graos = [...new Set(data.negocios.map(n => n.grao).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  selG.innerHTML = `<option value="">Todos os grãos</option>` + graos.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join("");
+  selG.value = graos.includes(graoAtual) ? graoAtual : "";
+  const safras = [...new Set(data.negocios.filter(n => !selG.value || n.grao === selG.value).map(n => n.safra).filter(Boolean))].sort();
+  selS.innerHTML = `<option value="">Todas as safras</option>` + safras.map(sf => `<option value="${escapeHtml(sf)}">${escapeHtml(sf)}</option>`).join("");
+  selS.value = safras.includes(safraAtual) ? safraAtual : "";
+}
 function renderNegocios() {
   renderNegFilterCorretorSelect();
+  renderNegFilterGraoSafraSelects();
+  const filterGrao = document.getElementById("negFilterGrao").value, filterSafra = document.getElementById("negFilterSafra").value;
   const search = document.getElementById("negSearch").value.toLowerCase(); const filterStatus = document.getElementById("negFilterStatus").value;
   const filterCorretor = document.getElementById("negFilterCorretor").value;
   const matchesCorretor = (n) => !filterCorretor || (filterCorretor === "eu" ? n.corretor_id === currentUserId : n.corretor_id === filterCorretor);
   let list = data.negocios.map(n => ({ ...n, vendedorNome: nomeCadastro(n.produtor_id), compradorNome: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "—"), precoLiquido: precoLiquidoNegocio(n).precoLiquido }))
-    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus) && matchesCorretor(n));
+    .filter(n => (!search || (n.numero_contrato||"").toLowerCase().includes(search) || n.vendedorNome.toLowerCase().includes(search) || n.compradorNome.toLowerCase().includes(search) || n.grao.toLowerCase().includes(search)) && (!filterStatus || n.status === filterStatus) && (!filterGrao || n.grao === filterGrao) && (!filterSafra || n.safra === filterSafra) && matchesCorretor(n));
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="12">Nenhuma negociação encontrada.</td></tr>` :
@@ -3451,6 +3468,8 @@ function renderNegocios() {
 document.getElementById("negSearch").addEventListener("input", renderNegocios);
 document.getElementById("negFilterStatus").addEventListener("change", renderNegocios);
 document.getElementById("negFilterCorretor").addEventListener("change", renderNegocios);
+document.getElementById("negFilterGrao").addEventListener("change", renderNegocios);
+document.getElementById("negFilterSafra").addEventListener("change", renderNegocios);
 document.querySelectorAll('#page-negociacoes thead th[data-sort]').forEach(th => th.addEventListener("click", () => wireSort("negocios", th.dataset.sort, renderNegocios)));
 
 // ---------------- LIXEIRA DE NEGOCIAÇÕES ----------------
