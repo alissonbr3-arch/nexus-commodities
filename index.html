@@ -1478,7 +1478,7 @@ function onCpfCnpjInput(id) {
 function badgeClass(status) { return (status||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,""); }
 function fmtSigned(n) { const v = Number(n||0); const cls = v > 0 ? "val-pos" : (v < 0 ? "val-neg" : ""); return `<span class="${cls}">${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`; }
 
-let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], intencoes: [], investimentos: [], fazendas: [], saldosArmazem: [], externos: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
+let data = { negocios: [], cadastros: [], tarefas: [], cotacoes: [], cotacoesHistorico: [], precoCompradorHistorico: [], despesas: [], receitas: [], dolar: null, equipe: [], metasHistorico: [], intencoes: [], investimentos: [], fazendas: [], saldosArmazem: [], externos: [], grupos: [], auditLog: [], emailLog: [], config: { comissao_pct_corretora: 70, comissao_pct_corretor: 30, soja_contrato_vigente: "Setembro", soja_premio_basis: 0, soja_taxa_portuaria: 0, soja_frete: 0, whatsapp_msg_pagamento: "", whatsapp_msg_embarque: "" } };
 let sortState = { negocios: { key: "numero_contrato", dir: "desc" } };
 let currentPeriod = "mes";
 let graoChart = null, comissaoChart = null, dashCompradorChart = null, dashCorretorChart = null, dashCorretorVolumeChart = null;
@@ -1529,7 +1529,7 @@ function showApp(session) {
 // ---------------- BOOT / DATA LOAD ----------------
 async function boot() {
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadIntencoes(), loadFazendas(), loadSaldosArmazem(), loadExternos(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
+  await Promise.all([loadNegocios(), loadCadastros(), loadGrupos(), loadTarefas(), loadCotacoes(), loadCotacoesHistorico(), loadPrecoCompradorHistorico(), loadDespesas(), loadReceitas(), loadDolar(), loadEquipe(), loadMetasHistorico(), loadIntencoes(), loadFazendas(), loadSaldosArmazem(), loadExternos(), loadConfig(), loadPrecoEnvio(), loadInvestimentos()]);
   renderAll();
   navRestaurar();
   wireRealtime();
@@ -1553,6 +1553,16 @@ async function loadPrecoCompradorHistorico() { const { data: rows, error } = awa
 async function loadDespesas() { const { data: rows, error } = await sb.from("nexus_despesas").select("*").order("data", { ascending: false }); if (!error) data.despesas = rows || []; }
 async function loadReceitas() { const { data: rows, error } = await sb.from("nexus_receitas").select("*").order("data", { ascending: false }); if (!error) data.receitas = rows || []; }
 async function loadDolar() { const { data: rows, error } = await sb.from("nexus_dolar").select("*").eq("id", 1).single(); if (!error) data.dolar = rows; }
+// Histórico das metas: cada mudança de meta vale a partir do dia em que foi feita (gravado pelo banco,
+// tabela nexus_metas_historico). Assim, mudar a meta hoje não reescreve os meses que já passaram.
+async function loadMetasHistorico() { const { data: rows, error } = await sb.from("nexus_metas_historico").select("user_id,meta_mensal_sacas,vigente_desde,created_at").order("vigente_desde").order("created_at"); if (!error) data.metasHistorico = rows || []; }
+// Meta do corretor no mês "AAAA-MM": a última mudança feita até o fim daquele mês. Sem histórico, a meta atual.
+function metaNoMes(e, ym) {
+  if (!e) return 0;
+  const hist = (data.metasHistorico || []).filter(h => h.user_id === e.user_id && h.vigente_desde <= `${ym}-31`);
+  if (!hist.length) return Number(e.meta_mensal_sacas || 0);
+  return Number(hist[hist.length - 1].meta_mensal_sacas || 0);
+}
 async function loadEquipe() { const { data: rows, error } = await sb.from("nexus_equipe").select("*").order("ordem"); if (!error) data.equipe = rows || []; }
 async function loadConfig() { const { data: row, error } = await sb.from("nexus_config").select("*").eq("id", 1).single(); if (!error && row) data.config = row; }
 async function loadInvestimentos() { const { data: rows, error } = await sb.from("nexus_investimentos").select("*").order("data_compra", { ascending: false }); if (!error) data.investimentos = rows || []; }
@@ -1571,7 +1581,7 @@ function wireRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_dolar" }, async () => { await loadDolar(); renderDolarStrip(); renderPrecoPracaBanner(); atualizarPreviewPrecoPraca(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_intencoes" }, async () => { await loadIntencoes(); renderFunil(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_fazendas" }, async () => { await loadFazendas(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_equipe" }, async () => { await loadEquipe(); renderEquipe(); atualizarAvatarHeader(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "nexus_equipe" }, async () => { await Promise.all([loadEquipe(), loadMetasHistorico()]); renderEquipe(); atualizarAvatarHeader(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_config" }, async () => { await loadConfig(); renderConfiguracoes(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_preco_comprador_historico" }, async () => { await loadPrecoCompradorHistorico(); renderPrecoCompradorHistoricoChart(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "nexus_despesas" }, async () => { await loadDespesas(); renderDespesasPage(); })
@@ -2059,7 +2069,7 @@ function feedbackDoCorretor(e, mes, ant, todos) {
   const prods = fbTop(negs3, "produtor_id", nomeCadastro), comps = fbTop(negs3, "cliente_id", id => id === "—" ? "—" : nomeCadastro(id));
   const graos = fbTop(negs3, "grao"), graosEquipe = fbTop(negsEquipe3, "grao");
   const totEquipeMes = fbStats(doMes(todos, mes)).sacas;
-  const meta = Number(e.meta_mensal_sacas || 0);
+  const meta = metaNoMes(e, mes.ini.slice(0, 7));
   const ultimo = meus.map(n => n.data).filter(Boolean).sort().pop();
   // carteira parada: produtores do corretor sem negócio nenhum (de ninguém) há 60+ dias
   const corte = new Date(mes.fim + "T12:00:00"); corte.setDate(corte.getDate() - 60); const corteISO = corte.toISOString().slice(0, 10);
@@ -2253,7 +2263,7 @@ function renderMinhaMeta() {
   const el = document.getElementById("minhaMetaPanel");
   if (!el) return;
   const eu = data.equipe.find(e => e.user_id === currentUserId);
-  const meta = eu ? Number(eu.meta_mensal_sacas || 0) : 0;
+  const meta = eu ? metaNoMes(eu, todayISO().slice(0, 7)) : 0;
   if (!eu || !meta) { el.style.display = "none"; return; }
   const hoje = todayISO(), [y, m] = hoje.split("-").map(Number);
   const iniMes = `${y}-${String(m).padStart(2, "0")}-01`, fimMes = `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
@@ -2282,7 +2292,7 @@ function conquistasDoPeriodoUI(inicio, fim, mensal) {
   if (tm && Number(tm.maior.comissao || 0) > 0) out.push({ id: tm.e.user_id, ic: "⭐", titulo: "Maior negócio", det: `comissão de ${fmtMoney(tm.maior.comissao)}` });
   const tn = linhas.filter(x => x.n >= 2).sort((a, b) => b.n - a.n || b.sacas - a.sacas)[0];
   if (tn) out.push({ id: tn.e.user_id, ic: "🤝", titulo: "Mais negócios fechados", det: `${tn.n} negócios` });
-  if (mensal) linhas.forEach(x => { const meta = Number(x.e.meta_mensal_sacas || 0); if (meta > 0 && x.sacas >= meta) out.push({ id: x.e.user_id, ic: "🎯", titulo: "Meta batida", det: `${fmtNum(Math.round(x.sacas))} de ${fmtNum(meta)} sc` }); });
+  if (mensal) linhas.forEach(x => { const meta = metaNoMes(x.e, inicio.slice(0, 7)); if (meta > 0 && x.sacas >= meta) out.push({ id: x.e.user_id, ic: "🎯", titulo: "Meta batida", det: `${fmtNum(Math.round(x.sacas))} de ${fmtNum(meta)} sc` }); });
   return out;
 }
 function renderConquistas() {
@@ -2396,14 +2406,16 @@ function negociosPorPeriodoCorretor(p) {
   return data.negocios.filter(n => n.data && n.data.slice(0,7) === key);
 }
 function metaParaPeriodoCorretor(corretor, periodo) {
-  const meta = Number(corretor.meta_mensal_sacas || 0);
-  if (!meta) return 0;
-  if (periodo === "mes") return meta;
+  const ref = dashCorretorDataRef();
+  const ym = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  if (periodo === "mes") return metaNoMes(corretor, ym(ref.getFullYear(), ref.getMonth() + 1));
   if (periodo === "ano") {
-    const ref = dashCorretorDataRef();
+    // Soma a meta de cada mês com o valor que valia naquele mês.
     const now = new Date();
     const mesesNoAno = ref.getFullYear() < now.getFullYear() ? 12 : (now.getMonth() + 1);
-    return meta * mesesNoAno;
+    let total = 0;
+    for (let m = 1; m <= mesesNoAno; m++) total += metaNoMes(corretor, ym(ref.getFullYear(), m));
+    return total;
   }
   return 0;
 }
@@ -8287,7 +8299,7 @@ async function salvarNascimentoCorretor(userId, valor) {
 async function salvarMetaCorretor(userId, valor) {
   const meta = valor === "" ? null : Number(valor);
   await sb.from("nexus_equipe").update({ meta_mensal_sacas: meta }).eq("user_id", userId);
-  await loadEquipe();
+  await Promise.all([loadEquipe(), loadMetasHistorico()]);
   renderEquipe();
   renderDashCorretorRanking();
 }

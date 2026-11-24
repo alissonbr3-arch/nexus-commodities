@@ -40,14 +40,22 @@ export function headersAdmin() { const k = process.env.SUPABASE_SERVICE_ROLE_KEY
 async function get(path) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: headersAdmin() }); const j = await r.json().catch(() => []); return Array.isArray(j) ? j : []; }
 
 export async function carregarBase() {
-  const [equipe, negocios, cadastros, grupos] = await Promise.all([
+  const [equipe, negocios, cadastros, grupos, metasHistorico] = await Promise.all([
     get("nexus_equipe?select=user_id,nome,cargo,telefone,meta_mensal_sacas&order=ordem.asc"),
     get("nexus_negocios?deleted_at=is.null&select=id,numero_contrato,data,grao,safra,quantidade,comissao,comissao_corretor,corretor_id,produtor_id,cliente_id,contraparte,status,data_pagamento,data_inicio_embarque,data_fim_embarque,embarque_finalizado,check_confirmacao,check_contrato,check_nota_fiscal,check_contra_nota,check_liberacao_embarque,check_embarque_entrega,check_pagamento,comissao_recebida_em&limit=5000"),
     get("nexus_cadastros?select=id,nome,tipo,owner_id,grupo_id&limit=5000"),
     get("nexus_grupos?select=id,nome"),
+    get("nexus_metas_historico?select=user_id,meta_mensal_sacas,vigente_desde,created_at&order=vigente_desde.asc,created_at.asc"),
   ]);
   const proprietario = equipe.find(e => /propriet/i.test(e.cargo || "")) || equipe[0] || null;
-  return { equipe, negocios, cadastros, grupos, proprietario };
+  return { equipe, negocios, cadastros, grupos, metasHistorico, proprietario };
+}
+// Meta do corretor no mês "AAAA-MM": a última mudança feita até o fim daquele mês (mudar a meta hoje
+// não reescreve os meses que já passaram). Sem histórico, a meta atual.
+export function metaNoMes(base, corretor, ym) {
+  const hist = (base.metasHistorico || []).filter(h => h.user_id === corretor.user_id && h.vigente_desde <= `${ym}-31`);
+  if (!hist.length) return Number(corretor.meta_mensal_sacas || 0);
+  return Number(hist[hist.length - 1].meta_mensal_sacas || 0);
 }
 export const nomeCad = (base, id) => (base.cadastros.find(c => c.id === id) || {}).nome || "";
 const nomeComprador = (base, n) => nomeCad(base, n.cliente_id) || n.contraparte || "";
@@ -63,7 +71,7 @@ const noPeriodo = (l, p) => l.filter(n => n.data && n.data >= p.inicio && n.data
 
 // ---- meta ----
 export function linhaMeta(base, corretor, hoje) {
-  const meta = Number(corretor.meta_mensal_sacas || 0);
+  const meta = metaNoMes(base, corretor, hoje.slice(0, 7));
   if (!meta) return "";
   const mes = limitesMesDe(hoje);
   const feitas = soma(noPeriodo(negociosDoCorretor(base, corretor), mes), sacas);
@@ -154,7 +162,7 @@ export function conquistasDoPeriodo(base, periodo, { mensal = false } = {}) {
   if (topMaior && com(topMaior.maior) > 0) out.push({ id: topMaior.e.user_id, icone: "⭐", titulo: "Maior negócio", detalhe: `comissão de ${fmtMoney(com(topMaior.maior))} no ${topMaior.maior.numero_contrato || "—"}` });
   const topNeg = linhas.filter(x => x.n >= 2).sort((a, b) => b.n - a.n || b.sacas - a.sacas)[0];
   if (topNeg) out.push({ id: topNeg.e.user_id, icone: "🤝", titulo: "Mais negócios fechados", detalhe: `${topNeg.n} negócios` });
-  if (mensal) for (const x of linhas) { const meta = Number(x.e.meta_mensal_sacas || 0); if (meta > 0 && x.sacas >= meta) out.push({ id: x.e.user_id, icone: "🎯", titulo: "Meta batida", detalhe: `${fmtNum(x.sacas)} de ${fmtNum(meta)} sc` }); }
+  if (mensal) for (const x of linhas) { const meta = metaNoMes(base, x.e, periodo.inicio.slice(0, 7)); if (meta > 0 && x.sacas >= meta) out.push({ id: x.e.user_id, icone: "🎯", titulo: "Meta batida", detalhe: `${fmtNum(x.sacas)} de ${fmtNum(meta)} sc` }); }
   return out;
 }
 
@@ -180,7 +188,7 @@ export function montarResumoPeriodo(base, corretor, { periodo, anterior, rotulo,
     if (soma(l, comCor) > 0) linhas.push(`👤 Sua parte: *${fmtMoney(soma(l, comCor))}*`);
   }
   if (ranking.length > 1 && ranking[pos - 1] && ranking[pos - 1].s > 0) linhas.push(`📈 Posição em sacas: *${pos}º de ${ranking.length}*`);
-  const meta = Number(corretor.meta_mensal_sacas || 0);
+  const meta = metaNoMes(base, corretor, periodo.fim.slice(0, 7));
   if (meta > 0) {
     const mesRef = limitesMesDe(periodo.fim);
     const feitas = soma(noPeriodo(meus, mesRef), sacas);
