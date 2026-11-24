@@ -283,6 +283,13 @@
   .val-pos { color: var(--green); }
   .val-neg { color: var(--red); }
 
+  /* Puxar pra atualizar (celular): arrastar pra baixo no topo da página e soltar recarrega o app. */
+  .ptr { position: fixed; left: 50%; top: 0; z-index: 150; width: 40px; height: 40px; margin-left: -20px; border-radius: 50%; background: var(--card); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; color: var(--gold); transform: translateY(-60px); opacity: 0; pointer-events: none; }
+  .ptr svg { width: 20px; height: 20px; }
+  .ptr.pronto svg { color: var(--ink); }
+  .ptr.girando svg { animation: ptrGira .8s linear infinite; }
+  @keyframes ptrGira { to { transform: rotate(360deg); } }
+  @media (pointer: coarse) { html, body { overscroll-behavior-y: none; } }
   /* Visualizador de documentos no celular (Confirmação, relatórios, recibos): abre por cima do app,
      com Fechar e Enviar, em vez de uma janela nova sem botões (no app instalado não dá pra voltar). */
   .doc-viewer { position: fixed; inset: 0; z-index: 200; background: #6b6b6b; display: flex; flex-direction: column; }
@@ -4014,6 +4021,71 @@ function montarConfirmacaoHtml(negocioId) {
   </body></html>`;
   return { html, numeroContrato: n.numero_contrato };
 }
+// ---------------- PUXAR PRA ATUALIZAR (celular) ----------------
+// No topo da página, arrastar pra baixo mostra a setinha; passou do ponto e soltou, recarrega o app.
+// Não age com modal, documento ou menu aberto (lá o arrasto é pra rolar o conteúdo).
+(function () {
+  if (!("ontouchstart" in window)) return;
+  const LIMITE = 75, MAX = 120;
+  let ind = null, inicioY = null, inicioX = 0, puxando = false, dist = 0, recarregando = false;
+  const indicador = () => {
+    if (ind) return ind;
+    ind = document.createElement("div");
+    ind.className = "ptr";
+    ind.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>';
+    document.body.appendChild(ind);
+    return ind;
+  };
+  const bloqueado = (alvo) =>
+    document.getElementById("docViewer")
+    || document.querySelector(".overlay.active")
+    || document.querySelector(".sidebar.mobile-open")
+    || (alvo && alvo.closest && alvo.closest("input, textarea, select, .modal, [contenteditable]"));
+  const posicionar = (d) => {
+    const el = indicador();
+    const prog = Math.min(1, d / LIMITE);
+    el.style.transition = "none";
+    el.style.opacity = String(prog);
+    el.style.transform = `translateY(${Math.min(d, MAX) - 50 + 12}px) rotate(${prog * 270}deg)`;
+    el.classList.toggle("pronto", d >= LIMITE);
+  };
+  const recolher = () => {
+    if (!ind) return;
+    ind.style.transition = "transform .2s ease, opacity .2s ease";
+    ind.style.transform = "translateY(-60px)"; ind.style.opacity = "0";
+  };
+  document.addEventListener("touchstart", (e) => {
+    if (recarregando || e.touches.length !== 1 || window.scrollY > 0 || bloqueado(e.target)) { inicioY = null; return; }
+    inicioY = e.touches[0].clientY; inicioX = e.touches[0].clientX; puxando = false; dist = 0;
+  }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    if (inicioY === null) return;
+    const dy = e.touches[0].clientY - inicioY, dx = Math.abs(e.touches[0].clientX - inicioX);
+    if (!puxando) {
+      if (dy < 8 || dx > dy || window.scrollY > 0) { if (dy < 0 || dx > dy) inicioY = null; return; }
+      puxando = true;
+    }
+    dist = dy * 0.55; // resistência
+    posicionar(dist);
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+  const soltar = () => {
+    if (inicioY === null) return;
+    inicioY = null;
+    if (!puxando) return;
+    puxando = false;
+    if (dist >= LIMITE) {
+      recarregando = true;
+      const el = indicador();
+      el.style.transition = "transform .2s ease";
+      el.style.transform = "translateY(22px)"; el.style.opacity = "1";
+      el.classList.add("girando");
+      setTimeout(() => location.reload(), 250);
+    } else recolher();
+  };
+  document.addEventListener("touchend", soltar, { passive: true });
+  document.addEventListener("touchcancel", soltar, { passive: true });
+})();
 // ---------------- VISUALIZADOR DE DOCUMENTOS ----------------
 // No computador, os documentos (Confirmação, relatórios, recibos) continuam abrindo numa aba nova com a
 // impressão. No celular (e no app instalado), a aba nova vira uma tela sem botão de voltar — então lá o
