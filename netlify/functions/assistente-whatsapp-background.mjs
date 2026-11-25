@@ -18,13 +18,23 @@ async function db(path, opts = {}) {
   return t ? JSON.parse(t) : null;
 }
 
+// Número BR que a Z-API manda no formato antigo (55 + DDD + 8 dígitos) ganha o 9 do celular.
+function telefoneEnvio(t) {
+  const d = String(t || "").replace(/\D/g, "");
+  return d.length === 12 && d.startsWith("55") && /[6-9]/.test(d[4]) ? d.slice(0, 4) + "9" + d.slice(4) : d;
+}
 async function responder(telefone, mensagem) {
   const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN } = process.env;
-  await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
-    body: JSON.stringify({ phone: telefone, message: mensagem }),
-  }).catch(() => {});
+  for (const phone of [...new Set([telefone, telefoneEnvio(telefone)])]) {
+    const r = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
+      body: JSON.stringify({ phone, message: mensagem }),
+    }).catch(e => ({ ok: false, status: 0, text: async () => String(e) }));
+    const corpo = await r.text();
+    console.log("Z-API envio", phone, r.status, corpo.slice(0, 300));
+    if (r.ok && !/error/i.test(corpo)) return;
+  }
 }
 
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" });
