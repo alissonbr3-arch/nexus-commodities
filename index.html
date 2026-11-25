@@ -876,6 +876,7 @@
               <option value="">Todos os negócios</option><option value="eu">Meus negócios</option>
             </select>
             <button class="btn-ghost" id="lixeiraNegociosBtn">Lixeira</button>
+            <button class="btn-ghost" onclick="openDocumentosIaModal()" title="Jogue um documento: a IA lê, descobre o contrato e salva na pasta dele no Google Drive">&#128206; Documentos</button>
             <button class="btn-primary" id="addNegocioBtn">+ Nova negociação</button>
           </div>
         </div>
@@ -3759,6 +3760,184 @@ async function saveNegocio(id) {
   await loadCadastros(); await loadNegocios(); closeModal(); renderNegocios(); renderWorkspace(); renderEmbarquesPage(); renderPrecoMercado();
 }
 document.getElementById("addNegocioBtn").addEventListener("click", () => openNegocioModal(null));
+
+// ---------------- DOCUMENTOS PELA IA → GOOGLE DRIVE ----------------
+// O corretor joga qualquer documento (PDF ou foto). A IA lê, diz o que é e de qual contrato,
+// o painel monta o nome no padrão da pasta (ex.: "01 - PGTO CTR 108 - CESAR TOZETTO - R$19.805,00 - 06-11-2026")
+// e salva na pasta do contrato no Drive (NEXUS COMMODITIES / CONFIRMACÕES / MÊS / Confirmação CT-...),
+// além de deixar uma cópia nos anexos da negociação. Se a IA não tiver certeza do contrato, pergunta antes.
+const DOC_TIPO_LABEL = { confirmacao: "Confirmação", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
+const DOC_LIMITE_BYTES = 4.2 * 1024 * 1024; // a função do Netlify aceita até ~6 MB em base64
+let docFila = [];
+
+function openDocumentosIaModal() {
+  docFila = docFila.filter(d => !["salvo"].includes(d.status));
+  document.getElementById("modalContent").className = "modal modal-wide";
+  document.getElementById("modalContent").innerHTML = `
+    <h3>Documentos</h3>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px">Comprovante de pagamento, NFP, contra nota, romaneio, liberação de embarque, confirmação assinada... A IA lê, descobre o contrato e salva na pasta dele no Google Drive.</p>
+    <input type="file" id="docIaInput" style="display:none" multiple accept="application/pdf,image/*" onchange="docIaAdicionar(this.files); this.value=''">
+    <div class="anexo-dropzone" style="padding:26px" ondragover="anexoDragOver(event)" ondragleave="anexoDragLeave(event)" ondrop="event.preventDefault(); event.currentTarget.classList.remove('dragover'); docIaAdicionar(event.dataTransfer.files)" onclick="document.getElementById('docIaInput').click()">
+      &#128206; Arraste os arquivos aqui ou clique para escolher (PDF ou foto)
+    </div>
+    <div id="docIaLista" style="margin-top:12px"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Fechar</button></div>`;
+  showModal();
+  docIaRender();
+}
+
+function docIaContratos() {
+  return data.negocios.filter(n => !n.deleted_at && n.numero_contrato)
+    .sort((a, b) => String(b.numero_contrato).localeCompare(String(a.numero_contrato)));
+}
+
+function docIaRender() {
+  const el = document.getElementById("docIaLista");
+  if (!el) return;
+  const contratos = docIaContratos();
+  el.innerHTML = docFila.map((d, i) => {
+    const l = d.leitura || {};
+    const n = d.negocioId ? data.negocios.find(x => x.id === d.negocioId) : null;
+    let corpo = "";
+    if (d.status === "lendo") corpo = `<span style="color:var(--ink-soft)">Lendo o documento...</span>`;
+    else if (d.status === "salvando") corpo = `<span style="color:var(--ink-soft)">Salvando no Drive como <b>${escapeHtml(d.nomeFinal || "")}</b>...</span>`;
+    else if (d.status === "salvo") corpo = `<span style="color:var(--green)">&#10003; ${escapeHtml(DOC_TIPO_LABEL[l.tipo] || "")}${n ? " · " + escapeHtml(n.numero_contrato) : ""} — salvo como <b>${escapeHtml(d.resultado.nome)}</b></span>
+        <div style="margin-top:4px"><a href="${d.resultado.url}" target="_blank" rel="noopener">Abrir arquivo</a> · <a href="${d.resultado.pasta_url}" target="_blank" rel="noopener">Abrir pasta</a></div>`;
+    else if (d.status === "erro") corpo = `<span style="color:var(--red)">${escapeHtml(d.erro)}</span> <button class="btn-edit-text" onclick="docIaProcessar(${i})">Tentar de novo</button>`;
+    else if (d.status === "revisar") corpo = `
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">${escapeHtml(l.motivo || "")}${l.confianca && l.confianca !== "alta" ? " — <b>confira o contrato antes de salvar</b>" : ""}</div>
+        <div class="field-row">
+          <div class="field"><label>Tipo</label><select onchange="docIaMudar(${i},'tipo',this.value)">${Object.entries(DOC_TIPO_LABEL).map(([k, v]) => `<option value="${k}" ${l.tipo === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+          <div class="field"><label>Contrato</label><select onchange="docIaMudar(${i},'negocio',this.value)"><option value="">— sem contrato —</option>${contratos.map(c => `<option value="${c.id}" ${d.negocioId === c.id ? "selected" : ""}>${escapeHtml(c.numero_contrato)} · ${escapeHtml(nomeCadastro(c.produtor_id))} x ${escapeHtml(c.cliente_id ? nomeCadastro(c.cliente_id) : (c.contraparte || ""))}</option>`).join("")}</select></div>
+        </div>
+        <div class="field"><label>Nome do arquivo</label><input type="text" id="docIaNome${i}" value="${escapeHtml(d.nomeFinal || "")}"></div>
+        <button class="btn-primary" onclick="docIaSalvar(${i})">Salvar no Drive</button>`;
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px">
+      <div style="font-weight:600;margin-bottom:4px;word-break:break-all">${escapeHtml(d.nomeOriginal)}</div>${corpo}</div>`;
+  }).join("");
+}
+
+function docIaMudar(i, campo, valor) {
+  const d = docFila[i];
+  if (campo === "tipo") d.leitura.tipo = valor;
+  if (campo === "negocio") d.negocioId = valor || null;
+  d.nomeFinal = docIaNomeArquivo(d.leitura, d.negocioId ? data.negocios.find(x => x.id === d.negocioId) : null);
+  docIaRender();
+}
+
+function docIaArquivoParaBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(",")[1]);
+    fr.onerror = () => reject(new Error("Não consegui ler o arquivo."));
+    fr.readAsDataURL(file);
+  });
+}
+
+// Fotos grandes do celular são reduzidas (até 2400 px, JPEG) pra caber no envio e a IA ler rápido.
+async function docIaPreparar(file) {
+  if (file.type === "application/pdf") {
+    if (file.size > DOC_LIMITE_BYTES) throw new Error("PDF muito grande (máx. 4 MB).");
+    return { base64: await docIaArquivoParaBase64(file), mime: "application/pdf", ext: "pdf" };
+  }
+  if (!file.type.startsWith("image/")) throw new Error("Só PDF ou foto.");
+  const img = await new Promise((resolve, reject) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); resolve(im); };
+    im.onerror = () => reject(new Error("Não consegui abrir a imagem."));
+    im.src = u;
+  });
+  const escala = Math.min(1, 2400 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * escala); c.height = Math.round(img.naturalHeight * escala);
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+  return { base64: c.toDataURL("image/jpeg", 0.88).split(",")[1], mime: "image/jpeg", ext: "jpg" };
+}
+
+function docIaNomeArquivo(l, n) {
+  const ct = n?.numero_contrato || "";
+  const vend = n ? nomeCadastro(n.produtor_id) : "";
+  const comp = n ? (n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "")) : "";
+  const partes = n ? ` - ${ct} - ${vend} x ${comp}` : "";
+  const ctr = ct.replace(/^CT-\d{4}-0*/i, "");
+  const dataBr = l.data ? l.data.split("-").reverse().join("-") : "";
+  const kgNum = Number(l.peso_kg) || 0;
+  const kg = kgNum ? kgNum.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "";
+  const num = (l.numero_documento || "").replace(/\D/g, "") || l.numero_documento || "";
+  const grao = (l.grao || n?.grao || "").toUpperCase();
+  let nome;
+  switch (l.tipo) {
+    case "confirmacao": nome = `Confirmação${partes}${l.assinado ? " (assinada)" : ""}`; break;
+    case "pagamento": nome = `{SEQ} - PGTO CTR ${ctr || "?"}${l.parcela ? " " + l.parcela : ""}${vend ? " - " + vend.toUpperCase() : ""}${l.valor != null ? " - R$" + Number(l.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}${dataBr ? " - " + dataBr : ""}`; break;
+    case "nota_produtor": nome = `NFP ${num}${partes}`; break;
+    case "contra_nota": nome = `CONTRA NF ${num} - COMPRA ${grao}${vend ? " " + vend.toUpperCase() : ""}${kg ? " - " + kg.replace(/\./g, ".") + "KG" : ""}${l.nfp_referenciada ? " - " + l.nfp_referenciada : ""}`; break;
+    case "nota_fiscal": nome = `NF ${num}${partes}`; break;
+    case "romaneio": nome = kgNum ? `Romaneio embarque - ${kg} kg (${(kgNum / 60).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} sacas)` : `Romaneio embarque${dataBr ? " - " + dataBr : ""}`; break;
+    case "liberacao_embarque": nome = `Liberação de embarque${partes}${l.assinado ? " (assinada)" : ""}`; break;
+    default: nome = `${l.nome_sugerido || "Documento"}${ct ? " - " + ct : ""}`;
+  }
+  return nome.replace(/[\/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+}
+
+async function docIaChamar(corpo) {
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch("/.netlify/functions/documento-ia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...corpo, access_token: session?.access_token }) });
+  let j; try { j = await r.json(); } catch { throw new Error(r.status === 502 || r.status === 504 ? "Demorou demais. Tente de novo." : "Erro " + r.status); }
+  if (!j.ok) throw new Error(j.erro || "Erro desconhecido.");
+  return j;
+}
+
+async function docIaAdicionar(fileList) {
+  const novos = Array.from(fileList || []).map(f => ({ file: f, nomeOriginal: f.name, status: "lendo" }));
+  docFila.push(...novos);
+  docIaRender();
+  for (const d of novos) await docIaProcessar(docFila.indexOf(d));
+}
+
+async function docIaProcessar(i) {
+  const d = docFila[i];
+  d.status = "lendo"; d.erro = null; docIaRender();
+  try {
+    if (!d.base64) Object.assign(d, await docIaPreparar(d.file));
+    const contratos = docIaContratos().slice(0, 400).map(n => ({
+      numero: n.numero_contrato, vendedor: nomeCadastro(n.produtor_id), comprador: n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || ""),
+      grao: n.grao, safra: n.safra, quantidade: n.quantidade, preco: n.preco, data: n.data, status: n.status }));
+    const j = await docIaChamar({ acao: "ler", base64: d.base64, mime: d.mime, nome_original: d.nomeOriginal, contratos });
+    d.leitura = j.leitura;
+    const n = j.leitura.contrato_numero ? docIaContratos().find(x => x.numero_contrato === j.leitura.contrato_numero) : null;
+    d.negocioId = n?.id || null;
+    d.nomeFinal = docIaNomeArquivo(d.leitura, n);
+    // Confiança alta e contrato achado → salva direto; senão mostra pra conferir.
+    if (n && j.leitura.confianca === "alta") return docIaSalvar(i);
+    d.status = "revisar";
+  } catch (e) { d.status = "erro"; d.erro = e.message; }
+  docIaRender();
+}
+
+async function docIaSalvar(i) {
+  const d = docFila[i];
+  const campo = document.getElementById("docIaNome" + i);
+  if (campo && campo.value.trim()) d.nomeFinal = campo.value.trim();
+  const n = d.negocioId ? data.negocios.find(x => x.id === d.negocioId) : null;
+  d.status = "salvando"; docIaRender();
+  try {
+    const nomeComExt = `${d.nomeFinal}.${d.ext}`;
+    const j = await docIaChamar({
+      acao: "salvar", base64: d.base64, mime: d.mime, nome_arquivo: nomeComExt,
+      contrato: n?.numero_contrato || null,
+      nome_pasta: n ? `Confirmação ${n.numero_contrato} - ${nomeCadastro(n.produtor_id)} x ${n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "")}` : null,
+      data_negocio: n?.data || null,
+    });
+    d.resultado = j; d.status = "salvo";
+    // Cópia nos anexos da negociação (o Storage não aceita acento nem alguns símbolos no nome).
+    if (n) {
+      const bin = Uint8Array.from(atob(d.base64), c => c.charCodeAt(0));
+      const nomeStorage = j.nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\- ()]/g, "_");
+      await sb.storage.from("nexus-anexos").upload(`${n.id}/${Date.now()}_${nomeStorage}`, new Blob([bin], { type: d.mime }));
+    }
+  } catch (e) { d.status = "erro"; d.erro = e.message; }
+  docIaRender();
+}
 
 // ---------------- ANEXOS DA NEGOCIAÇÃO ----------------
 async function listarAnexosNegocio(negocioId) {
