@@ -3766,7 +3766,7 @@ document.getElementById("addNegocioBtn").addEventListener("click", () => openNeg
 // o painel monta o nome no padrão da pasta (ex.: "01 - PGTO CTR 108 - CESAR TOZETTO - R$19.805,00 - 06-11-2026")
 // e salva na pasta do contrato no Drive (NEXUS COMMODITIES / CONFIRMACÕES / MÊS / Confirmação CT-...),
 // além de deixar uma cópia nos anexos da negociação. Se a IA não tiver certeza do contrato, pergunta antes.
-const DOC_TIPO_LABEL = { confirmacao: "Confirmação", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
+const DOC_TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
 const DOC_LIMITE_BYTES = 4.2 * 1024 * 1024; // a função do Netlify aceita até ~6 MB em base64
 let docFila = [];
 
@@ -3775,7 +3775,7 @@ function openDocumentosIaModal() {
   document.getElementById("modalContent").className = "modal modal-wide";
   document.getElementById("modalContent").innerHTML = `
     <h3>Documentos</h3>
-    <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px">Comprovante de pagamento, NFP, contra nota, romaneio, liberação de embarque, confirmação assinada... A IA lê, descobre o contrato e salva na pasta dele no Google Drive.</p>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px">Contrato do comprador, comprovante de pagamento, NFP, contra nota, romaneio, liberação de embarque, confirmação assinada... A IA lê, descobre o contrato e salva na pasta dele no Google Drive.</p>
     <input type="file" id="docIaInput" style="display:none" multiple accept="application/pdf,image/*" onchange="docIaAdicionar(this.files); this.value=''">
     <div class="anexo-dropzone" style="padding:26px" ondragover="anexoDragOver(event)" ondragleave="anexoDragLeave(event)" ondrop="event.preventDefault(); event.currentTarget.classList.remove('dragover'); docIaAdicionar(event.dataTransfer.files)" onclick="document.getElementById('docIaInput').click()">
       &#128206; Arraste os arquivos aqui ou clique para escolher (PDF ou foto)
@@ -3868,6 +3868,7 @@ function docIaNomeArquivo(l, n) {
   let nome;
   switch (l.tipo) {
     case "confirmacao": nome = `Confirmação${partes}${l.assinado ? " (assinada)" : ""}`; break;
+    case "contrato": nome = `Contrato${l.numero_documento ? " " + l.numero_documento : ""}${partes}${l.assinado ? " (assinado)" : ""}`; break;
     case "pagamento": nome = `{SEQ} - PGTO CTR ${ctr || "?"}${l.parcela ? " " + l.parcela : ""}${vend ? " - " + vend.toUpperCase() : ""}${l.valor != null ? " - R$" + Number(l.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}${dataBr ? " - " + dataBr : ""}`; break;
     case "nota_produtor": nome = `NFP ${num}${partes}`; break;
     case "contra_nota": nome = `CONTRA NF ${num} - COMPRA ${grao}${vend ? " " + vend.toUpperCase() : ""}${kg ? " - " + kg.replace(/\./g, ".") + "KG" : ""}${l.nfp_referenciada ? " - " + l.nfp_referenciada : ""}`; break;

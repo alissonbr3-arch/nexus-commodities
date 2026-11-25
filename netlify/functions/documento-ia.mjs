@@ -10,7 +10,7 @@ const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 const MODELO = "claude-haiku-5-5"; // rápido o bastante pra caber no tempo da função do Netlify
 
-const TIPOS = ["confirmacao", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "outro"];
+const TIPOS = ["confirmacao", "contrato", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "outro"];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -33,12 +33,12 @@ const FERRAMENTA = {
   input_schema: {
     type: "object",
     properties: {
-      tipo: { type: "string", enum: TIPOS, description: "confirmacao = confirmação de compra e venda / contrato da Nexus; pagamento = comprovante de pagamento, PIX, TED, transferência; nota_produtor = NFP / nota fiscal de produtor rural emitida pelo vendedor; contra_nota = contra nota / NF de entrada emitida pelo comprador referenciando a NFP; nota_fiscal = outra NF-e; romaneio = ticket de balança / romaneio de carga com peso; liberacao_embarque = liberação/autorização de embarque ou de retirada; outro = qualquer outra coisa." },
+      tipo: { type: "string", enum: TIPOS, description: "confirmacao = Confirmação de Compra e Venda emitida pela Nexus (cabeçalho Nexus, número CT-2026-xxx); contrato = contrato de compra e venda emitido pelo comprador (cerealista, cooperativa, trading), com número próprio do comprador; pagamento = comprovante de pagamento, PIX, TED, transferência; nota_produtor = NFP / nota fiscal de produtor rural emitida pelo vendedor; contra_nota = contra nota / NF de entrada emitida pelo comprador referenciando a NFP; nota_fiscal = outra NF-e; romaneio = ticket de balança / romaneio de carga com peso; liberacao_embarque = liberação/autorização de embarque ou de retirada; outro = qualquer outra coisa." },
       assinado: { type: "boolean", description: "true se o documento tem assinatura (manuscrita, digital ou DocuSign) das partes." },
       contrato_numero: { type: ["string", "null"], description: "Número do contrato da lista (ex.: CT-2026-108) a que o documento pertence, ou null se não der pra saber." },
       confianca: { type: "string", enum: ["alta", "media", "baixa"], description: "Confiança na escolha do contrato." },
       motivo: { type: "string", description: "Uma frase curta em português explicando como chegou no contrato (ex.: 'pagador Total Grãos, favorecido Cesar Tozetto, milho, valor bate com o saldo')." },
-      numero_documento: { type: ["string", "null"], description: "Número da nota (NFP, contra nota ou NF), sem pontos. null se não houver." },
+      numero_documento: { type: ["string", "null"], description: "Número da nota (NFP, contra nota ou NF), sem pontos; no contrato do comprador, o número do contrato dele como está escrito (ex.: 0056-27). null se não houver." },
       nfp_referenciada: { type: ["string", "null"], description: "Na contra nota: número da NFP referenciada." },
       valor: { type: ["number", "null"], description: "Valor em reais (pagamento: valor pago; nota: valor total)." },
       data: { type: ["string", "null"], description: "Data do documento no formato AAAA-MM-DD (data do pagamento, emissão da nota, pesagem)." },
