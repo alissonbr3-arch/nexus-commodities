@@ -3,7 +3,8 @@
 // (pagamento recebido, carga entregue, item do checklist, tarefa, documento pendente) — sempre pedindo
 // confirmação antes de gravar. O whatsapp-webhook confere que o número é de um corretor e chama esta
 // função em segundo plano; o histórico fica em nexus_assistente_msgs.
-import { SUPABASE_URL, TIPO_LABEL, registrarUsoIA, registrarCustoUsd, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { randomUUID } from "node:crypto";
+import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, registrarUsoIA, registrarCustoUsd, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MODELO = "claude-sonnet-5-5";
 const MAX_VOLTAS = 8;
@@ -266,7 +267,7 @@ async function executar(nome, input, ctx) {
       const n = acharNegocio(d, input.contrato);
       if (!n) return { erro: "Contrato não encontrado." };
       const sacas = input.unidade === "kg" ? input.quantidade / 60 : input.quantidade;
-      const cargas = [...cargasDe(n), { id: crypto.randomUUID(), data: input.data, sacas: Math.round(sacas * 1000) / 1000, doc: input.documento || null }];
+      const cargas = [...cargasDe(n), { id: randomUUID(), data: input.data, sacas: Math.round(sacas * 1000) / 1000, doc: input.documento || null }];
       const upd = { cargas };
       const dp = dataPagamentoPorEntrega({ ...n, cargas });
       if (dp) upd.data_pagamento = dp;
@@ -307,7 +308,9 @@ async function executar(nome, input, ctx) {
       const nomeStorage = salvo.nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\- ()]/g, "_");
       await fetch(`${SUPABASE_URL}/storage/v1/object/move`, { method: "POST", headers: { ...H(), "Content-Type": "application/json" }, body: JSON.stringify({ bucketId: "nexus-anexos", sourceKey: doc.storage_path, destinationKey: `${n.id}/${Date.now()}_${nomeStorage}` }) }).catch(() => {});
       await db(`nexus_assistente_docs?id=eq.${doc.id}`, { method: "PATCH", body: JSON.stringify({ salvo_em: new Date().toISOString() }) });
-      return { ok: true, tipo: TIPO_LABEL[doc.leitura?.tipo] || "Documento", contrato: n.numero_contrato, nome: salvo.nome, link: salvo.url };
+      const atualizado = await aplicarDocumentoNoNegocio({ negocioId: n.id, leitura: doc.leitura, nomeArquivo: salvo.nome, origem: "whatsapp", usuarioId: ctx.corretor.user_id }).catch(e => [`não consegui atualizar o checklist (${e.message})`]);
+      cache = null;
+      return { ok: true, tipo: TIPO_LABEL[doc.leitura?.tipo] || "Documento", contrato: n.numero_contrato, nome: salvo.nome, link: salvo.url, checklist_atualizado: atualizado };
     }
   }
   return { erro: "Ferramenta desconhecida." };

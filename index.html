@@ -3802,7 +3802,7 @@ function docIaRender() {
     if (d.status === "lendo") corpo = `<span style="color:var(--ink-soft)">Lendo o documento...</span>`;
     else if (d.status === "salvando") corpo = `<span style="color:var(--ink-soft)">Salvando no Drive como <b>${escapeHtml(d.nomeFinal || "")}</b>...</span>`;
     else if (d.status === "salvo") corpo = `<span style="color:var(--green)">&#10003; ${escapeHtml(DOC_TIPO_LABEL[l.tipo] || "")}${n ? " · " + escapeHtml(n.numero_contrato) : ""} — salvo como <b>${escapeHtml(d.resultado.nome)}</b></span>
-        <div style="margin-top:4px"><a href="${d.resultado.url}" target="_blank" rel="noopener">Abrir arquivo</a> · <a href="${d.resultado.pasta_url}" target="_blank" rel="noopener">Abrir pasta</a></div>`;
+        ${(d.resultado.feito || []).map(f => `<div style="margin-top:3px;font-size:12px">${escapeHtml(f)}</div>`).join("")}<div style="margin-top:4px"><a href="${d.resultado.url}" target="_blank" rel="noopener">Abrir arquivo</a> · <a href="${d.resultado.pasta_url}" target="_blank" rel="noopener">Abrir pasta</a></div>`;
     else if (d.status === "erro") corpo = `<span style="color:var(--red)">${escapeHtml(d.erro)}</span> <button class="btn-edit-text" onclick="docIaProcessar(${i})">Tentar de novo</button>`;
     else if (d.status === "revisar") corpo = `
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px">${escapeHtml(l.motivo || "")}${l.confianca && l.confianca !== "alta" ? " — <b>confira o contrato antes de salvar</b>" : ""}</div>
@@ -3928,8 +3928,10 @@ async function docIaSalvar(i) {
       contrato: n?.numero_contrato || null,
       nome_pasta: n ? `Confirmação ${n.numero_contrato} - ${nomeCadastro(n.produtor_id)} x ${n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "")}` : null,
       data_negocio: n?.data || null,
+      negocio_id: n?.id || null, leitura: d.leitura,
     });
     d.resultado = j; d.status = "salvo";
+    if (j.feito?.length && typeof loadNegocios === "function") { await loadNegocios(); if (typeof renderNegocios === "function") renderNegocios(); }
     // Cópia nos anexos da negociação (o Storage não aceita acento nem alguns símbolos no nome).
     if (n) {
       const bin = Uint8Array.from(atob(d.base64), c => c.charCodeAt(0));

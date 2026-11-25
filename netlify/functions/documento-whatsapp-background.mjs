@@ -2,7 +2,8 @@
 // que é da equipe e chama esta função em segundo plano (pode levar mais que os 10 s de uma função normal):
 // baixa o arquivo da Z-API, a IA lê e acha o contrato, salva na pasta dele no Drive e nos anexos da
 // negociação, e responde no WhatsApp. Se a IA não tiver certeza do contrato, não salva e pede o número.
-import { SUPABASE_URL, TIPO_LABEL, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { randomUUID } from "node:crypto";
+import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MIMES_OK = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
@@ -77,7 +78,7 @@ export default async (req) => {
     const textoUsuario = `[enviou um documento: ${nomeArq}${p.caption ? ` · legenda: "${p.caption}"` : ""}]`;
     if (!n) {
       // Guarda o arquivo e espera o corretor dizer o contrato ("141" ou "sim"); a assistente salva depois.
-      const path = `pendentes/${crypto.randomUUID()}.${ext}`;
+      const path = `pendentes/${randomUUID()}.${ext}`;
       await fetch(`${SUPABASE_URL}/storage/v1/object/nexus-anexos/${path}`, { method: "POST", headers: { ...adminHeaders, "Content-Type": mime }, body: Buffer.from(base64, "base64") });
       const ins = await fetch(`${SUPABASE_URL}/rest/v1/nexus_assistente_docs`, {
         method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=representation" },
@@ -102,7 +103,8 @@ export default async (req) => {
       method: "POST", headers: { ...adminHeaders, "Content-Type": mime }, body: Buffer.from(base64, "base64"),
     }).catch(() => {});
 
-    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}`;
+    const feito = await aplicarDocumentoNoNegocio({ negocioId: n.id, leitura: l, nomeArquivo: salvo.nome, origem: "whatsapp" }).catch(e => [`⚠️ Não consegui atualizar o checklist (${e.message})`]);
+    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}${feito.length ? "\n\n" + feito.join("\n") : ""}`;
     await historico(adminHeaders, p.phone, textoUsuario, msg);
     await responder(p.phone, msg);
   } catch (e) {
