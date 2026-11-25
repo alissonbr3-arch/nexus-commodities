@@ -323,6 +323,16 @@ export default async (req) => {
 
   const primeiraLinha = normalizarTexto(primeiraLinhaOriginal);
   if (!primeiraLinha.startsWith("nova negociacao")) {
+    // Qualquer outra mensagem de um corretor da equipe vai pra assistente (IA) em segundo plano.
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: adminHeaders });
+    const eq = await eqResp.json().catch(() => []);
+    if (Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone))) {
+      await fetch(new URL("/.netlify/functions/assistente-whatsapp-background", req.url), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: payload.phone, texto, secret: WHATSAPP_WEBHOOK_SECRET }),
+      }).catch(e => console.log("DEBUG falha ao chamar assistente-whatsapp-background:", String(e)));
+      return json({ ok: true, assistente: true });
+    }
     console.log("DEBUG primeira linha não bateu com o gatilho:", JSON.stringify(primeiraLinha));
     return json({ ok: true, ignorado: true });
   }

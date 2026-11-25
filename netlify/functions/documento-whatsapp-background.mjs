@@ -36,6 +36,15 @@ function contratoPelaLegenda(legenda, contratos) {
   }) || null;
 }
 
+// Guarda no histórico da conversa com a assistente (assistente-whatsapp-background), pra ela saber
+// o que foi mandado e poder salvar depois um documento que ficou pendente.
+async function historico(adminHeaders, telefone, textoUsuario, textoAssistente) {
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_assistente_msgs`, {
+    method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify([{ telefone, role: "user", texto: textoUsuario }, { telefone, role: "assistant", texto: textoAssistente }]),
+  }).catch(() => {});
+}
+
 export default async (req) => {
   const p = await req.json().catch(() => null);
   if (!p || p.secret !== process.env.WHATSAPP_WEBHOOK_SECRET) return;
@@ -64,12 +73,23 @@ export default async (req) => {
     const pelaIA = l.contrato_numero && l.confianca === "alta" ? contratos.find(c => c.numero_contrato === l.contrato_numero) : null;
     const n = pelaLegenda || pelaIA;
     const tipo = TIPO_LABEL[l.tipo] || "Documento";
+    const ext = MIMES_OK[mime];
+    const textoUsuario = `[enviou um documento: ${nomeArq}${p.caption ? ` · legenda: "${p.caption}"` : ""}]`;
     if (!n) {
-      const palpite = l.contrato_numero ? ` Acho que é do *${l.contrato_numero}*, mas não tenho certeza.` : "";
-      return responder(p.phone, `🤔 Li como *${tipo}*, mas não salvei.${palpite}\n${l.motivo || ""}\n\nManda de novo com o número do contrato na legenda (ex.: *141*).`);
+      // Guarda o arquivo e espera o corretor dizer o contrato ("141" ou "sim"); a assistente salva depois.
+      const path = `pendentes/${crypto.randomUUID()}.${ext}`;
+      await fetch(`${SUPABASE_URL}/storage/v1/object/nexus-anexos/${path}`, { method: "POST", headers: { ...adminHeaders, "Content-Type": mime }, body: Buffer.from(base64, "base64") });
+      const ins = await fetch(`${SUPABASE_URL}/rest/v1/nexus_assistente_docs`, {
+        method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify({ telefone: p.phone, storage_path: path, mime, nome_original: nomeArq, leitura: l }),
+      }).then(r => r.json());
+      const docId = ins?.[0]?.id;
+      const palpite = l.contrato_numero ? `Acho que é do *${l.contrato_numero}*. É esse? Responde *sim* ou o número do contrato.` : "De qual contrato é? Responde só com o número (ex.: *141*).";
+      const msg = `🤔 Li como *${tipo}*, mas não tenho certeza do contrato.\n${l.motivo || ""}\n\n${palpite}`;
+      await historico(adminHeaders, p.phone, textoUsuario, `${msg}\n(documento pendente id: ${docId}; leitura: ${JSON.stringify({ tipo: l.tipo, palpite: l.contrato_numero, valor: l.valor, data: l.data })})`);
+      return responder(p.phone, msg);
     }
 
-    const ext = MIMES_OK[mime];
     const salvo = await salvarNoDrive({
       base64, mime, nome_arquivo: `${nomeArquivoDoc(l, n)}.${ext}`,
       contrato: n.numero_contrato, nome_pasta: nomePastaContrato(n), data_negocio: n.data,
@@ -82,7 +102,9 @@ export default async (req) => {
       method: "POST", headers: { ...adminHeaders, "Content-Type": mime }, body: Buffer.from(base64, "base64"),
     }).catch(() => {});
 
-    await responder(p.phone, `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}`);
+    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}`;
+    await historico(adminHeaders, p.phone, textoUsuario, msg);
+    await responder(p.phone, msg);
   } catch (e) {
     await responder(p.phone, `📎 ${nomeArq}: deu um erro ao processar (${e.message}). Tenta pelo painel em Negociações → Documentos.`);
   }
