@@ -77,6 +77,7 @@ Para achar o contrato, cruze nomes do vendedor e do comprador (pagador e favorec
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: MODELO, max_tokens: 1024,
+        thinking: { type: "disabled" }, // classificação simples: sem raciocínio fica mais rápido e a ferramenta forçada funciona
         tools: [FERRAMENTA], tool_choice: { type: "tool", name: FERRAMENTA.name },
         messages: [{ role: "user", content: [bloco, { type: "text", text: texto }] }],
       }),
