@@ -4,7 +4,7 @@
 // confirmação antes de gravar. O whatsapp-webhook confere que o número é de um corretor e chama esta
 // função em segundo plano; o histórico fica em nexus_assistente_msgs.
 import { randomUUID } from "node:crypto";
-import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, registrarUsoIA, registrarCustoUsd, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, registrarUsoIA, transcreverAudio as transcrever, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MODELO = "claude-sonnet-5-5";
 const MAX_VOLTAS = 8;
@@ -344,26 +344,6 @@ async function chamarClaude(messages) {
   if (!r.ok) throw new Error("IA: " + (j.error?.message || r.status));
   await registrarUsoIA("assistente-whatsapp", MODELO, j.usage);
   return j;
-}
-
-// Áudio do WhatsApp (ogg/opus) → texto, pela OpenAI (a IA da Anthropic não ouve áudio).
-const MODELO_AUDIO = "gpt-4o-mini-transcribe", USD_POR_MINUTO = 0.003;
-async function transcrever(url, mime, segundos) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("ainda não consigo ouvir áudio (falta a chave OPENAI_API_KEY no Netlify). Manda por escrito?");
-  const arq = await fetch(url);
-  if (!arq.ok) throw new Error("não consegui baixar o áudio do WhatsApp");
-  const tipo = String(mime || "audio/ogg").split(";")[0];
-  const form = new FormData();
-  form.append("file", new Blob([await arq.arrayBuffer()], { type: tipo }), tipo.includes("mpeg") ? "audio.mp3" : tipo.includes("mp4") ? "audio.m4a" : "audio.ogg");
-  form.append("model", MODELO_AUDIO);
-  form.append("language", "pt");
-  form.append("prompt", "Corretora de grãos Nexus Commodities: soja, milho, sorgo, sacas, contrato CT, safra, embarque, carga, romaneio, NFP, contra nota, Funrural, B3, CBOT, Paranaguá.");
-  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error("transcrição: " + (j.error?.message || r.status));
-  await registrarCustoUsd("audio-whatsapp", MODELO_AUDIO, Math.max(1, Number(segundos) || 30) / 60 * USD_POR_MINUTO);
-  return String(j.text || "").trim();
 }
 
 export default async (req) => {

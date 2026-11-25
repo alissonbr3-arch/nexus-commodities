@@ -3,7 +3,7 @@
 // Base: nexus_ia_uso, gravada a cada chamada por registrarUsoIA (_documento-lib.mjs).
 const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const TELEFONE_ALISSON = "5567992243119";
-const ORIGENS = { "documento-painel": "Documentos pelo painel", "documento-whatsapp": "Documentos pelo WhatsApp", "assistente-whatsapp": "Conversa com a assistente", "audio-whatsapp": "Áudios transcritos" };
+const ORIGENS = { "documento-painel": "Documentos pelo painel", "documento-whatsapp": "Documentos pelo WhatsApp", "assistente-whatsapp": "Conversa com a assistente", "audio-whatsapp": "Áudios transcritos", "cliente-whatsapp": "Respostas a clientes", "cliente-filtro": "Filtro de mensagens de clientes" };
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
 export default async (req) => {
@@ -27,7 +27,7 @@ export default async (req) => {
   const brl = v => "R$ " + (v * dolar).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const linhas = Object.entries(porOrigem).sort((a, b) => b[1].usd - a[1].usd)
-    .map(([o, v]) => `• ${ORIGENS[o] || o}: ${v.n} ${o === "assistente-whatsapp" ? "chamadas à IA" : o === "audio-whatsapp" ? "áudios" : "leituras"} — ${brl(v.usd)}`);
+    .map(([o, v]) => `• ${ORIGENS[o] || o}: ${v.n} ${o === "assistente-whatsapp" || o === "cliente-whatsapp" ? "chamadas à IA" : o === "cliente-filtro" ? "mensagens" : o === "audio-whatsapp" ? "áudios" : "leituras"} — ${brl(v.usd)}`);
   const msg = `🤖 *Gasto com IA — ${MESES[mes - 1]}/${ano}*\n\n${linhas.length ? linhas.join("\n") : "Nenhum uso no mês."}\n\n*Total: ${brl(totalUsd)}* (US$ ${totalUsd.toFixed(2)} · dólar ${dolar.toFixed(2)})\n\nLeituras e conversa saem dos créditos da Anthropic; áudios, dos créditos da OpenAI.`;
 
   const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN } = process.env;

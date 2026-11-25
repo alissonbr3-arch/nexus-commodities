@@ -15,6 +15,14 @@ function ultimosDigitos(tel) {
   return d.slice(-10);
 }
 
+// Texto ou áudio de um CLIENTE (produtor) → assistente do cliente, em segundo plano. Ela mesma decide se
+// responde (só pergunta sobre os contratos dele, e nunca no meio de uma conversa com um corretor).
+async function chamarAssistenteCliente(req, dados, secret) {
+  await fetch(new URL("/.netlify/functions/assistente-cliente-background", req.url), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...dados, secret }),
+  }).catch(e => console.log("DEBUG falha ao chamar assistente-cliente-background:", String(e)));
+}
+
 // Telefone principal + outros números de WhatsApp do corretor (nexus_equipe.telefones_extra).
 function numerosDaPessoa(e) { return [e.telefone, ...(e.telefones_extra || [])].filter(Boolean); }
 
@@ -289,11 +297,26 @@ export default async (req) => {
   const midia = payload.image ? { url: payload.image.imageUrl, mime: payload.image.mimeType, caption: payload.image.caption, fileName: "foto.jpg" }
     : payload.document ? { url: payload.document.documentUrl, mime: payload.document.mimeType, caption: payload.document.caption || "", fileName: payload.document.fileName || payload.document.title || "documento.pdf" }
     : null;
+  // Mensagem que uma PESSOA da Nexus mandou pelo número da Nexus (não o app): marca a conversa como humana,
+  // pra assistente do cliente não se meter por uma hora.
+  if (payload.fromMe && !payload.fromApi && payload.phone && !payload.isGroup) {
+    await fetch(`${SUPABASE_URL}/rest/v1/nexus_whatsapp_humano`, {
+      method: "POST", headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({ telefone: ultimosDigitos(payload.phone), ultima_em: new Date().toISOString() }),
+    }).catch(() => {});
+    return json({ ok: true, humano: true });
+  }
+
   // Áudio de um corretor → assistente (transcreve e responde como se fosse texto).
   if (payload.audio?.audioUrl && !payload.fromMe && !payload.isGroup && payload.phone) {
     const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone,telefones_extra`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
     const eq = await eqResp.json().catch(() => []);
-    if (!(Array.isArray(eq) && eq.some(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === ultimosDigitos(payload.phone))))) return json({ ok: true, ignorado: true });
+    const ehCorretorAudio = Array.isArray(eq) && eq.some(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === ultimosDigitos(payload.phone)));
+    if (!ehCorretorAudio) {
+      const adm = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
+      if ((await acharMeusProdutores(payload, adm)).length) await chamarAssistenteCliente(req, { phone: payload.phone, audioUrl: payload.audio.audioUrl, audioMime: payload.audio.mimeType, audioSegundos: payload.audio.seconds }, WHATSAPP_WEBHOOK_SECRET);
+      return json({ ok: true, audio_cliente: true });
+    }
     await fetch(new URL("/.netlify/functions/assistente-whatsapp-background", req.url), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: payload.phone, audioUrl: payload.audio.audioUrl, audioMime: payload.audio.mimeType, audioSegundos: payload.audio.seconds, secret: WHATSAPP_WEBHOOK_SECRET }),
@@ -347,6 +370,10 @@ export default async (req) => {
         body: JSON.stringify({ phone: payload.phone, texto, secret: WHATSAPP_WEBHOOK_SECRET }),
       }).catch(e => console.log("DEBUG falha ao chamar assistente-whatsapp-background:", String(e)));
       return json({ ok: true, assistente: true });
+    }
+    if (!comando.startsWith("/") && (await acharMeusProdutores(payload, adminHeaders)).length) {
+      await chamarAssistenteCliente(req, { phone: payload.phone, texto }, WHATSAPP_WEBHOOK_SECRET);
+      return json({ ok: true, texto_cliente: true });
     }
     console.log("DEBUG primeira linha não bateu com o gatilho:", JSON.stringify(primeiraLinha));
     return json({ ok: true, ignorado: true });
