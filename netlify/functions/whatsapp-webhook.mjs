@@ -281,6 +281,23 @@ export default async (req) => {
   try { payload = await req.json(); } catch (e) { console.log("DEBUG payload inválido:", String(e)); return json({ ok: true }); }
   console.log("DEBUG payload recebido:", JSON.stringify(payload));
 
+  // Foto ou PDF mandado por um corretor da equipe → "Documentos pela IA" em segundo plano
+  // (lê, acha o contrato, salva no Drive e responde aqui no WhatsApp).
+  const midia = payload.image ? { url: payload.image.imageUrl, mime: payload.image.mimeType, caption: payload.image.caption, fileName: "foto.jpg" }
+    : payload.document ? { url: payload.document.documentUrl, mime: payload.document.mimeType, caption: payload.document.caption || "", fileName: payload.document.fileName || payload.document.title || "documento.pdf" }
+    : null;
+  if (midia?.url && !payload.fromMe && !payload.isGroup && payload.phone) {
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
+    const eq = await eqResp.json().catch(() => []);
+    const ehCorretor = Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone));
+    if (!ehCorretor) return json({ ok: true, ignorado: true });
+    await fetch(new URL("/.netlify/functions/documento-whatsapp-background", req.url), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...midia, phone: payload.phone, secret: WHATSAPP_WEBHOOK_SECRET }),
+    }).catch(e => console.log("DEBUG falha ao chamar documento-whatsapp-background:", String(e)));
+    return json({ ok: true, documento: true });
+  }
+
   if (payload.fromMe || payload.isGroup || !payload.text?.message || !payload.phone) {
     console.log("DEBUG ignorado por: fromMe/isGroup/sem texto/sem phone", { fromMe: payload.fromMe, isGroup: payload.isGroup, temTexto: !!payload.text?.message, temPhone: !!payload.phone });
     return json({ ok: true, ignorado: true });
