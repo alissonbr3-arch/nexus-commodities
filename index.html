@@ -156,6 +156,8 @@
   .page.active { display: block; }
 
   h2.page-title { font-size: 16px; margin: 0 0 4px; }
+  .ia-uso-chip { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; text-align: right; line-height: 1.35; white-space: nowrap; cursor: default; }
+  .ia-uso-chip b { color: var(--ink); font-weight: 600; }
   .page-sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 16px; }
 
   .subtabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
@@ -514,7 +516,7 @@
 
       <!-- DASHBOARD -->
       <div class="page active" id="page-dashboard">
-        <h2 class="page-title">Dashboard</h2>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><h2 class="page-title">Dashboard</h2><div id="iaUsoChip" class="ia-uso-chip" style="display:none"></div></div>
         <div class="page-sub" id="todayLabel">—</div>
 
         <div class="subtabs">
@@ -2127,7 +2129,28 @@ function renderFeedbackMensal() {
 // ---------------- DASHBOARD ----------------
 let dashVolumeUnit = "sc";
 function setDashVolumeUnit(u) { dashVolumeUnit = u; renderDashboard(); }
+// Consumo de IA do mês (Claude + OpenAI), estimado a partir de nexus_ia_uso, que o servidor grava a cada uso.
+// O Álisson paga do bolso e a Nexus reembolsa: todo dia 1º o servidor lança a despesa do mês anterior no Financeiro.
+let iaUsoCarregadoEm = 0;
+async function renderIaUsoChip() {
+  const el = document.getElementById("iaUsoChip");
+  if (!el || Date.now() - iaUsoCarregadoEm < 5 * 60e3) return;
+  iaUsoCarregadoEm = Date.now();
+  const hoje = new Date(), ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const { data: rows, error } = await sb.from("nexus_ia_uso").select("modelo,custo_usd").gte("created_at", ini.toISOString());
+  if (error) { el.style.display = "none"; return; }
+  const dolar = Number(data.dolar?.atual) || 5.5;
+  let claude = 0, openai = 0;
+  (rows || []).forEach(r => { if (String(r.modelo).startsWith("claude")) claude += Number(r.custo_usd || 0); else openai += Number(r.custo_usd || 0); });
+  const brl = v => fmtMoney(v * dolar);
+  const mes = hoje.toLocaleDateString("pt-BR", { month: "long" });
+  el.innerHTML = `&#129302; IA em ${mes}: <b>${brl(claude + openai)}</b><br>Claude ${brl(claude)} · OpenAI ${brl(openai)}`;
+  el.title = `Estimativa do consumo de inteligência artificial da Nexus neste mês (dólar ${dolar.toFixed(2)}). Pago pelo Álisson; no dia 1º o valor do mês anterior é lançado no Financeiro para reembolso.`;
+  el.style.display = "";
+}
+
 function renderDashboard() {
+  renderIaUsoChip();
   const list = periodFilteredNegocios();
   const emAndamento = list.filter(n => n.status === "Negociação" || n.status === "Fechado").length;
   const concluidos = list.filter(n => n.status === "Finalizado").length;
