@@ -4123,7 +4123,11 @@ function montarConfirmacaoHtml(negocioId) {
 // documento abre aqui dentro, por cima do app, com "Fechar" e "Enviar".
 // opts.gerarPdf (opcional): async () => Blob do PDF; o "Enviar" compartilha esse arquivo (WhatsApp, e-mail…).
 // Sem gerarPdf, o "Enviar" monta o PDF a partir do próprio documento (pdfDoIframe) e compartilha igual.
+// Só em celular/tablet (tela de toque). No computador — inclusive no app instalado (Nexus no Dock) — continua
+// abrindo a aba nova com a impressão, do jeito de antes (pedido do Álisson em 25/11/2026).
 function usarVisualizadorInterno() {
+  const toque = window.matchMedia("(pointer: coarse)").matches && !window.matchMedia("(pointer: fine)").matches;
+  if (!toque) return false;
   return window.matchMedia("(max-width: 900px)").matches
     || window.matchMedia("(display-mode: standalone)").matches
     || window.navigator.standalone === true;
@@ -4283,12 +4287,9 @@ window.addEventListener("popstate", () => { if (document.getElementById("docView
 function gerarConfirmacao(negocioId) {
   const r = montarConfirmacaoHtml(negocioId);
   if (!r) return;
-  const n = data.negocios.find(x => x.id === negocioId);
-  const vendedor = n && data.cadastros.find(c => c.id === n.produtor_id);
+  // Nome do PDF = o <title> do documento ("Confirmação CT-… - Vendedor x Comprador"), o mesmo de sempre.
   abrirDocumento(r.html, {
     msgPopup: "Habilite pop-ups para gerar a confirmação.",
-    titulo: `Confirmação ${r.numeroContrato || ""}`.trim(),
-    nomeArquivo: `Confirmação ${r.numeroContrato || ""}${vendedor ? " - " + vendedor.nome : ""}`,
     gerarPdf: async () => { const doc = await gerarConfirmacaoPdfNativo(negocioId); return doc ? doc.output("blob") : null; },
   });
 }
