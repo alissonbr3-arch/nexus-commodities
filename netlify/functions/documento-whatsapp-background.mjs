@@ -7,6 +7,7 @@ import { SUPABASE_URL, TIPO_LABEL, lerComIA, salvarNoDrive, nomeArquivoDoc, nome
 const MIMES_OK = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
 async function responder(telefone, mensagem) {
+  console.log("RESPOSTA para", telefone, ":", mensagem);
   const { ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN } = process.env;
   await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`, {
     method: "POST",
@@ -57,6 +58,7 @@ export default async (req) => {
     });
     if (!lido.ok) return responder(p.phone, `📎 ${nomeArq}: ${lido.erro}`);
     const l = lido.leitura;
+    console.log("LEITURA", JSON.stringify(l), "legenda:", JSON.stringify(p.caption || ""));
 
     const pelaLegenda = contratoPelaLegenda(p.caption, contratos);
     const pelaIA = l.contrato_numero && l.confianca === "alta" ? contratos.find(c => c.numero_contrato === l.contrato_numero) : null;
