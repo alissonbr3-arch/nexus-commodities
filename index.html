@@ -5148,7 +5148,8 @@ async function enviarLiberacaoPorEmail(negocioId) {
       body: JSON.stringify({ negocio_id: negocioId, access_token: session.access_token, pdf_base64: pdfBase64 }),
     });
     const j = await resp.json();
-    alert(j.ok ? "✓ E-mail enviado" : "✗ Erro: " + j.erro);
+    alert(j.ok ? "✓ E-mail enviado" + (j.marcou_liberacao ? "\n🚚 Liberação total: marcada no checklist." : j.parcial ? "\nLiberação parcial: o checklist continua sem marcar." : "") : "✗ Erro: " + j.erro);
+    if (j.marcou_liberacao) { await loadNegocios(); renderNegocios(); if (typeof renderEmbarquesPage === "function") renderEmbarquesPage(); }
   } catch (e) {
     alert("Erro ao gerar/enviar PDF: " + e.message);
   }

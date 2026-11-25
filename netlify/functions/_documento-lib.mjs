@@ -150,7 +150,8 @@ export function nomePastaContrato(n) {
 // do painel). Comprovante de pagamento: guarda o valor em nexus_pagamentos_recebidos e só marca "pago"
 // quando a soma cobre o líquido do contrato (ou cada parcela, na ordem das datas). Romaneio vira carga entregue.
 const ITENS_CHECKLIST = ["check_confirmacao", "check_contrato", "check_nota_fiscal", "check_contra_nota", "check_liberacao_embarque", "check_embarque_entrega"];
-const CHECK_POR_TIPO = { contrato: "check_contrato", nota_produtor: "check_nota_fiscal", contra_nota: "check_contra_nota", liberacao_embarque: "check_liberacao_embarque" };
+// Liberação de embarque NÃO entra aqui: o 🚚 só é marcado quando a liberação TOTAL é enviada por e-mail (enviar-liberacao-embarque).
+const CHECK_POR_TIPO = { contrato: "check_contrato", nota_produtor: "check_nota_fiscal", contra_nota: "check_contra_nota" };
 const fmtR = v => "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function somarDiasISO(iso, dias) { const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + Number(dias))).toISOString().slice(0, 10); }
 const cargasDe = n => Array.isArray(n.cargas) ? n.cargas : [];

@@ -114,5 +114,16 @@ export default async (req) => {
     }),
   }).catch(() => {});
 
-  return sucesso ? json({ ok: true }, 200) : json({ ok: false, erro }, 500);
+  // Liberação TOTAL enviada por e-mail = embarque liberado: marca o 🚚 do checklist. Parcial não marca.
+  let marcouLiberacao = false;
+  const total = negocio.liberacao_sacas == null || Number(negocio.liberacao_sacas) >= Number(negocio.quantidade || 0);
+  if (sucesso && total && !negocio.check_liberacao_embarque) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/nexus_negocios?id=eq.${negocio_id}`, {
+      method: "PATCH", headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ check_liberacao_embarque: true }),
+    }).catch(() => null);
+    marcouLiberacao = !!r?.ok;
+  }
+
+  return sucesso ? json({ ok: true, marcou_liberacao: marcouLiberacao, parcial: !total }, 200) : json({ ok: false, erro }, 500);
 };
