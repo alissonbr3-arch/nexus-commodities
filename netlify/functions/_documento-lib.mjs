@@ -22,6 +22,14 @@ export async function registrarUsoIA(origem, modelo, u) {
   }).catch(() => {});
 }
 
+// Custo que não é por token (ex.: transcrição de áudio, cobrada por minuto).
+export async function registrarCustoUsd(origem, modelo, custo_usd) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_ia_uso`, {
+    method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ origem, modelo, custo_usd }),
+  }).catch(() => {});
+}
+
 export const TIPOS = ["confirmacao", "contrato", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "outro"];
 export const TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
 

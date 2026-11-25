@@ -286,6 +286,18 @@ export default async (req) => {
   const midia = payload.image ? { url: payload.image.imageUrl, mime: payload.image.mimeType, caption: payload.image.caption, fileName: "foto.jpg" }
     : payload.document ? { url: payload.document.documentUrl, mime: payload.document.mimeType, caption: payload.document.caption || "", fileName: payload.document.fileName || payload.document.title || "documento.pdf" }
     : null;
+  // Áudio de um corretor → assistente (transcreve e responde como se fosse texto).
+  if (payload.audio?.audioUrl && !payload.fromMe && !payload.isGroup && payload.phone) {
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
+    const eq = await eqResp.json().catch(() => []);
+    if (!(Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone)))) return json({ ok: true, ignorado: true });
+    await fetch(new URL("/.netlify/functions/assistente-whatsapp-background", req.url), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: payload.phone, audioUrl: payload.audio.audioUrl, audioMime: payload.audio.mimeType, audioSegundos: payload.audio.seconds, secret: WHATSAPP_WEBHOOK_SECRET }),
+    }).catch(e => console.log("DEBUG falha ao chamar assistente (áudio):", String(e)));
+    return json({ ok: true, audio: true });
+  }
+
   if (midia?.url && !payload.fromMe && !payload.isGroup && payload.phone) {
     const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
     const eq = await eqResp.json().catch(() => []);

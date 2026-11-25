@@ -3,7 +3,7 @@
 // (pagamento recebido, carga entregue, item do checklist, tarefa, documento pendente) — sempre pedindo
 // confirmação antes de gravar. O whatsapp-webhook confere que o número é de um corretor e chama esta
 // função em segundo plano; o histórico fica em nexus_assistente_msgs.
-import { SUPABASE_URL, TIPO_LABEL, registrarUsoIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, registrarUsoIA, registrarCustoUsd, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MODELO = "claude-sonnet-5-5";
 const MAX_VOLTAS = 8;
@@ -333,11 +333,37 @@ async function chamarClaude(messages) {
   return j;
 }
 
+// Áudio do WhatsApp (ogg/opus) → texto, pela OpenAI (a IA da Anthropic não ouve áudio).
+const MODELO_AUDIO = "gpt-4o-mini-transcribe", USD_POR_MINUTO = 0.003;
+async function transcrever(url, mime, segundos) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("ainda não consigo ouvir áudio (falta a chave OPENAI_API_KEY no Netlify). Manda por escrito?");
+  const arq = await fetch(url);
+  if (!arq.ok) throw new Error("não consegui baixar o áudio do WhatsApp");
+  const tipo = String(mime || "audio/ogg").split(";")[0];
+  const form = new FormData();
+  form.append("file", new Blob([await arq.arrayBuffer()], { type: tipo }), tipo.includes("mpeg") ? "audio.mp3" : tipo.includes("mp4") ? "audio.m4a" : "audio.ogg");
+  form.append("model", MODELO_AUDIO);
+  form.append("language", "pt");
+  form.append("prompt", "Corretora de grãos Nexus Commodities: soja, milho, sorgo, sacas, contrato CT, safra, embarque, carga, romaneio, NFP, contra nota, Funrural, B3, CBOT, Paranaguá.");
+  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("transcrição: " + (j.error?.message || r.status));
+  await registrarCustoUsd("audio-whatsapp", MODELO_AUDIO, Math.max(1, Number(segundos) || 30) / 60 * USD_POR_MINUTO);
+  return String(j.text || "").trim();
+}
+
 export default async (req) => {
   const p = await req.json().catch(() => null);
-  if (!p || p.secret !== process.env.WHATSAPP_WEBHOOK_SECRET || !p.phone || !p.texto) return;
+  if (!p || p.secret !== process.env.WHATSAPP_WEBHOOK_SECRET || !p.phone || !(p.texto || p.audioUrl)) return;
   const telefone = p.phone;
   try {
+    let ouvido = "";
+    if (!p.texto && p.audioUrl) {
+      try { p.texto = ouvido = await transcrever(p.audioUrl, p.audioMime, p.audioSegundos); }
+      catch (e) { await responder(telefone, `🎤 Desculpa, ${e.message}`); return; }
+      if (!ouvido) { await responder(telefone, "🎤 Não consegui entender o áudio. Pode repetir ou mandar por escrito?"); return; }
+    }
     const d = await dados();
     const digitos = s => { let x = String(s || "").replace(/\D/g, ""); if (x.length >= 12 && x.startsWith("55")) x = x.slice(2); if (x.length === 11) x = x.slice(0, 2) + x.slice(3); return x.slice(-10); };
     const corretor = d.equipe.find(e => e.telefone && digitos(e.telefone) === digitos(telefone));
@@ -351,7 +377,7 @@ export default async (req) => {
       const ultima = messages[messages.length - 1];
       if (ultima && ultima.role === m.role) ultima.content += "\n\n" + m.texto; else messages.push({ role: m.role, content: m.texto });
     }
-    const entrada = `[${hoje()} · ${corretor.nome}] ${p.texto}`;
+    const entrada = `[${hoje()} · ${corretor.nome}${ouvido ? " · por áudio" : ""}] ${p.texto}`;
     if (messages.length && messages[messages.length - 1].role === "user") messages[messages.length - 1].content += "\n\n" + entrada; else messages.push({ role: "user", content: entrada });
     await db("nexus_assistente_msgs", { method: "POST", body: JSON.stringify({ telefone, role: "user", texto: entrada }) });
 
@@ -374,7 +400,7 @@ export default async (req) => {
     }
     if (!resposta) resposta = "Não consegui terminar essa. Pode reformular ou pedir em partes?";
     await db("nexus_assistente_msgs", { method: "POST", body: JSON.stringify({ telefone, role: "assistant", texto: resposta }) });
-    await responder(telefone, resposta);
+    await responder(telefone, ouvido ? `🎤 _Entendi: "${ouvido.length > 300 ? ouvido.slice(0, 300) + "…" : ouvido}"_\n\n${resposta}` : resposta);
   } catch (e) {
     console.log("ERRO assistente:", e.message);
     await responder(telefone, `Deu um erro aqui do meu lado (${e.message}). Tenta de novo em instantes ou usa o painel.`);
