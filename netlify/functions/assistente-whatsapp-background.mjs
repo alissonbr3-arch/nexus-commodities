@@ -143,10 +143,61 @@ const FERRAMENTAS = [
     input_schema: { type: "object", properties: { contrato: { type: "string" }, item: { type: "string", enum: Object.keys(CHECK) }, feito: { type: "boolean" } }, required: ["contrato", "item", "feito"] } },
   { name: "criar_tarefa", description: "GRAVA: cria uma tarefa/lembrete na agenda da equipe. Só chame depois que o corretor confirmou com 'sim'.",
     input_schema: { type: "object", properties: { titulo: { type: "string" }, prazo: { type: "string", description: "AAAA-MM-DD" }, responsavel: { type: "string" }, obs: { type: "string" } }, required: ["titulo"] } },
+  { name: "criar_cadastro_produtor", description: "GRAVA: cria o cadastro de um PRODUTOR rural no painel (e a fazenda, se tiver nome/IE), com os dados lidos dos documentos que o corretor mandou. Antes, mostre o resumo dos dados e pergunte 'Confirma?'. Se já existir produtor com o mesmo CPF/CNPJ ou nome, a ferramenta avisa e não duplica: use completar_cadastro.",
+    input_schema: { type: "object", properties: { dados: { type: "object", description: "Dados do produtor (deixe de fora o que não tem).", properties: {
+      nome: { type: "string" }, cpf: { type: "string" }, cnpj: { type: "string" }, rg: { type: "string" }, data_nascimento: { type: "string", description: "AAAA-MM-DD" },
+      inscricao_estadual: { type: "string" }, fazenda: { type: "string" }, municipio_fazenda: { type: "string", description: "ex.: São Gabriel do Oeste/MS" },
+      endereco: { type: "string" }, numero: { type: "string" }, complemento: { type: "string" }, bairro: { type: "string" }, cidade: { type: "string" }, uf: { type: "string" }, cep: { type: "string" },
+      telefone: { type: "string" }, email: { type: "string" },
+      banco: { type: "string" }, agencia: { type: "string" }, conta: { type: "string" }, tipo_conta: { type: "string" }, pix: { type: "string" }, titular_conta: { type: "string" } } } }, required: ["dados"] } },
+  { name: "completar_cadastro", description: "GRAVA: completa um cadastro que já existe (busca pelo nome, CPF ou CNPJ), preenchendo só os campos que estão vazios — a não ser que o corretor peça pra trocar (sobrescrever = true). Também cria a fazenda se ela ainda não existir. Só chame depois do 'sim'.",
+    input_schema: { type: "object", properties: { quem: { type: "string", description: "Nome, CPF ou CNPJ do cadastro" }, dados: { type: "object", description: "Dados do produtor (deixe de fora o que não tem).", properties: {
+      nome: { type: "string" }, cpf: { type: "string" }, cnpj: { type: "string" }, rg: { type: "string" }, data_nascimento: { type: "string", description: "AAAA-MM-DD" },
+      inscricao_estadual: { type: "string" }, fazenda: { type: "string" }, municipio_fazenda: { type: "string", description: "ex.: São Gabriel do Oeste/MS" },
+      endereco: { type: "string" }, numero: { type: "string" }, complemento: { type: "string" }, bairro: { type: "string" }, cidade: { type: "string" }, uf: { type: "string" }, cep: { type: "string" },
+      telefone: { type: "string" }, email: { type: "string" },
+      banco: { type: "string" }, agencia: { type: "string" }, conta: { type: "string" }, tipo_conta: { type: "string" }, pix: { type: "string" }, titular_conta: { type: "string" } } }, sobrescrever: { type: "boolean" } }, required: ["quem", "dados"] } },
   { name: "salvar_documento_pendente", description: "Salva no Google Drive (pasta do contrato) o documento que o corretor mandou e que ficou esperando o número do contrato. Pode chamar direto quando o corretor disser de qual contrato é (ex.: '141' ou 'sim' confirmando o palpite).",
     input_schema: { type: "object", properties: { documento_id: { type: "string" }, contrato: { type: "string" } }, required: ["documento_id", "contrato"] } },
 ];
-const GRAVA = new Set(["marcar_pagamento", "registrar_carga", "marcar_checklist", "criar_tarefa"]);
+const GRAVA = new Set(["marcar_pagamento", "registrar_carga", "marcar_checklist", "criar_tarefa", "criar_cadastro_produtor", "completar_cadastro"]);
+
+// ---------- cadastro de produtor ----------
+const soDig = s => String(s || "").replace(/\D/g, "");
+function fmtCpfCnpj(v) {
+  const d = soDig(v);
+  if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+  return String(v || "").trim();
+}
+// Dados da IA → colunas de nexus_cadastros (mesmo formato do painel: CPF com pontos, cidade "Cidade - UF").
+function colunasCadastro(dd) {
+  const banco = [dd.banco, dd.agencia && `Ag ${dd.agencia}`, dd.conta && `${/poupan/i.test(dd.tipo_conta || "") ? "CP" : "CC"} ${dd.conta}`, dd.pix && `PIX ${dd.pix}`, dd.titular_conta && `Titular: ${dd.titular_conta}`].filter(Boolean).join(" · ");
+  const uf = (dd.uf || "").toUpperCase().slice(0, 2);
+  const col = {
+    nome: dd.nome && dd.nome.trim(), cpf: dd.cpf && fmtCpfCnpj(dd.cpf), cnpj: dd.cnpj && fmtCpfCnpj(dd.cnpj), inscricao_estadual: dd.inscricao_estadual,
+    data_nascimento: /^\d{4}-\d{2}-\d{2}$/.test(dd.data_nascimento || "") ? dd.data_nascimento : null,
+    endereco: dd.endereco, endereco_numero: dd.numero, complemento: dd.complemento, bairro: dd.bairro, cep: dd.cep && soDig(dd.cep).replace(/(\d{5})(\d{3})/, "$1-$2"),
+    cidade: dd.cidade ? (uf && !/ - [A-Z]{2}$/.test(dd.cidade) ? `${dd.cidade} - ${uf}` : dd.cidade) : null, uf: uf || null,
+    telefone: dd.telefone && soDig(dd.telefone).replace(/^55(?=\d{10,11}$)/, ""), email: dd.email, propriedade: dd.fazenda,
+    dados_bancarios: banco || null,
+  };
+  return Object.fromEntries(Object.entries(col).filter(([, v]) => v != null && v !== ""));
+}
+async function acharCadastro(quem, dd = {}) {
+  const lista = await db("nexus_cadastros?select=id,nome,tipo,cpf,cnpj,apelido");
+  const docs = [soDig(dd.cpf), soDig(dd.cnpj), soDig(quem)].filter(d => d.length >= 11);
+  return lista.find(c => docs.length && docs.some(d => d === soDig(c.cpf) || d === soDig(c.cnpj)))
+    || lista.find(c => norm(c.nome) === norm(quem || dd.nome))
+    || null;
+}
+async function garantirFazenda(produtorId, dd) {
+  if (!dd.fazenda && !dd.inscricao_estadual) return null;
+  const faz = await db(`nexus_fazendas?produtor_id=eq.${produtorId}&select=id,nome,inscricao_estadual`);
+  if (faz.some(f => (dd.inscricao_estadual && soDig(f.inscricao_estadual) === soDig(dd.inscricao_estadual)) || (dd.fazenda && norm(f.nome) === norm(dd.fazenda)))) return null;
+  await db("nexus_fazendas", { method: "POST", body: JSON.stringify({ produtor_id: produtorId, nome: dd.fazenda || "Fazenda", municipio_uf: dd.municipio_fazenda || null, inscricao_estadual: dd.inscricao_estadual || null }) });
+  return dd.fazenda || "Fazenda";
+}
 const AFIRMATIVO = /^\s*(sim|s|ss|isso|ok|okay|pode|pode sim|confirmo|confirma|confirmado|manda|beleza|blz|certo|positivo|isso mesmo|pode fazer|pode lançar|pode lancar|faz|faça|faca|👍)\b/i;
 
 function filtrar(d, f = {}) {
@@ -291,6 +342,32 @@ async function executar(nome, input, ctx) {
       const t = await db("nexus_tarefas", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ titulo: input.titulo, prazo: input.prazo || null, responsavel: input.responsavel || ctx.corretor.nome, obs: input.obs || null, status: "A fazer", created_by: ctx.corretor.user_id }) });
       return { ok: true, tarefa: t?.[0]?.titulo };
     }
+    case "criar_cadastro_produtor": {
+      const dd = input.dados || {};
+      if (!dd.nome) return { erro: "Falta o nome do produtor." };
+      const existente = await acharCadastro(dd.nome, dd);
+      if (existente) return { erro: `Já existe cadastro: ${existente.nome} (${existente.tipo}). Use completar_cadastro para preencher o que falta.` };
+      const col = colunasCadastro(dd);
+      const obs = [dd.rg && `RG: ${dd.rg}`, `Cadastrado pelo WhatsApp (assistente) a pedido de ${ctx.corretor.nome}.`].filter(Boolean).join("\n");
+      const novo = (await db("nexus_cadastros", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ ...col, tipo: "Produtor", owner_id: ctx.corretor.user_id, created_by: ctx.corretor.user_id, obs }) }))[0];
+      const fazenda = await garantirFazenda(novo.id, dd);
+      await db("nexus_audit_log", { method: "POST", body: JSON.stringify({ tabela: "nexus_cadastros", registro_id: novo.id, acao: "assistente_whatsapp:criar_cadastro", usuario_id: ctx.corretor.user_id, alteracoes: col }) }).catch(() => {});
+      return { ok: true, criado: novo.nome, campos: Object.keys(col), fazenda_criada: fazenda };
+    }
+    case "completar_cadastro": {
+      const dd = input.dados || {};
+      const c = await acharCadastro(input.quem, dd);
+      if (!c) return { erro: "Não achei esse cadastro. Para um produtor novo, use criar_cadastro_produtor." };
+      const atual = (await db(`nexus_cadastros?id=eq.${c.id}&select=*`))[0];
+      const col = colunasCadastro(dd);
+      delete col.nome;
+      const upd = Object.fromEntries(Object.entries(col).filter(([k]) => input.sobrescrever || atual[k] == null || atual[k] === ""));
+      if (dd.rg && !String(atual.obs || "").includes(dd.rg)) upd.obs = [atual.obs, `RG: ${dd.rg}`].filter(Boolean).join("\n");
+      if (Object.keys(upd).length) await db(`nexus_cadastros?id=eq.${c.id}`, { method: "PATCH", body: JSON.stringify(upd) });
+      const fazenda = await garantirFazenda(c.id, dd);
+      await db("nexus_audit_log", { method: "POST", body: JSON.stringify({ tabela: "nexus_cadastros", registro_id: c.id, acao: "assistente_whatsapp:completar_cadastro", usuario_id: ctx.corretor.user_id, alteracoes: upd }) }).catch(() => {});
+      return { ok: true, cadastro: c.nome, preenchidos: Object.keys(upd), ja_tinham_valor: Object.keys(col).filter(k => !(k in upd)), fazenda_criada: fazenda };
+    }
     case "salvar_documento_pendente": {
       const doc = (await db(`nexus_assistente_docs?id=eq.${encodeURIComponent(input.documento_id)}&telefone=eq.${ctx.telefone}&select=*`))[0];
       if (!doc) return { erro: "Documento pendente não encontrado." };
@@ -326,6 +403,7 @@ Como trabalhar:
 - Preço médio é sempre por grão e safra; nunca misture safras ou grãos numa média.
 - Ferramentas que GRAVAM (marcar_pagamento, registrar_carga, marcar_checklist, criar_tarefa): antes de chamar, diga exatamente o que vai gravar (contrato, partes, valores, datas) e pergunte "Confirma?". Só chame depois que o corretor responder "sim". Depois, diga o que foi gravado.
 - Documentos: quando o histórico mostrar um documento pendente (com o id) e o corretor disser de qual contrato é (ou "sim" para o palpite), chame salvar_documento_pendente direto e mande o link.
+- Cadastro de produtor: o histórico mostra os dados lidos de cada documento de cadastro (CNH, IE, comprovante de endereço, dados bancários). Quando o corretor pedir para criar o cadastro, junte os dados de todos os documentos daquele produtor, mostre um resumo (nome, CPF/CNPJ, nascimento, IE, fazenda e município, endereço, banco/PIX, telefone se ele informou) e pergunte "Confirma?". Com o "sim", chame criar_cadastro_produtor; se já existir, ofereça completar_cadastro. Pergunte o telefone/WhatsApp do produtor se ninguém informou.
 - Para criar uma negociação nova, oriente o corretor a mandar a mensagem começando com "Nova negociação" no formato que ele já usa, ou criar pelo painel.
 - Se pedirem algo que você não consegue fazer, diga com franqueza e sugira o caminho no painel (painel.nexuscommoditiesms.com.br).`;
 

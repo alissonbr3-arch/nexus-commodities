@@ -32,8 +32,11 @@ export async function registrarCustoUsd(origem, modelo, custo_usd) {
   }).catch(() => {});
 }
 
-export const TIPOS = ["confirmacao", "contrato", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "outro"];
-export const TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
+export const TIPOS = ["confirmacao", "contrato", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "documento_pessoal", "inscricao_estadual", "comprovante_endereco", "dados_bancarios", "outro"];
+// Documentos de cadastro do produtor: não são de contrato; vão pra PRODUTORES / CLIENTES / NOME no Drive.
+export const TIPOS_CADASTRO = new Set(["documento_pessoal", "inscricao_estadual", "comprovante_endereco", "dados_bancarios"]);
+export const PASTA_CLIENTES = "PRODUTORES / CLIENTES";
+export const TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", documento_pessoal: "Documento pessoal (CNH/RG/CPF)", inscricao_estadual: "Inscrição estadual", comprovante_endereco: "Comprovante de endereço", dados_bancarios: "Dados bancários", outro: "Outro documento" };
 
 const FERRAMENTA = {
   name: "classificar_documento",
@@ -41,7 +44,7 @@ const FERRAMENTA = {
   input_schema: {
     type: "object",
     properties: {
-      tipo: { type: "string", enum: TIPOS, description: "confirmacao = Confirmação de Compra e Venda emitida pela Nexus (cabeçalho Nexus, número CT-2026-xxx); contrato = contrato de compra e venda emitido pelo comprador (cerealista, cooperativa, trading), com número próprio do comprador; pagamento = comprovante de pagamento, PIX, TED, transferência; nota_produtor = NFP / nota fiscal de produtor rural emitida pelo vendedor; contra_nota = contra nota / NF de entrada emitida pelo comprador referenciando a NFP; nota_fiscal = outra NF-e; romaneio = ticket de balança / romaneio de carga com peso; liberacao_embarque = liberação/autorização de embarque ou de retirada; outro = qualquer outra coisa." },
+      tipo: { type: "string", enum: TIPOS, description: "confirmacao = Confirmação de Compra e Venda emitida pela Nexus (cabeçalho Nexus, número CT-2026-xxx); contrato = contrato de compra e venda emitido pelo comprador (cerealista, cooperativa, trading), com número próprio do comprador; pagamento = comprovante de pagamento, PIX, TED, transferência; nota_produtor = NFP / nota fiscal de produtor rural emitida pelo vendedor; contra_nota = contra nota / NF de entrada emitida pelo comprador referenciando a NFP; nota_fiscal = outra NF-e; romaneio = ticket de balança / romaneio de carga com peso; liberacao_embarque = liberação/autorização de embarque ou de retirada; documento_pessoal = CNH, RG, CPF ou contrato social de uma pessoa/empresa; inscricao_estadual = cartão/ficha de inscrição estadual de produtor rural (IE, cadastro de produtor na SEFAZ); comprovante_endereco = conta de luz, água, telefone ou outro comprovante de endereço; dados_bancarios = cartão, cheque, print ou declaração com banco/agência/conta/PIX; outro = qualquer outra coisa." },
       assinado: { type: "boolean", description: "true se o documento tem assinatura (manuscrita, digital ou DocuSign) das partes." },
       contrato_numero: { type: ["string", "null"], description: "Número do contrato da lista (ex.: CT-2026-108) a que o documento pertence, ou null se não der pra saber." },
       confianca: { type: "string", enum: ["alta", "media", "baixa"], description: "Confiança na escolha do contrato." },
@@ -54,6 +57,16 @@ const FERRAMENTA = {
       parcela: { type: ["string", "null"], enum: ["PARTE", "SALDO", null], description: "No pagamento: SALDO se o comprovante diz que é saldo/quitação, PARTE se diz adiantamento/parcial; null se não diz." },
       grao: { type: ["string", "null"], description: "Grão do documento (Soja, Milho, Sorgo...)." },
       nome_sugerido: { type: "string", description: "Nome curto e descritivo pro arquivo, em português, sem extensão (usado quando tipo = outro)." },
+      cadastro: { type: ["object", "null"], description: "Só nos documentos de cadastro (documento_pessoal, inscricao_estadual, comprovante_endereco, dados_bancarios): os dados da pessoa/empresa que aparecem no documento. Deixe de fora o que não aparece.",
+        properties: {
+          nome: { type: "string", description: "Nome completo do titular (pessoa ou empresa)." }, cpf: { type: "string" }, cnpj: { type: "string" }, rg: { type: "string" },
+          data_nascimento: { type: "string", description: "AAAA-MM-DD" }, inscricao_estadual: { type: "string" },
+          fazenda: { type: "string", description: "Nome da propriedade/fazenda (na IE)." }, municipio_fazenda: { type: "string", description: "Município/UF da fazenda, ex.: São Gabriel do Oeste/MS" },
+          endereco: { type: "string", description: "Rua/logradouro" }, numero: { type: "string" }, complemento: { type: "string" }, bairro: { type: "string" },
+          cidade: { type: "string" }, uf: { type: "string" }, cep: { type: "string" },
+          banco: { type: "string" }, agencia: { type: "string" }, conta: { type: "string" }, tipo_conta: { type: "string" }, pix: { type: "string" }, titular_conta: { type: "string" },
+          email: { type: "string" }, telefone: { type: "string" },
+        } },
     },
     required: ["tipo", "assinado", "contrato_numero", "confianca", "motivo", "nome_sugerido"],
   },
@@ -74,7 +87,7 @@ export async function lerComIA({ base64, mime, nomeOriginal, contratos, dica, ti
 Contratos da Nexus (mais recentes primeiro):
 ${lista || "(nenhum)"}
 
-Para achar o contrato, cruze nomes do vendedor e do comprador (pagador e favorecido no comprovante; emitente e destinatário nas notas), grão, quantidade, valor e datas. Se o próprio documento citar o número do contrato (CT-2026-xxx ou "CTR 108"), use. Só escolha um contrato com confiança "alta" se as partes baterem.`;
+Para achar o contrato, cruze nomes do vendedor e do comprador (pagador e favorecido no comprovante; emitente e destinatário nas notas), grão, quantidade, valor e datas. Se o próprio documento citar o número do contrato (CT-2026-xxx ou "CTR 108"), use. Só escolha um contrato com confiança "alta" se as partes baterem. Documentos de cadastro (CNH, RG, CPF, inscrição estadual, comprovante de endereço, dados bancários) não são de contrato: contrato_numero = null e preencha "cadastro" com os dados que aparecem.`;
 
   const controle = new AbortController();
   const timer = setTimeout(() => controle.abort(), timeoutMs);
@@ -102,13 +115,13 @@ Para achar o contrato, cruze nomes do vendedor e do comprador (pagador e favorec
   return { ok: true, leitura: uso.input };
 }
 
-export async function salvarNoDrive({ base64, mime, nome_arquivo, contrato, nome_pasta, data_negocio }) {
+export async function salvarNoDrive({ base64, mime, nome_arquivo, contrato, nome_pasta, data_negocio, caminho }) {
   const url = process.env.DRIVE_SCRIPT_URL, token = process.env.DRIVE_SCRIPT_TOKEN;
   if (!url || !token) return { ok: false, erro: "Falta ligar o Google Drive (DRIVE_SCRIPT_URL e DRIVE_SCRIPT_TOKEN no Netlify)." };
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify({ token, base64, mime, nome_arquivo, contrato: contrato || null, nome_pasta: nome_pasta || null, data_negocio: data_negocio || null }),
+    body: JSON.stringify({ token, base64, mime, nome_arquivo, contrato: contrato || null, nome_pasta: nome_pasta || null, data_negocio: data_negocio || null, caminho: caminho || null }),
     redirect: "follow",
   });
   const txt = await r.text();
@@ -136,6 +149,10 @@ export function nomeArquivoDoc(l, n) {
     case "nota_fiscal": nome = `NF ${num}${partes}`; break;
     case "romaneio": nome = kgNum ? `Romaneio embarque - ${kg} kg (${(kgNum / 60).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} sacas)` : `Romaneio embarque${dataBr ? " - " + dataBr : ""}`; break;
     case "liberacao_embarque": nome = `Liberação de embarque${partes}${l.assinado ? " (assinada)" : ""}`; break;
+    case "documento_pessoal": case "inscricao_estadual": case "comprovante_endereco": case "dados_bancarios": {
+      const rot = { documento_pessoal: l.nome_sugerido && /cnh|rg|cpf|contrato social/i.test(l.nome_sugerido) ? l.nome_sugerido.match(/cnh|rg|cpf|contrato social/i)[0].toUpperCase() : "Documento pessoal", inscricao_estadual: "Inscrição Estadual", comprovante_endereco: "Comprovante de endereço", dados_bancarios: "Dados bancários" }[l.tipo];
+      nome = `${rot}${l.cadastro?.nome ? " - " + l.cadastro.nome.toUpperCase() : ""}${l.tipo === "inscricao_estadual" && l.cadastro?.inscricao_estadual ? " - IE " + l.cadastro.inscricao_estadual : ""}`; break;
+    }
     default: nome = `${l.nome_sugerido || "Documento"}${ct ? " - " + ct : ""}`;
   }
   return nome.replace(/[\/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
@@ -281,3 +298,8 @@ export async function transcreverAudio(url, mime, segundos) {
   return String(j.text || "").trim();
 }
 
+
+// Pasta do Drive pros documentos de cadastro: PRODUTORES / CLIENTES / NOME (a que a Nexus já usa).
+export function caminhoCliente(nome) {
+  return [PASTA_CLIENTES, String(nome || "CADASTROS SEM NOME").toUpperCase().replace(/[\/\\:*?"<>|]/g, "-").trim()];
+}

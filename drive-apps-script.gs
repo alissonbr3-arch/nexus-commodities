@@ -16,7 +16,9 @@ function doPost(e) {
     const token = PropertiesService.getScriptProperties().getProperty("TOKEN");
     if (!token || p.token !== token) return resposta({ ok: false, erro: "Token inv\u00E1lido." });
 
-    const pasta = pastaDoContrato(p.contrato, p.nome_pasta, p.data_negocio);
+    // "caminho": lista de pastas a partir de NEXUS COMMODITIES (ex.: ["PRODUTORES / CLIENTES", "FULANO DE TAL"]),
+    // criadas se faltarem. Sem caminho: pasta do contrato.
+    const pasta = Array.isArray(p.caminho) && p.caminho.length ? pastaPorCaminho(p.caminho) : pastaDoContrato(p.contrato, p.nome_pasta, p.data_negocio);
     let nome = p.nome_arquivo;
     // Pagamentos sao numerados na ordem: 01 - PGTO..., 02 - PGTO...
     if (nome.indexOf("{SEQ}") >= 0) {
@@ -51,6 +53,20 @@ function pastaDoContrato(contrato, nomePasta, dataNegocio) {
   const pastaAno = filha(raiz, "CONFIRMAC\u00D5ES " + ano);
   const pastaMes = filha(pastaAno, "M\u00CAS " + String(mes + 1).padStart(2, "0") + " (" + MESES[mes] + " " + ano + ")");
   return filha(pastaMes, nomePasta || ("Confirma\u00E7\u00E3o " + contrato));
+}
+
+function pastaPorCaminho(caminho) {
+  let pasta = DriveApp.getFolderById(PASTA_RAIZ_ID);
+  for (let i = 0; i < caminho.length; i++) pasta = filhaSemDiferenciar(pasta, String(caminho[i]).trim());
+  return pasta;
+}
+
+// Acha a subpasta ignorando maiusculas e acentos ("Joao da Silva" = "JO\u00C3O DA SILVA"); cria se nao existir.
+function filhaSemDiferenciar(pai, nome) {
+  const chave = function (s) { return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim(); };
+  const alvo = chave(nome), it = pai.getFolders();
+  while (it.hasNext()) { const f = it.next(); if (chave(f.getName()) === alvo) return f; }
+  return pai.createFolder(nome);
 }
 
 function filha(pai, nome) {

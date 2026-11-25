@@ -3,7 +3,7 @@
 // baixa o arquivo da Z-API, a IA lê e acha o contrato, salva na pasta dele no Drive e nos anexos da
 // negociação, e responde no WhatsApp. Se a IA não tiver certeza do contrato, não salva e pede o número.
 import { randomUUID } from "node:crypto";
-import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, TIPOS_CADASTRO, caminhoCliente, aplicarDocumentoNoNegocio, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MIMES_OK = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
@@ -69,6 +69,21 @@ export default async (req) => {
     if (!lido.ok) return responder(p.phone, `📎 ${nomeArq}: ${lido.erro}`);
     const l = lido.leitura;
     console.log("LEITURA", JSON.stringify(l), "legenda:", JSON.stringify(p.caption || ""));
+
+    // Documento de cadastro (CNH, IE, endereço, banco): vai pra PRODUTORES / CLIENTES / NOME e os dados ficam
+    // no histórico da conversa; quando o corretor disser "cria o cadastro", a assistente junta tudo e cria.
+    if (TIPOS_CADASTRO.has(l.tipo)) {
+      const c = l.cadastro || {};
+      const nomeTitular = c.nome || (p.caption && !/^\s*\d/.test(p.caption) ? p.caption : "");
+      const extCad = MIMES_OK[mime];
+      const salvoCad = await salvarNoDrive({ base64, mime, nome_arquivo: `${nomeArquivoDoc(l, null)}.${extCad}`, caminho: caminhoCliente(nomeTitular) });
+      const tipoCad = TIPO_LABEL[l.tipo];
+      const rotulos = { nome: "Nome", cpf: "CPF", cnpj: "CNPJ", rg: "RG", data_nascimento: "Nascimento", inscricao_estadual: "IE", fazenda: "Fazenda", municipio_fazenda: "Município da fazenda", endereco: "Endereço", numero: "Nº", bairro: "Bairro", cidade: "Cidade", uf: "UF", cep: "CEP", banco: "Banco", agencia: "Agência", conta: "Conta", tipo_conta: "Tipo", pix: "PIX", titular_conta: "Titular", email: "E-mail", telefone: "Telefone" };
+      const linhas = Object.entries(rotulos).filter(([k]) => c[k]).map(([k, r]) => `• ${r}: ${k === "data_nascimento" ? c[k].split("-").reverse().join("/") : c[k]}`);
+      const msgCad = `🪪 *${tipoCad}*${nomeTitular ? ` de *${nomeTitular}*` : ""}\n${linhas.join("\n") || "Não consegui ler os dados."}${salvoCad.ok ? `\n\nGuardei no Drive em ${salvoCad.pasta}.` : `\n\n⚠️ Não consegui salvar no Drive: ${salvoCad.erro}`}\n\nManda os outros documentos (CNH, IE, endereço, banco) e, quando terminar, diz *cria o cadastro*.`;
+      await historico(adminHeaders, p.phone, `[enviou documento de cadastro: ${nomeArq}${p.caption ? ` · legenda: "${p.caption}"` : ""}]`, `${msgCad}\n(dados lidos do documento: ${JSON.stringify({ tipo: l.tipo, ...c })})`);
+      return responder(p.phone, msgCad);
+    }
 
     const pelaLegenda = contratoPelaLegenda(p.caption, contratos);
     const pelaIA = l.contrato_numero && l.confianca === "alta" ? contratos.find(c => c.numero_contrato === l.contrato_numero) : null;

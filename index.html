@@ -3789,7 +3789,9 @@ document.getElementById("addNegocioBtn").addEventListener("click", () => openNeg
 // o painel monta o nome no padrão da pasta (ex.: "01 - PGTO CTR 108 - CESAR TOZETTO - R$19.805,00 - 06-11-2026")
 // e salva na pasta do contrato no Drive (NEXUS COMMODITIES / CONFIRMACÕES / MÊS / Confirmação CT-...),
 // além de deixar uma cópia nos anexos da negociação. Se a IA não tiver certeza do contrato, pergunta antes.
-const DOC_TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
+const DOC_TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", documento_pessoal: "Documento pessoal (CNH/RG/CPF)", inscricao_estadual: "Inscrição estadual", comprovante_endereco: "Comprovante de endereço", dados_bancarios: "Dados bancários", outro: "Outro documento" };
+// Documentos de cadastro do produtor: vão pra PRODUTORES / CLIENTES / NOME no Drive (não são de contrato).
+const DOC_TIPOS_CADASTRO = ["documento_pessoal", "inscricao_estadual", "comprovante_endereco", "dados_bancarios"];
 const DOC_LIMITE_BYTES = 4.2 * 1024 * 1024; // a função do Netlify aceita até ~6 MB em base64
 let docFila = [];
 
@@ -3898,6 +3900,10 @@ function docIaNomeArquivo(l, n) {
     case "nota_fiscal": nome = `NF ${num}${partes}`; break;
     case "romaneio": nome = kgNum ? `Romaneio embarque - ${kg} kg (${(kgNum / 60).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} sacas)` : `Romaneio embarque${dataBr ? " - " + dataBr : ""}`; break;
     case "liberacao_embarque": nome = `Liberação de embarque${partes}${l.assinado ? " (assinada)" : ""}`; break;
+    case "documento_pessoal": case "inscricao_estadual": case "comprovante_endereco": case "dados_bancarios": {
+      const rot = { documento_pessoal: (String(l.nome_sugerido || "").match(/cnh|rg|cpf|contrato social/i) || ["Documento pessoal"])[0].replace(/^(cnh|rg|cpf)$/i, m => m.toUpperCase()), inscricao_estadual: "Inscrição Estadual", comprovante_endereco: "Comprovante de endereço", dados_bancarios: "Dados bancários" }[l.tipo];
+      nome = `${rot}${l.cadastro?.nome ? " - " + l.cadastro.nome.toUpperCase() : ""}${l.tipo === "inscricao_estadual" && l.cadastro?.inscricao_estadual ? " - IE " + l.cadastro.inscricao_estadual : ""}`; break;
+    }
     default: nome = `${l.nome_sugerido || "Documento"}${ct ? " - " + ct : ""}`;
   }
   return nome.replace(/[\/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
@@ -3931,6 +3937,8 @@ async function docIaProcessar(i) {
     const n = j.leitura.contrato_numero ? docIaContratos().find(x => x.numero_contrato === j.leitura.contrato_numero) : null;
     d.negocioId = n?.id || null;
     d.nomeFinal = docIaNomeArquivo(d.leitura, n);
+    // Documento de cadastro com o nome do titular → salva direto na pasta do produtor.
+    if (DOC_TIPOS_CADASTRO.includes(j.leitura.tipo)) { d.negocioId = null; if (j.leitura.cadastro?.nome) return docIaSalvar(i); d.status = "revisar"; docIaRender(); return; }
     // Confiança alta e contrato achado → salva direto; senão mostra pra conferir.
     if (n && j.leitura.confianca === "alta") return docIaSalvar(i);
     d.status = "revisar";
@@ -3952,6 +3960,7 @@ async function docIaSalvar(i) {
       nome_pasta: n ? `Confirmação ${n.numero_contrato} - ${nomeCadastro(n.produtor_id)} x ${n.cliente_id ? nomeCadastro(n.cliente_id) : (n.contraparte || "")}` : null,
       data_negocio: n?.data || null,
       negocio_id: n?.id || null, leitura: d.leitura,
+      caminho: !n && DOC_TIPOS_CADASTRO.includes(d.leitura?.tipo) ? ["PRODUTORES / CLIENTES", String(d.leitura.cadastro?.nome || "CADASTROS SEM NOME").toUpperCase().replace(/[\/\\:*?"<>|]/g, "-").trim()] : null,
     });
     d.resultado = j; d.status = "salvo";
     if (j.feito?.length && typeof loadNegocios === "function") { await loadNegocios(); if (typeof renderNegocios === "function") renderNegocios(); }
