@@ -3,7 +3,7 @@
 // (pagamento recebido, carga entregue, item do checklist, tarefa, documento pendente) — sempre pedindo
 // confirmação antes de gravar. O whatsapp-webhook confere que o número é de um corretor e chama esta
 // função em segundo plano; o histórico fica em nexus_assistente_msgs.
-import { SUPABASE_URL, TIPO_LABEL, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, registrarUsoIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MODELO = "claude-sonnet-5-5";
 const MAX_VOLTAS = 8;
@@ -329,6 +329,7 @@ async function chamarClaude(messages) {
   });
   const j = await r.json();
   if (!r.ok) throw new Error("IA: " + (j.error?.message || r.status));
+  await registrarUsoIA("assistente-whatsapp", MODELO, j.usage);
   return j;
 }
 

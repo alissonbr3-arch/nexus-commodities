@@ -5,6 +5,23 @@
 export const SUPABASE_URL = "https://ixvdltjiswgcyxikxskr.supabase.co";
 const MODELO = "claude-haiku-5-5";
 
+// Preço por milhão de tokens em US$ (entrada, saída, leitura de cache). Gravação de cache = 1,25 × entrada.
+const PRECOS = { "claude-haiku-5-5": [0.10, 0.50, 0.01], "claude-sonnet-5-5": [2, 10, 0.10] };
+// Anota cada chamada à IA em nexus_ia_uso (base do resumo mensal de gasto que vai pro WhatsApp).
+export async function registrarUsoIA(origem, modelo, u) {
+  if (!u) return;
+  const [pin, pout, pcache] = PRECOS[modelo] || [0, 0, 0];
+  const linha = {
+    origem, modelo, input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0,
+    cache_read_tokens: u.cache_read_input_tokens || 0, cache_write_tokens: u.cache_creation_input_tokens || 0,
+  };
+  linha.custo_usd = (linha.input_tokens * pin + linha.output_tokens * pout + linha.cache_read_tokens * pcache + linha.cache_write_tokens * pin * 1.25) / 1e6;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  await fetch(`${SUPABASE_URL}/rest/v1/nexus_ia_uso`, {
+    method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(linha),
+  }).catch(() => {});
+}
+
 export const TIPOS = ["confirmacao", "contrato", "pagamento", "nota_produtor", "contra_nota", "nota_fiscal", "romaneio", "liberacao_embarque", "outro"];
 export const TIPO_LABEL = { confirmacao: "Confirmação (Nexus)", contrato: "Contrato do comprador", pagamento: "Comprovante de pagamento", nota_produtor: "NFP (nota do produtor)", contra_nota: "Contra nota", nota_fiscal: "Nota fiscal", romaneio: "Romaneio / ticket", liberacao_embarque: "Liberação de embarque", outro: "Outro documento" };
 
@@ -34,7 +51,7 @@ const FERRAMENTA = {
 
 // contratos: [{ numero, vendedor, comprador, grao, safra, quantidade, preco, data, status }]
 // dica: texto que o corretor mandou junto (legenda no WhatsApp), se houver.
-export async function lerComIA({ base64, mime, nomeOriginal, contratos, dica, timeoutMs = 24000 }) {
+export async function lerComIA({ base64, mime, nomeOriginal, contratos, dica, timeoutMs = 24000, origem = "documento-painel" }) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { ok: false, erro: "Falta a chave da IA (ANTHROPIC_API_KEY) no Netlify." };
   const lista = (contratos || []).slice(0, 400).map(c =>
@@ -69,6 +86,7 @@ Para achar o contrato, cruze nomes do vendedor e do comprador (pagador e favorec
   } finally { clearTimeout(timer); }
   const j = await r.json();
   if (!r.ok) return { ok: false, erro: "IA: " + (j.error?.message || r.status) };
+  await registrarUsoIA(origem, MODELO, j.usage);
   const uso = (j.content || []).find(b => b.type === "tool_use");
   if (!uso) return { ok: false, erro: "A IA não conseguiu classificar o documento." };
   return { ok: true, leitura: uso.input };

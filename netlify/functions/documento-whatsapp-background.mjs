@@ -62,7 +62,7 @@ export default async (req) => {
 
     const contratos = await carregarContratos(adminHeaders);
     const lido = await lerComIA({
-      base64, mime, nomeOriginal: nomeArq, dica: p.caption, timeoutMs: 120000,
+      base64, mime, nomeOriginal: nomeArq, dica: p.caption, timeoutMs: 120000, origem: "documento-whatsapp",
       contratos: contratos.map(n => ({ numero: n.numero_contrato, vendedor: n.vendedor, comprador: n.comprador, grao: n.grao, safra: n.safra, quantidade: n.quantidade, preco: n.preco, data: n.data, status: n.status })),
     });
     if (!lido.ok) return responder(p.phone, `📎 ${nomeArq}: ${lido.erro}`);
