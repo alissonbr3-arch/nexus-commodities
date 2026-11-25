@@ -38,7 +38,7 @@ async function dados() {
   const [negocios, cadastros, equipe, cfg] = await Promise.all([
     db("nexus_negocios?deleted_at=is.null&select=*&order=numero_contrato.desc"),
     db("nexus_cadastros?select=id,nome,apelido,tipo,categoria_comprador"),
-    db("nexus_equipe?select=user_id,nome,telefone"),
+    db("nexus_equipe?select=user_id,nome,telefone,telefones_extra"),
     db("nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct"),
   ]);
   cache = { negocios, cadastros, equipe, config: cfg[0] || {} };
@@ -366,7 +366,7 @@ export default async (req) => {
     }
     const d = await dados();
     const digitos = s => { let x = String(s || "").replace(/\D/g, ""); if (x.length >= 12 && x.startsWith("55")) x = x.slice(2); if (x.length === 11) x = x.slice(0, 2) + x.slice(3); return x.slice(-10); };
-    const corretor = d.equipe.find(e => e.telefone && digitos(e.telefone) === digitos(telefone));
+    const corretor = d.equipe.find(e => [e.telefone, ...(e.telefones_extra || [])].some(t => t && digitos(t) === digitos(telefone)));
     if (!corretor) return;
 
     const desde = new Date(Date.now() - HISTORICO_HORAS * 3600e3).toISOString();

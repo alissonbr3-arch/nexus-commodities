@@ -15,6 +15,9 @@ function ultimosDigitos(tel) {
   return d.slice(-10);
 }
 
+// Telefone principal + outros números de WhatsApp do corretor (nexus_equipe.telefones_extra).
+function numerosDaPessoa(e) { return [e.telefone, ...(e.telefones_extra || [])].filter(Boolean); }
+
 function normalizarTexto(s) {
   return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
@@ -288,9 +291,9 @@ export default async (req) => {
     : null;
   // Áudio de um corretor → assistente (transcreve e responde como se fosse texto).
   if (payload.audio?.audioUrl && !payload.fromMe && !payload.isGroup && payload.phone) {
-    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone,telefones_extra`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
     const eq = await eqResp.json().catch(() => []);
-    if (!(Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone)))) return json({ ok: true, ignorado: true });
+    if (!(Array.isArray(eq) && eq.some(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === ultimosDigitos(payload.phone))))) return json({ ok: true, ignorado: true });
     await fetch(new URL("/.netlify/functions/assistente-whatsapp-background", req.url), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: payload.phone, audioUrl: payload.audio.audioUrl, audioMime: payload.audio.mimeType, audioSegundos: payload.audio.seconds, secret: WHATSAPP_WEBHOOK_SECRET }),
@@ -299,9 +302,9 @@ export default async (req) => {
   }
 
   if (midia?.url && !payload.fromMe && !payload.isGroup && payload.phone) {
-    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone,telefones_extra`, { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } });
     const eq = await eqResp.json().catch(() => []);
-    const ehCorretor = Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone));
+    const ehCorretor = Array.isArray(eq) && eq.some(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === ultimosDigitos(payload.phone)));
     if (!ehCorretor) return json({ ok: true, ignorado: true });
     await fetch(new URL("/.netlify/functions/documento-whatsapp-background", req.url), {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -336,9 +339,9 @@ export default async (req) => {
   const primeiraLinha = normalizarTexto(primeiraLinhaOriginal);
   if (!primeiraLinha.startsWith("nova negociacao")) {
     // Qualquer outra mensagem de um corretor da equipe vai pra assistente (IA) em segundo plano.
-    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone`, { headers: adminHeaders });
+    const eqResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=telefone,telefones_extra`, { headers: adminHeaders });
     const eq = await eqResp.json().catch(() => []);
-    if (Array.isArray(eq) && eq.some(e => e.telefone && ultimosDigitos(e.telefone) === ultimosDigitos(payload.phone))) {
+    if (Array.isArray(eq) && eq.some(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === ultimosDigitos(payload.phone)))) {
       await fetch(new URL("/.netlify/functions/assistente-whatsapp-background", req.url), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: payload.phone, texto, secret: WHATSAPP_WEBHOOK_SECRET }),
@@ -349,11 +352,11 @@ export default async (req) => {
     return json({ ok: true, ignorado: true });
   }
 
-  const equipeResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=user_id,nome,telefone`, { headers: adminHeaders });
+  const equipeResp = await fetch(`${SUPABASE_URL}/rest/v1/nexus_equipe?select=user_id,nome,telefone,telefones_extra`, { headers: adminHeaders });
   const equipe = await equipeResp.json();
   const remetente = ultimosDigitos(payload.phone);
   console.log("DEBUG remetente:", remetente, "equipe:", JSON.stringify(equipe.map(e => ({ nome: e.nome, telefone: e.telefone, ultimosDigitos: ultimosDigitos(e.telefone) }))));
-  const corretor = equipe.find(e => e.telefone && ultimosDigitos(e.telefone) === remetente);
+  const corretor = equipe.find(e => numerosDaPessoa(e).some(t => ultimosDigitos(t) === remetente));
   if (!corretor) {
     console.log("DEBUG número não bateu com nenhum corretor cadastrado");
     return json({ ok: true, ignorado: true });
