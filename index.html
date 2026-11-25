@@ -290,17 +290,6 @@
   .ptr.girando svg { animation: ptrGira .8s linear infinite; }
   @keyframes ptrGira { to { transform: rotate(360deg); } }
   @media (pointer: coarse) { html, body { overscroll-behavior-y: none; } }
-  /* Visualizador de documentos no celular (Confirmação, relatórios, recibos): abre por cima do app,
-     com Fechar e Enviar, em vez de uma janela nova sem botões (no app instalado não dá pra voltar). */
-  .doc-viewer { position: fixed; inset: 0; z-index: 200; background: #6b6b6b; display: flex; flex-direction: column; }
-  .doc-viewer-bar { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; background: var(--card, #1c1f24); border-bottom: 1px solid var(--border, #333); }
-  .doc-viewer-bar .titulo { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .doc-viewer-bar button { border: 1px solid var(--border, #444); background: transparent; color: var(--ink); border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600; }
-  .doc-viewer-bar button.enviar { background: var(--gold); border-color: var(--gold); color: #111; }
-  .doc-viewer-bar button:disabled { opacity: .6; }
-  .doc-viewer-body { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding-bottom: env(safe-area-inset-bottom); }
-  .doc-viewer-folha { background: #fff; transform-origin: top left; }
-  .doc-viewer-folha iframe { border: 0; display: block; background: #fff; }
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); align-items: center; justify-content: center; z-index: 50; }
   .overlay.active { display: flex; }
   /* Atalhos de teclado: letra no menu lateral + paleta (⌘K) */
@@ -4117,181 +4106,13 @@ function montarConfirmacaoHtml(negocioId) {
   document.addEventListener("touchend", soltar, { passive: true });
   document.addEventListener("touchcancel", soltar, { passive: true });
 })();
-// ---------------- VISUALIZADOR DE DOCUMENTOS ----------------
-// No computador, os documentos (Confirmação, relatórios, recibos) continuam abrindo numa aba nova com a
-// impressão. No celular (e no app instalado), a aba nova vira uma tela sem botão de voltar — então lá o
-// documento abre aqui dentro, por cima do app, com "Fechar" e "Enviar".
-// opts.gerarPdf (opcional): async () => Blob do PDF; o "Enviar" compartilha esse arquivo (WhatsApp, e-mail…).
-// Sem gerarPdf, o "Enviar" monta o PDF a partir do próprio documento (pdfDoIframe) e compartilha igual.
-// Só em celular/tablet (tela de toque). No computador — inclusive no app instalado (Nexus no Dock) — continua
-// abrindo a aba nova com a impressão, do jeito de antes (pedido do Álisson em 25/11/2026).
-function usarVisualizadorInterno() {
-  const toque = window.matchMedia("(pointer: coarse)").matches && !window.matchMedia("(pointer: fine)").matches;
-  if (!toque) return false;
-  return window.matchMedia("(max-width: 900px)").matches
-    || window.matchMedia("(display-mode: standalone)").matches
-    || window.navigator.standalone === true;
-}
-function abrirDocumento(html, opts = {}) {
-  if (!usarVisualizadorInterno()) {
-    const win = window.open("", "_blank");
-    if (!win) { alert(opts.msgPopup || "Habilite pop-ups para abrir o documento."); return; }
-    win.document.open(); win.document.write(html); win.document.close();
-    return;
-  }
-  fecharDocumento();
-  // Tira o window.print() automático: no celular quem decide é o botão "Enviar".
-  const semAutoPrint = html.replace(/<script>\s*window\.onload[\s\S]*?print\(\)[\s\S]*?<\/script>/i, "");
-  const titulo = opts.titulo || (html.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || "Documento";
-  const el = document.createElement("div");
-  el.className = "doc-viewer"; el.id = "docViewer";
-  el.innerHTML = `<div class="doc-viewer-bar">
-      <button type="button" onclick="fecharDocumento()">✕ Fechar</button>
-      <div class="titulo"></div>
-      <button type="button" class="enviar" id="docViewerEnviar">Enviar</button>
-    </div>
-    <div class="doc-viewer-body"><div class="doc-viewer-folha"><iframe title="Documento"></iframe></div></div>`;
-  el.querySelector(".titulo").textContent = titulo;
-  document.body.appendChild(el);
-  document.body.style.overflow = "hidden";
-  history.pushState({ docViewer: true }, "");
-
-  const body = el.querySelector(".doc-viewer-body");
-  const folha = el.querySelector(".doc-viewer-folha");
-  const iframe = el.querySelector("iframe");
-  // A folha é montada na largura de um documento (como no computador) e reduzida pra caber na tela.
-  const ajustar = () => {
-    const doc = iframe.contentDocument;
-    if (!doc || !doc.documentElement) return;
-    const larguraDoc = Math.max(820, doc.documentElement.scrollWidth);
-    iframe.style.width = larguraDoc + "px";
-    const altura = doc.documentElement.scrollHeight;
-    iframe.style.height = altura + "px";
-    const escala = Math.min(1, body.clientWidth / larguraDoc);
-    folha.style.transform = `scale(${escala})`;
-    folha.style.width = larguraDoc + "px";
-    folha.style.height = altura + "px";
-    folha.parentElement.style.height = "auto";
-    folha.style.marginBottom = (altura * escala - altura) + "px";
-  };
-  iframe.style.width = "820px";
-  iframe.onload = () => { ajustar(); setTimeout(ajustar, 400); setTimeout(ajustar, 1200); };
-  iframe.srcdoc = semAutoPrint;
-  el._ajustar = ajustar;
-  window.addEventListener("resize", ajustar);
-  el._limpar = () => window.removeEventListener("resize", ajustar);
-
-  const btn = el.querySelector("#docViewerEnviar");
-  let arquivoPronto = null; // PDF já gerado: o 2º toque compartilha na hora
-  const compartilhar = async (arquivo) => {
-    if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
-      await navigator.share({ files: [arquivo], title: arquivo.name });
-    } else {
-      const url = URL.createObjectURL(arquivo);
-      const a = document.createElement("a"); a.href = url; a.download = arquivo.name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    }
-  };
-  btn.onclick = async () => {
-    if (btn.disabled) return;
-    btn.disabled = true; btn.textContent = "Gerando PDF…";
-    try {
-      if (!arquivoPronto) {
-        const blob = opts.gerarPdf ? await opts.gerarPdf() : await pdfDoIframe(iframe);
-        if (!blob) return;
-        const nome = (opts.nomeArquivo || titulo).replace(/[\\/:*?"<>|]/g, "").trim() + ".pdf";
-        arquivoPronto = new File([blob], nome, { type: "application/pdf" });
-      }
-      await compartilhar(arquivoPronto);
-    } catch (e) {
-      // O iPhone só abre o compartilhar logo depois do toque; se o PDF demorou pra ficar pronto, ele
-      // recusa (NotAllowedError). O PDF já está pronto: o próximo toque em "Compartilhar PDF" abre na hora.
-      if (e && e.name === "NotAllowedError" && arquivoPronto) { btn.disabled = false; btn.textContent = "Compartilhar PDF"; return; }
-      if (!(e && e.name === "AbortError")) alert("Erro ao gerar o PDF: " + (e && e.message || e));
-    } finally {
-      if (btn.textContent === "Gerando PDF…") { btn.disabled = false; btn.textContent = arquivoPronto ? "Enviar" : "Enviar"; }
-    }
-  };
-}
-// PDF a partir do documento aberto no visualizador (relatórios e recibos, que não têm PDF próprio): o
-// html2canvas fotografa a página e o jsPDF monta as folhas A4. No app instalado do iPhone a impressão
-// (window.print) não funciona, por isso o "Enviar" gera o PDF em vez de abrir a impressão.
-const HTML2CANVAS_URL = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-function carregarHtml2canvasNo(win) {
-  if (win.html2canvas) return Promise.resolve(win.html2canvas);
-  return new Promise((ok, erro) => {
-    const sc = win.document.createElement("script");
-    sc.src = HTML2CANVAS_URL;
-    sc.onload = () => win.html2canvas ? ok(win.html2canvas) : erro(new Error("biblioteca não carregou"));
-    sc.onerror = () => erro(new Error("sem internet para carregar o gerador de PDF"));
-    win.document.head.appendChild(sc);
-  });
-}
-async function pdfDoIframe(iframe) {
-  const win = iframe.contentWindow, doc = iframe.contentDocument;
-  const h2c = await carregarHtml2canvasNo(win);
-  if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
-  const largura = Math.max(820, doc.documentElement.scrollWidth);
-  const canvas = await h2c(doc.body, {
-    scale: 2, useCORS: true, backgroundColor: "#ffffff",
-    width: largura, windowWidth: largura, windowHeight: doc.documentElement.scrollHeight,
-    x: 0, y: 0, scrollX: 0, scrollY: 0,
-  });
-  const { jsPDF } = window.jspdf;
-  const paisagem = largura > 900;
-  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: paisagem ? "landscape" : "portrait" });
-  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight(), margem = 18;
-  const escala = (pw - margem * 2) / canvas.width;          // pt por pixel do canvas
-  const alturaPagPx = Math.floor((ph - margem * 2) / escala); // quanto do canvas cabe numa folha
-  const ctx = canvas.getContext("2d");
-  // Procura, subindo a partir do fim da folha, uma faixa sem texto (linha de pixels igual às vizinhas —
-  // vale também com a lateral escura do relatório), pra não cortar texto no meio na troca de página.
-  const linhaLisa = (y) => {
-    const d = ctx.getImageData(0, y - 2, canvas.width, 5).data, w = canvas.width * 4;
-    for (let i = 0; i < w; i += 8) for (let r = 1; r < 5; r++) {
-      const j = i + r * w;
-      if (Math.abs(d[j] - d[i]) > 8 || Math.abs(d[j + 1] - d[i + 1]) > 8 || Math.abs(d[j + 2] - d[i + 2]) > 8) return false;
-    }
-    return true;
-  };
-  let y = 0, primeira = true;
-  while (y < canvas.height - 2) {
-    let fim = Math.min(canvas.height, y + alturaPagPx);
-    if (fim < canvas.height) {
-      const limite = Math.max(y + alturaPagPx * 0.75, y + 1);
-      for (let t = fim; t > limite; t -= 2) if (linhaLisa(t)) { fim = t; break; }
-    }
-    const fatia = document.createElement("canvas");
-    fatia.width = canvas.width; fatia.height = fim - y;
-    const fctx = fatia.getContext("2d");
-    fctx.fillStyle = "#fff"; fctx.fillRect(0, 0, fatia.width, fatia.height);
-    fctx.drawImage(canvas, 0, y, canvas.width, fatia.height, 0, 0, canvas.width, fatia.height);
-    if (!primeira) pdf.addPage();
-    pdf.addImage(fatia.toDataURL("image/jpeg", 0.9), "JPEG", margem, margem, canvas.width * escala, fatia.height * escala);
-    primeira = false; y = fim;
-  }
-  return pdf.output("blob");
-}
-function fecharDocumento(doHistorico) {
-  const el = document.getElementById("docViewer");
-  if (!el) return;
-  if (el._limpar) el._limpar();
-  el.remove();
-  document.body.style.overflow = "";
-  if (doHistorico !== true && history.state && history.state.docViewer) history.back();
-}
-// Botão/gesto de voltar do celular fecha o documento em vez de sair do app.
-window.addEventListener("popstate", () => { if (document.getElementById("docViewer")) fecharDocumento(true); });
 
 function gerarConfirmacao(negocioId) {
   const r = montarConfirmacaoHtml(negocioId);
   if (!r) return;
-  // Nome do PDF = o <title> do documento ("Confirmação CT-… - Vendedor x Comprador"), o mesmo de sempre.
-  abrirDocumento(r.html, {
-    msgPopup: "Habilite pop-ups para gerar a confirmação.",
-    gerarPdf: async () => { const doc = await gerarConfirmacaoPdfNativo(negocioId); return doc ? doc.output("blob") : null; },
-  });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar a confirmação."); return; }
+  win.document.open(); win.document.write(r.html); win.document.close();
 }
 async function enviarParaAssinatura(negocioId) {
   const n = data.negocios.find(x => x.id === negocioId);
@@ -4866,10 +4687,9 @@ function montarLiberacaoEmbarqueHtml(negocioId) {
 function gerarLiberacaoEmbarque(negocioId) {
   const r = montarLiberacaoEmbarqueHtml(negocioId);
   if (!r) return;
-  abrirDocumento(r.html, {
-    msgPopup: "Habilite pop-ups para gerar a liberação.",
-    gerarPdf: async () => { const doc = await gerarLiberacaoPdfNativo(negocioId); return doc ? doc.output("blob") : null; },
-  });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar a liberação."); return; }
+  win.document.open(); win.document.write(r.html); win.document.close();
 }
 // Gera a Liberação de Embarque como PDF nativo (texto vetorial de verdade, selecionável e
 // pesquisável) usando jsPDF, com o mesmo conteúdo/ordem do montarLiberacaoEmbarqueHtml (a via
@@ -6214,7 +6034,9 @@ function gerarRelatorioComissoes() {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 // ---------------- NOTA FISCAL DA COMISSÃO ----------------
 // A nota é emitida à mão no Emissor Nacional (login e senha — sem certificado digital, então não
@@ -6676,7 +6498,9 @@ function gerarReciboRepasseCorretor(negocioId) {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o recibo." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // ---------------- CONFIGURAÇÕES (submenu) ----------------
@@ -6787,7 +6611,9 @@ function gerarFechamentoMensal() {
   </table>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // ---------------- AUDITORIA ----------------
@@ -7013,7 +6839,9 @@ function gerarRelatorioProdutor() {
     resumo: negocios.length ? [{ label: "negócios recebidos", valor: `${recebidos} de ${negocios.length}` }] : [],
     vazioNegocios: "Nenhum negócio nas safras selecionadas.",
   });
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 function gerarReciboComissao(negocioId) {
@@ -7064,7 +6892,9 @@ function gerarReciboComissao(negocioId) {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o recibo." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o recibo."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // Recibo único cobrindo vários negócios selecionados de uma vez — mesma regra do boleto
@@ -7126,7 +6956,9 @@ function gerarReciboComissaoAgrupado() {
   </div>
   <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
   </body></html>`;
-  abrirDocumento(html, { msgPopup: "Habilite pop-ups para gerar o relatório." });
+  const win = window.open("", "_blank");
+  if (!win) { alert("Habilite pop-ups para gerar o relatório."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // ---------------- FINANCEIRO: DESPESAS ----------------
