@@ -156,7 +156,9 @@
   .page.active { display: block; }
 
   h2.page-title { font-size: 16px; margin: 0 0 4px; }
-  .ia-uso-chip { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; text-align: right; line-height: 1.35; white-space: nowrap; cursor: default; }
+  tr.neg-completo > td { background: rgba(59,130,246,0.08); }
+tr.neg-completo:hover > td { background: rgba(59,130,246,0.14); }
+.ia-uso-chip { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; text-align: right; line-height: 1.35; white-space: nowrap; cursor: default; }
   .ia-uso-chip b { color: var(--ink); font-weight: 600; }
   .page-sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 16px; }
 
@@ -3485,7 +3487,7 @@ function renderNegocios() {
   const st = sortState.negocios; if (st && st.key) list = applySort(list, st.key, st.dir);
   const body = document.getElementById("negociosBody");
   body.innerHTML = list.length === 0 ? `<tr class="empty-row"><td colspan="12">Nenhuma negociação encontrada.</td></tr>` :
-    list.map(n => `<tr><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td>${fmtDate(n.data_pagamento)}${n.pagamento_dias_apos_entrega != null ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.pagamento_dias_apos_entrega}d após recebimento${cargasDoNegocio(n).length ? " · " + cargasDoNegocio(n).length + " carga(s)" : ""}</span>` : ""}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
+    list.map(n => `<tr${NEGOCIO_CHECKLIST_ITENS.every(it => negocioCheckFeito(n, it.campo)) ? ' class="neg-completo"' : ''}><td>${n.grao}${n.safra ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.safra}</span>` : ""}</td><td>${n.numero_contrato || "—"}</td><td>${n.vendedorNome}</td><td>${n.compradorNome}</td><td>${fmtNum(n.quantidade)}</td><td>R$ ${n.precoLiquido.toFixed(2)}</td><td>${fmtMoney(n.comissao)}</td><td>${fmtDate(n.data)}</td><td>${fmtDate(n.data_pagamento)}${n.pagamento_dias_apos_entrega != null ? `<br><span style="font-size:10.5px;color:var(--ink-soft)">${n.pagamento_dias_apos_entrega}d após recebimento${cargasDoNegocio(n).length ? " · " + cargasDoNegocio(n).length + " carga(s)" : ""}</span>` : ""}</td><td><span class="badge ${badgeClass(n.status)}">${n.status}</span></td>
       <td>${negocioChecklistHtml(n)}</td>
       <td>${n.produtor_id && n.cliente_id ? `<button class="btn-edit-text" onclick="gerarConfirmacao('${n.id}')">Confirmação</button><button class="btn-edit-text" title="Enviar PDF por e-mail" onclick="enviarConfirmacaoPdfEmail('${n.id}')">&#128196;</button><button class="btn-edit-text" title="Avisar produtor no WhatsApp" onclick="enviarWhatsappNegocio('${n.id}')">&#128242;</button>` : ""}<button class="btn-edit-text" onclick="openNegocioModal('${n.id}')">Editar</button><button class="btn-danger-text" onclick="excluirNegocio('${n.id}')">Excluir</button></td></tr>`).join("");
   renderDashboard(); renderFinanceiro();
