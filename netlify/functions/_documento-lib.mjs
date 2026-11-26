@@ -82,7 +82,7 @@ export async function lerComIA({ base64, mime, nomeOriginal, contratos, dica, ti
   const bloco = mime === "application/pdf"
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
     : { type: "image", source: { type: "base64", media_type: mime, data: base64 } };
-  const texto = `Você trabalha na Nexus Commodities, corretora de grãos em São Gabriel do Oeste/MS. O vendedor é o produtor rural e o comprador é a cerealista/cooperativa/trading. Leia o documento anexo (nome do arquivo: "${nomeOriginal || ""}") e classifique.${dica ? `\n\nO corretor mandou junto este texto (pode indicar o contrato, ex.: "141" = CT-2026-141): "${dica}"` : ""}
+  const texto = `Você trabalha na Nexus Commodities, corretora de grãos em São Gabriel do Oeste/MS. O vendedor é o produtor rural e o comprador é a cerealista/cooperativa/trading/confinamento. Leia o documento anexo (nome do arquivo: "${nomeOriginal || ""}") e classifique.${dica ? `\n\nO corretor mandou junto este texto (pode indicar o contrato, ex.: "141" = CT-2026-141): "${dica}"` : ""}
 
 Contratos da Nexus (mais recentes primeiro):
 ${lista || "(nenhum)"}
