@@ -3,7 +3,7 @@
 // baixa o arquivo da Z-API, a IA lê e acha o contrato, salva na pasta dele no Drive e nos anexos da
 // negociação, e responde no WhatsApp. Se a IA não tiver certeza do contrato, não salva e pede o número.
 import { randomUUID } from "node:crypto";
-import { SUPABASE_URL, TIPO_LABEL, TIPOS_CADASTRO, caminhoCliente, aplicarDocumentoNoNegocio, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, TIPOS_CADASTRO, caminhoCliente, aplicarDocumentoNoNegocio, parcelaDoPagamento, lerComIA, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MIMES_OK = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
@@ -151,6 +151,7 @@ export default async (req) => {
       return responder(p.phone, msg);
     }
 
+    if (l.tipo === "pagamento") l.parcela = await parcelaDoPagamento(n.id, l).catch(() => l.parcela);
     const salvo = await salvarNoDrive({
       base64, mime, nome_arquivo: `${nomeArquivoDoc(l, n)}.${ext}`,
       contrato: n.numero_contrato, nome_pasta: nomePastaContrato(n), data_negocio: n.data,
@@ -165,7 +166,7 @@ export default async (req) => {
 
     const feito = await aplicarDocumentoNoNegocio({ negocioId: n.id, leitura: l, nomeArquivo: salvo.nome, origem: "whatsapp" }).catch(e => [`⚠️ Não consegui atualizar o checklist (${e.message})`]);
     const aviso = pelasPartes && !pelaLegenda && !pelaIA ? `\n\n_Achei pelo vendedor e comprador (único contrato em aberto entre eles). Se não for esse, me avisa._` : "";
-    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}${feito.length ? "\n\n" + feito.join("\n") : ""}${aviso}`;
+    const msg = `✅ *${tipo}${l.tipo === "pagamento" && l.parcela === "PARCIAL" ? " — valor parcial" : l.tipo === "pagamento" && l.parcela === "SALDO" ? " — saldo" : ""}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}${feito.length ? "\n\n" + feito.join("\n") : ""}${aviso}`;
     await historico(adminHeaders, p.phone, textoUsuario, msg);
     await responder(p.phone, msg);
   } catch (e) {

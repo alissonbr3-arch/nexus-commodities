@@ -4,7 +4,7 @@
 // confirmação antes de gravar. O whatsapp-webhook confere que o número é de um corretor e chama esta
 // função em segundo plano; o histórico fica em nexus_assistente_msgs.
 import { randomUUID } from "node:crypto";
-import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, registrarUsoIA, transcreverAudio as transcrever, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
+import { SUPABASE_URL, TIPO_LABEL, aplicarDocumentoNoNegocio, parcelaDoPagamento, registrarUsoIA, transcreverAudio as transcrever, salvarNoDrive, nomeArquivoDoc, nomePastaContrato } from "./_documento-lib.mjs";
 
 const MODELO = "claude-sonnet-5-5";
 const MAX_VOLTAS = 8;
@@ -379,6 +379,7 @@ async function executar(nome, input, ctx) {
       const base64 = Buffer.from(await arq.arrayBuffer()).toString("base64");
       const neg = { ...n, vendedor: vendedorDe(d, n), comprador: compradorDe(d, n) };
       const ext = { "application/pdf": "pdf", "image/png": "png", "image/webp": "webp" }[doc.mime] || "jpg";
+      if (doc.leitura?.tipo === "pagamento") doc.leitura.parcela = await parcelaDoPagamento(n.id, doc.leitura).catch(() => doc.leitura.parcela);
       const salvo = await salvarNoDrive({ base64, mime: doc.mime, nome_arquivo: `${nomeArquivoDoc(doc.leitura || {}, neg)}.${ext}`, contrato: n.numero_contrato, nome_pasta: nomePastaContrato(neg), data_negocio: n.data });
       if (!salvo.ok) return { erro: "Drive: " + salvo.erro };
       // move a cópia de "pendentes" pros anexos da negociação
@@ -387,7 +388,7 @@ async function executar(nome, input, ctx) {
       await db(`nexus_assistente_docs?id=eq.${doc.id}`, { method: "PATCH", body: JSON.stringify({ salvo_em: new Date().toISOString() }) });
       const atualizado = await aplicarDocumentoNoNegocio({ negocioId: n.id, leitura: doc.leitura, nomeArquivo: salvo.nome, origem: "whatsapp", usuarioId: ctx.corretor.user_id }).catch(e => [`não consegui atualizar o checklist (${e.message})`]);
       cache = null;
-      return { ok: true, tipo: TIPO_LABEL[doc.leitura?.tipo] || "Documento", contrato: n.numero_contrato, nome: salvo.nome, link: salvo.url, checklist_atualizado: atualizado };
+      return { ok: true, tipo: (TIPO_LABEL[doc.leitura?.tipo] || "Documento") + (doc.leitura?.parcela === "PARCIAL" ? " — valor parcial" : doc.leitura?.parcela === "SALDO" ? " — saldo" : ""), contrato: n.numero_contrato, nome: salvo.nome, link: salvo.url, checklist_atualizado: atualizado };
     }
   }
   return { erro: "Ferramenta desconhecida." };

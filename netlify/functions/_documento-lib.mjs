@@ -204,6 +204,29 @@ export function precoLiquidoNegocio(n, comprador, config) {
   return sacas ? (total - comissao - total * 0.002 - ff - funrural) / sacas : 0;
 }
 
+// Comprovante de pagamento: compara com o líquido do contrato. Devolve "PARCIAL" se (somando os já recebidos)
+// ainda não cobre o valor cheio, "SALDO" se este quita o que faltava depois de outros pagamentos, null se é o
+// pagamento cheio de uma vez. Sem preço pra comparar, mantém o que a IA leu (PARTE/SALDO).
+export async function parcelaDoPagamento(negocioId, l) {
+  if (!l || l.tipo !== "pagamento" || !(Number(l.valor) > 0) || !negocioId) return l?.parcela ?? null;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const H = { apikey: key, Authorization: `Bearer ${key}` };
+  const get = path => fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: H }).then(r => r.json());
+  const n = (await get(`nexus_negocios?id=eq.${negocioId}&select=*`))[0];
+  if (!n) return l.parcela ?? null;
+  const [ja, comp, cfg] = await Promise.all([
+    get(`nexus_pagamentos_recebidos?negocio_id=eq.${n.id}&select=valor,data`),
+    n.cliente_id ? get(`nexus_cadastros?id=eq.${n.cliente_id}&select=categoria_comprador`).then(r => r[0]) : null,
+    get("nexus_config?id=eq.1&select=fundersul_saca,fundems_saca,funrural_pct").then(r => r[0]),
+  ]);
+  const liquido = precoLiquidoNegocio(n, comp, cfg || {}) * Number(n.quantidade || 0);
+  if (!(liquido > 0)) return l.parcela ?? null;
+  const anteriores = (ja || []).filter(p => !(Math.abs(Number(p.valor) - Number(l.valor)) < 0.01 && (p.data || null) === (l.data || null)))
+    .reduce((s, p) => s + Number(p.valor || 0), 0);
+  if (anteriores + Number(l.valor) < liquido * 0.98) return "PARCIAL";
+  return anteriores > 0 ? "SALDO" : null;
+}
+
 export async function aplicarDocumentoNoNegocio({ negocioId, leitura: l, nomeArquivo, origem, usuarioId }) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const H = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };

@@ -6,7 +6,7 @@
 //   acao "salvar" → { access_token, base64, mime, nome_arquivo, contrato, nome_pasta, data_negocio } → { ok, url, pasta }
 // Variáveis no Netlify: ANTHROPIC_API_KEY, DRIVE_SCRIPT_URL, DRIVE_SCRIPT_TOKEN, SUPABASE_SERVICE_ROLE_KEY.
 
-import { SUPABASE_URL, aplicarDocumentoNoNegocio, lerComIA, salvarNoDrive } from "./_documento-lib.mjs";
+import { SUPABASE_URL, aplicarDocumentoNoNegocio, parcelaDoPagamento, lerComIA, salvarNoDrive } from "./_documento-lib.mjs";
 
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4dmRsdGppc3dnY3l4aWt4c2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODcwNjUsImV4cCI6MjEwMTQ2MzA2NX0.SAIWIRMvdtevY-y1C-5Zlxas5NLuALLPj-ot2q_xP3E";
 
@@ -33,6 +33,13 @@ async function ler(p) {
 }
 
 async function salvar(p, usuarioId) {
+  if (p.negocio_id && p.leitura?.tipo === "pagamento" && p.nome_arquivo) {
+    const parc = await parcelaDoPagamento(p.negocio_id, p.leitura).catch(() => undefined);
+    if (parc !== undefined) {
+      p.leitura.parcela = parc;
+      p.nome_arquivo = p.nome_arquivo.replace(/PGTO CTR (\S+)(?: (?:PARTE|SALDO|PARCIAL))?/, (m, c) => `PGTO CTR ${c}${parc ? " " + parc : ""}`);
+    }
+  }
   const r = await salvarNoDrive(p);
   if (r.ok && p.negocio_id && p.leitura) r.feito = await aplicarDocumentoNoNegocio({ negocioId: p.negocio_id, leitura: p.leitura, nomeArquivo: r.nome, origem: "painel", usuarioId }).catch(e => [`⚠️ Não consegui atualizar o checklist (${e.message})`]);
   return json(r, r.ok ? 200 : 502);
