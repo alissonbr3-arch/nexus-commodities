@@ -441,7 +441,10 @@ export default async (req) => {
     if (!corretor) return;
 
     const desde = new Date(Date.now() - HISTORICO_HORAS * 3600e3).toISOString();
-    const hist = (await db(`nexus_assistente_msgs?telefone=eq.${telefone}&created_at=gte.${desde}&select=role,texto&order=created_at.desc&limit=${HISTORICO_MAX}`)).reverse();
+    const hist = (await db(`nexus_assistente_msgs?telefone=eq.${telefone}&created_at=gte.${desde}&select=role,texto&order=created_at.desc,role.asc&limit=${HISTORICO_MAX}`)).reverse();
+    // Pares gravados juntos (documento → resposta com o id pendente) têm o mesmo created_at: o role.asc acima
+    // garante, depois do reverse, "user" antes de "assistant". Sem isso a resposta com o id caía no shift abaixo
+    // e a assistente "não achava" o documento pendente.
     while (hist.length && hist[0].role !== "user") hist.shift(); // a conversa tem que começar pelo corretor
     const messages = [];
     for (const m of hist) {

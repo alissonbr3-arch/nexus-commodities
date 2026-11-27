@@ -37,6 +37,49 @@ function contratoPelaLegenda(legenda, contratos) {
   }) || null;
 }
 
+// Número do contrato escrito no nome do arquivo ou na legenda ("CT 140", "CTR 140", "CT-2026-140").
+// "CONF. 4061" e afins são o número do contrato do comprador, não o nosso, e não contam.
+function contratoPeloTexto(texto, contratos) {
+  const m = String(texto || "").match(/\b(?:CTR?|CONTRATO)[\s.:\-]*(?:(\d{4})[\s\-]+)?0*(\d{1,4})\b/i);
+  if (!m) return null;
+  return contratos.find(c => {
+    const cm = String(c.numero_contrato).match(/^CT-(\d{4})-0*(\d+)$/i);
+    return cm && cm[2] === m[2] && (!m[1] || cm[1] === m[1]);
+  }) || null;
+}
+
+// Contrato pelas partes: o vendedor e o comprador do contrato aparecem no nome do arquivo, na legenda
+// ou na leitura da IA. Só vale se sobrar UM contrato (em aberto, do mesmo grão quando a IA leu o grão);
+// com dois ou mais contratos entre as mesmas partes, continua perguntando.
+const PALAVRAS_GENERICAS = new Set(["fazenda", "agro", "agropecuaria", "agricola", "comercio", "comercial", "cereais", "graos", "industria", "cooperativa", "participacoes", "transporte", "ltda", "eireli", "sa", "me", "de", "da", "do", "dos", "das", "grupo", "total", "central", "alimentos", "brasil", "sgo", "camapua", "filial", "armazenagem", "corretora", "filhas", "santa", "santo"]);
+const normTxt = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+function chavesNome(nome) {
+  return normTxt(nome).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !PALAVRAS_GENERICAS.has(w));
+}
+function contratoPelasPartes(texto, contratos, grao) {
+  const t = " " + normTxt(texto).replace(/[^a-z0-9]+/g, " ") + " ";
+  // Primeira e última palavra do nome (ex.: "jonis" e "assmann"; empresa de uma palavra só: só ela).
+  const tem = nome => { const k = chavesNome(nome); return k.length > 0 && t.includes(` ${k[0]} `) && t.includes(` ${k[k.length - 1]} `); };
+  let cand = contratos.filter(c => c.vendedor && c.comprador && tem(c.vendedor) && tem(c.comprador));
+  if (grao) cand = cand.filter(c => !c.grao || normTxt(c.grao) === normTxt(grao));
+  const abertos = cand.filter(c => !/finalizado|cancelado/i.test(c.status || ""));
+  if (abertos.length === 1) return abertos[0];
+  if (abertos.length === 0 && cand.length === 1) return cand[0];
+  return null;
+}
+
+// A IA às vezes classifica a NFP ou a contra nota como "outro" mesmo dizendo no motivo o que é.
+function corrigirTipo(l, nomeArq) {
+  if (l.tipo !== "outro") return;
+  const t = `${nomeArq} ${l.motivo || ""} ${l.nome_sugerido || ""}`;
+  if (/contra[\s.\-]*n(ota|f)/i.test(t)) l.tipo = "contra_nota";
+  else if (/\bNFP\b|nota fiscal (do|de) produtor/i.test(t)) l.tipo = "nota_produtor";
+  if (!l.numero_documento) {
+    const num = t.match(/\bNFP(?:[\s\-]*SE)?[\s.:\-]*(\d{5,9})\b/i);
+    if (num && l.tipo === "nota_produtor") l.numero_documento = num[1];
+  }
+}
+
 // Guarda no histórico da conversa com a assistente (assistente-whatsapp-background), pra ela saber
 // o que foi mandado e poder salvar depois um documento que ficou pendente.
 async function historico(adminHeaders, telefone, textoUsuario, textoAssistente) {
@@ -85,9 +128,11 @@ export default async (req) => {
       return responder(p.phone, msgCad);
     }
 
-    const pelaLegenda = contratoPelaLegenda(p.caption, contratos);
+    corrigirTipo(l, nomeArq);
+    const pelaLegenda = contratoPelaLegenda(p.caption, contratos) || contratoPeloTexto(`${nomeArq} ${p.caption || ""}`, contratos);
     const pelaIA = l.contrato_numero && l.confianca === "alta" ? contratos.find(c => c.numero_contrato === l.contrato_numero) : null;
-    const n = pelaLegenda || pelaIA;
+    const pelasPartes = !pelaLegenda && !pelaIA ? contratoPelasPartes(`${nomeArq} ${p.caption || ""} ${l.motivo || ""}`, contratos, l.grao) : null;
+    const n = pelaLegenda || pelaIA || pelasPartes;
     const tipo = TIPO_LABEL[l.tipo] || "Documento";
     const ext = MIMES_OK[mime];
     const textoUsuario = `[enviou um documento: ${nomeArq}${p.caption ? ` · legenda: "${p.caption}"` : ""}]`;
@@ -119,7 +164,8 @@ export default async (req) => {
     }).catch(() => {});
 
     const feito = await aplicarDocumentoNoNegocio({ negocioId: n.id, leitura: l, nomeArquivo: salvo.nome, origem: "whatsapp" }).catch(e => [`⚠️ Não consegui atualizar o checklist (${e.message})`]);
-    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}${feito.length ? "\n\n" + feito.join("\n") : ""}`;
+    const aviso = pelasPartes && !pelaLegenda && !pelaIA ? `\n\n_Achei pelo vendedor e comprador (único contrato em aberto entre eles). Se não for esse, me avisa._` : "";
+    const msg = `✅ *${tipo}* · ${n.numero_contrato} (${n.vendedor} x ${n.comprador})\nSalvo como: ${salvo.nome}\n${salvo.url}${feito.length ? "\n\n" + feito.join("\n") : ""}${aviso}`;
     await historico(adminHeaders, p.phone, textoUsuario, msg);
     await responder(p.phone, msg);
   } catch (e) {

@@ -106,7 +106,7 @@ export default async (req) => {
     };
 
     const desde = new Date(Date.now() - HISTORICO_HORAS * 3600e3).toISOString();
-    const hist = (await db(`nexus_assistente_msgs?telefone=eq.${telefone}&created_at=gte.${desde}&select=role,texto&order=created_at.desc&limit=10`)).reverse();
+    const hist = (await db(`nexus_assistente_msgs?telefone=eq.${telefone}&created_at=gte.${desde}&select=role,texto&order=created_at.desc,role.asc&limit=10`)).reverse();
     while (hist.length && hist[0].role !== "user") hist.shift();
     const messages = [];
     for (const m of hist) { const u = messages[messages.length - 1]; if (u && u.role === m.role) u.content += "\n\n" + m.texto; else messages.push({ role: m.role, content: m.texto }); }
